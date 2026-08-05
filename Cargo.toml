@@ -43,7 +43,10 @@ tag-message = "chore: release {{version}}"
 pre-release-hook = [
     "bash",
     "-euc",
-    "root=\"$(git rev-parse --show-toplevel)\"; cd \"$root\"; if [[ -f CHANGELOG.md ]] && head -n 1 CHANGELOG.md | grep -Fq \"## [$1]\"; then exit 0; fi; git cliff -o CHANGELOG.md --tag \"$1\"",
+    "if [[ $DRY_RUN == true ]]; then exit 0; fi; root=\"$(git rev-parse --show-toplevel)\"; cd \"$root\"; if [[ -f CHANGELOG.md ]] && head -n 1 CHANGELOG.md | grep -Fq \"## [$1]\"; then exit 0; fi; git cliff -o CHANGELOG.md --tag \"$1\"",
     "--",
     "{{version}}",
+]
+pre-release-replacements = [
+    { file = "../../packaging/linux/io.github.oksyd.dogi.metainfo.xml", search = '<release version="[^"]+" date="[0-9]{4}-[0-9]{2}-[0-9]{2}" type="development">', replace = '<release version="{{version}}" date="{{date}}" type="development">', exactly = 1 },
 ]

@@ -35,9 +35,12 @@
     <category>Settings</category>
   </categories>
   <releases>
-    <release version="0.1.0" date="2026-08-05" type="development">
+    <release version="0.1.2" date="2026-08-05" type="development">
       <description>
-        <p>Initial preview release.</p>
+        <p>
+          Improves device discovery, desktop integration, and the configuration
+          experience.
+        </p>
       </description>
     </release>
   </releases>
