@@ -1,0 +1,3134 @@
+import {
+    ListView,
+    Palette,
+} from "std-widgets.slint";
+
+import {
+    AppProfileRow,
+    DesktopRuntimeState,
+    DeviceAccessState,
+    DeviceDiscoveryState,
+    DeviceRow,
+    PlanRow,
+    PlanScope,
+    UiMessage,
+    UiStatus,
+    UiStatusKind,
+} from "view-models.slint";
+
+import {
+    DeviceTranslations,
+    SettingsTranslations,
+    StatusTranslations,
+} from "i18n.slint";
+
+import { Theme } from "theme.slint";
+import { BrandWordmark } from "brand.slint";
+import { FormComboBox, FormLineEdit } from "controls.slint";
+import { DeviceConfigSkeleton, DiscoveryPageSkeleton } from "loading.slint";
+import { Master3sDrawing } from "mouse.slint";
+import { BoltReceiverDrawing } from "receiver.slint";
+
+enum BadgeTone {
+    neutral,
+    accent,
+    success,
+    warning,
+    danger,
+}
+
+component Label inherits Text {
+    height: 20px;
+    color: Theme.text;
+    font-size: 12px;
+    font-weight: 600;
+    vertical-alignment: center;
+    vertical-stretch: 0;
+}
+
+component Hint inherits Text {
+    color: Theme.text-muted;
+    font-size: 11px;
+    wrap: word-wrap;
+    vertical-stretch: 0;
+}
+
+component Divider inherits Rectangle {
+    height: 1px;
+    background: Theme.border;
+    vertical-stretch: 0;
+}
+
+component FocusableArea {
+    in property <bool> enabled: true;
+    out property <bool> pressed <=> pointer-area.pressed;
+    out property <bool> has-hover <=> pointer-area.has-hover;
+    out property <bool> has-focus <=> focus-scope.has-focus;
+    callback clicked();
+
+    forward-focus: focus-scope;
+
+    pointer-area := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            focus-scope.focus();
+            root.clicked();
+        }
+    }
+
+    focus-scope := FocusScope {
+        width: 0px;
+        height: 0px;
+        enabled: root.enabled;
+
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+component ActionButton inherits Rectangle {
+    in property <string> title;
+    in property <bool> primary: false;
+    in property <bool> destructive: false;
+    in property <bool> warning: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 36px;
+    border-radius: 5px;
+    border-width: button-area.has-focus ? 2px : root.primary ? 0px : 1px;
+    border-color: button-area.has-focus ? (root.warning ? Theme.warning : Theme.accent) : root.destructive ? Theme.danger : root.warning ? Theme.warning-border : Theme.control-border;
+    background: !root.enabled ? Theme.surface : root.primary ? (button-area.pressed ? Theme.accent-bg-active : button-area.has-hover ? Theme.accent-bg-hover : Theme.accent-bg) : root.warning ? (button-area.pressed ? Theme.warning-border : button-area.has-hover ? Theme.warning-bg : Theme.panel) : button-area.pressed ? Theme.selected : button-area.has-hover ? Theme.hover : Theme.panel;
+    opacity: root.enabled ? 1 : 0.55;
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-action-default => { if (root.enabled) { root.clicked(); } }
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.title;
+        color: !root.enabled ? Theme.text-faint : root.primary ? Theme.accent-text : root.destructive ? Theme.danger : root.warning ? Theme.warning : Theme.text;
+        font-size: 11px;
+        font-weight: root.primary ? 600 : 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    button-area := FocusableArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component MetaBadge inherits Rectangle {
+    in property <string> title;
+    in property <BadgeTone> tone: BadgeTone.neutral;
+
+    height: 24px;
+    min-width: 54px;
+    border-radius: 12px;
+    background: root.tone == BadgeTone.warning ? Theme.warning-bg
+        : root.tone == BadgeTone.success ? Theme.success-soft
+        : root.tone == BadgeTone.accent ? Theme.accent-soft
+        : root.tone == BadgeTone.danger ? Theme.danger-bg
+        : Theme.surface;
+    border-width: Theme.high-contrast || root.tone == BadgeTone.neutral ? 1px : 0px;
+    border-color: root.tone == BadgeTone.warning ? Theme.warning
+        : root.tone == BadgeTone.success ? Theme.success
+        : root.tone == BadgeTone.accent ? Theme.accent
+        : root.tone == BadgeTone.danger ? Theme.danger
+        : Theme.control-border;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.title;
+        color: root.tone == BadgeTone.warning ? Theme.warning
+            : root.tone == BadgeTone.success ? Theme.success
+            : root.tone == BadgeTone.accent ? Theme.accent
+            : root.tone == BadgeTone.danger ? Theme.danger
+            : Theme.text-muted;
+        font-size: 10px;
+        font-weight: 650;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component WarningBar inherits Rectangle {
+    in property <string> message;
+
+    height: 46px;
+    background: Theme.warning-bg;
+    border-width: 1px;
+    border-color: Theme.warning-border;
+    border-radius: 6px;
+    vertical-stretch: 0;
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 10px;
+
+        VerticalLayout {
+            width: 20px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            Rectangle {
+                width: 20px;
+                height: 20px;
+                border-radius: 10px;
+                background: Theme.warning-border;
+                vertical-stretch: 0;
+
+                Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: "!";
+                    color: Theme.warning;
+                    font-size: 11px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        Text {
+            text: root.message;
+            color: Theme.warning-text;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component DeviceAccessNotice inherits Rectangle {
+    in property <string> title;
+    in property <string> message;
+
+    height: 56px;
+    background: Theme.panel;
+    border-width: 1px;
+    border-color: Theme.border;
+    border-radius: 7px;
+    clip: true;
+    vertical-stretch: 0;
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 11px;
+
+        VerticalLayout {
+            width: 20px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            Rectangle {
+                width: 20px;
+                height: 20px;
+                border-radius: 10px;
+                background: Theme.warning-bg;
+                vertical-stretch: 0;
+
+                Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: "!";
+                    color: Theme.warning;
+                    font-size: 10px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 0px;
+            alignment: center;
+
+            Text {
+                height: 18px;
+                text: root.title;
+                color: Theme.text;
+                font-size: 11px;
+                font-weight: 650;
+                vertical-stretch: 0;
+            }
+            Text {
+                height: 17px;
+                text: root.message;
+                color: Theme.text-muted;
+                font-size: 10px;
+                overflow: elide;
+                vertical-stretch: 0;
+            }
+        }
+    }
+}
+
+component AccentSlider inherits Rectangle {
+    in property <string> label;
+    in property <float> minimum: 0;
+    in property <float> maximum: 100;
+    in property <float> step: 1;
+    in-out property <float> value: minimum;
+    in property <bool> enabled: true;
+    callback edited();
+
+    height: 28px;
+    opacity: root.enabled ? 1 : 0.55;
+    accessible-role: slider;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-value: root.value;
+    accessible-value-minimum: root.minimum;
+    accessible-value-maximum: root.maximum;
+    accessible-value-step: root.step;
+    accessible-action-increment => { root.value = min(root.maximum, root.value + root.step); root.edited(); }
+    accessible-action-decrement => { root.value = max(root.minimum, root.value - root.step); root.edited(); }
+
+    function set-from-position(position: length) {
+        root.value = root.minimum + round(clamp((position - 9px) / (root.width - 18px), 0, 1) * (root.maximum - root.minimum) / root.step) * root.step;
+        root.edited();
+    }
+
+    Rectangle {
+        x: 9px;
+        y: (parent.height - self.height) / 2;
+        width: parent.width - 18px;
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.control-border;
+    }
+
+    Rectangle {
+        x: 9px;
+        y: (parent.height - self.height) / 2;
+        width: clamp((parent.width - 18px) * (root.value - root.minimum) / (root.maximum - root.minimum), 0px, parent.width - 18px);
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.accent-bg;
+    }
+
+    Rectangle {
+        x: clamp((parent.width - self.width) * (root.value - root.minimum) / (root.maximum - root.minimum), 0px, parent.width - self.width);
+        y: (parent.height - self.height) / 2;
+        width: slider-area.pressed ? 18px : 16px;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.panel;
+        border-width: slider-focus.has-focus ? 3px : 2px;
+        border-color: Theme.accent;
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: Theme.accent;
+        }
+    }
+
+    slider-area := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            slider-focus.focus();
+            root.set-from-position(self.mouse-x);
+        }
+        moved => { if (self.pressed) { root.set-from-position(self.mouse-x); } }
+    }
+
+    forward-focus: slider-focus;
+
+    slider-focus := FocusScope {
+        width: 0px;
+        height: 0px;
+        enabled: root.enabled;
+
+        key-pressed(event) => {
+            if (event.text == Key.RightArrow || event.text == Key.UpArrow) {
+                root.value = min(root.maximum, root.value + root.step);
+                root.edited();
+                return accept;
+            } else if (event.text == Key.LeftArrow || event.text == Key.DownArrow) {
+                root.value = max(root.minimum, root.value - root.step);
+                root.edited();
+                return accept;
+            } else if (event.text == Key.Home) {
+                root.value = root.minimum;
+                root.edited();
+                return accept;
+            } else if (event.text == Key.End) {
+                root.value = root.maximum;
+                root.edited();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+component AccentSwitch inherits Rectangle {
+    in property <string> label;
+    in-out property <bool> checked;
+    in property <bool> enabled: true;
+    callback toggled();
+
+    width: 42px;
+    height: 24px;
+    border-radius: 12px;
+    background: root.checked ? (switch-area.has-hover ? Theme.accent-bg-hover : Theme.accent-bg) : switch-area.has-hover ? Theme.hover : Theme.surface;
+    border-width: switch-area.has-focus ? 2px : root.checked ? 0px : 1px;
+    border-color: switch-area.has-focus ? Theme.accent : Theme.control-border;
+    opacity: root.enabled ? 1 : 0.5;
+    accessible-enabled: root.enabled;
+    accessible-checkable: true;
+    accessible-checked <=> root.checked;
+    accessible-role: switch;
+    accessible-label: root.label;
+    accessible-action-default => { if (root.enabled) { root.checked = !root.checked; root.toggled(); } }
+
+    Rectangle {
+        x: root.checked ? parent.width - self.width - 3px : 3px;
+        y: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: root.checked ? Theme.accent-text : Theme.text-faint;
+
+        animate x { duration: 120ms; easing: ease-out; }
+    }
+
+    switch-area := FocusableArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.enabled;
+        clicked => { root.checked = !root.checked; root.toggled(); }
+    }
+}
+
+component SliderRow inherits Rectangle {
+    in property <string> title;
+    in property <string> suffix;
+    in property <float> minimum;
+    in property <float> maximum;
+    in-out property <float> value;
+    in property <bool> enabled: true;
+    callback edited();
+
+    height: 70px;
+    background: transparent;
+    opacity: root.enabled ? 1 : 0.45;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 24px;
+
+        Text {
+            width: 235px;
+            text: root.title;
+            color: Theme.text;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+        }
+
+        VerticalLayout {
+            spacing: 0px;
+            alignment: center;
+
+            Text {
+                height: 22px;
+                text: round(root.value) + root.suffix;
+                color: Theme.text;
+                font-size: 11px;
+                font-weight: 650;
+                horizontal-alignment: right;
+                vertical-stretch: 0;
+            }
+
+            AccentSlider {
+                height: 28px;
+                label: root.title;
+                minimum: root.minimum;
+                maximum: root.maximum;
+                step: 1;
+                value <=> root.value;
+                enabled: root.enabled;
+                edited => { root.edited(); }
+                vertical-stretch: 0;
+            }
+        }
+    }
+}
+
+component HorizontalScrollTest inherits Rectangle {
+    in property <float> current-speed: 100;
+    in property <bool> enabled: true;
+    in-out property <bool> open: false;
+    in-out property <int> mode-index: 1;
+    in property <bool> active: false;
+    in property <bool> busy: false;
+    in property <string> detail;
+    in property <bool> compact: false;
+    in-out property <bool> moved: false;
+    callback toggled(bool);
+    callback mode-selected(int);
+
+    private property <length> track-offset: 0px;
+
+    height: root.open ? (root.compact ? 90px : 108px) : (root.compact ? 46px : 52px);
+    background: transparent;
+    clip: true;
+
+    changed open => {
+        if (!root.open) {
+            root.track-offset = 0px;
+            root.moved = false;
+        }
+    }
+
+    VerticalLayout {
+        spacing: 0px;
+
+        HorizontalLayout {
+            height: root.compact ? 35px : 41px;
+            padding-left: 18px;
+            padding-right: 18px;
+            spacing: 12px;
+            vertical-stretch: 0;
+
+            HorizontalLayout {
+                spacing: 9px;
+
+                VerticalLayout {
+                    width: 8px;
+                    horizontal-stretch: 0;
+                    alignment: center;
+                    Rectangle {
+                        width: 7px;
+                        height: 7px;
+                        border-radius: 4px;
+                        background: root.active ? Theme.success
+                            : root.busy ? Theme.accent
+                            : Theme.text-faint;
+                        vertical-stretch: 0;
+                    }
+                }
+
+                Text {
+                    text: @tr("Test horizontal scrolling");
+                    color: root.enabled ? Theme.text : Theme.text-faint;
+                    font-size: 12px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+
+            if root.open : HorizontalLayout {
+                width: 224px;
+                spacing: 4px;
+                horizontal-stretch: 0;
+
+                Rectangle {
+                    width: 90px;
+                    height: 30px;
+                    border-radius: 5px;
+                    background: root.mode-index == 0 ? Theme.accent-soft
+                        : baseline-area.has-hover ? Theme.hover
+                        : transparent;
+                    border-width: root.mode-index == 0 ? 1px : 0px;
+                    border-color: root.mode-index == 0 ? Theme.accent : transparent;
+                    Text {
+                        text: @tr("Baseline · 100%");
+                        color: root.mode-index == 0 ? Theme.accent : Theme.text-muted;
+                        font-size: 10px;
+                        font-weight: root.mode-index == 0 ? 650 : 500;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    baseline-area := TouchArea {
+                        enabled: !root.busy;
+                        mouse-cursor: enabled ? pointer : default;
+                        clicked => {
+                            root.mode-index = 0;
+                            root.mode-selected(0);
+                            root.track-offset = 0px;
+                            root.moved = false;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: 130px;
+                    height: 30px;
+                    border-radius: 5px;
+                    background: root.mode-index == 1 ? Theme.accent-soft
+                        : current-area.has-hover ? Theme.hover
+                        : transparent;
+                    border-width: root.mode-index == 1 ? 1px : 0px;
+                    border-color: root.mode-index == 1 ? Theme.accent : transparent;
+                    Text {
+                        text: @tr("Current · {}%", round(root.current-speed));
+                        color: root.mode-index == 1 ? Theme.accent : Theme.text-muted;
+                        font-size: 10px;
+                        font-weight: root.mode-index == 1 ? 650 : 500;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    current-area := TouchArea {
+                        enabled: !root.busy;
+                        mouse-cursor: enabled ? pointer : default;
+                        clicked => {
+                            root.mode-index = 1;
+                            root.mode-selected(1);
+                            root.track-offset = 0px;
+                            root.moved = false;
+                        }
+                    }
+                }
+            }
+
+            ActionButton {
+                width: 76px;
+                height: 30px;
+                title: !root.enabled ? @tr("Unavailable")
+                    : root.busy ? @tr("Starting…")
+                    : root.open ? @tr("Stop")
+                    : @tr("Test");
+                enabled: root.enabled && !root.busy;
+                primary: !root.open;
+                clicked => {
+                    root.open = !root.open;
+                    root.toggled(root.open);
+                }
+                horizontal-stretch: 0;
+            }
+        }
+
+        if root.open : Rectangle {
+            height: root.compact ? 54px : 66px;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: root.detail != "" ? Theme.warning-border : Theme.border;
+            clip: true;
+
+            if root.detail != "" : Text {
+                x: 16px;
+                width: parent.width - 32px;
+                height: parent.height;
+                text: root.detail;
+                color: Theme.warning-text;
+                font-size: 10px;
+                wrap: word-wrap;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            if root.detail == "" : Rectangle {
+                x: 12px;
+                y: 7px;
+                width: parent.width - 24px;
+                height: parent.height - 14px;
+                background: Theme.panel;
+                border-width: test-area.has-hover ? 2px : 1px;
+                border-color: test-area.has-hover ? Theme.accent : Theme.border;
+                border-radius: 6px;
+                clip: true;
+
+                HorizontalLayout {
+                    x: root.track-offset - 188px;
+                    y: 0px;
+                    width: 900px;
+                    height: parent.height;
+                    spacing: 8px;
+
+                    for label in ["01", "02", "03", "04", "05", "06", "07", "08", "09"] : Rectangle {
+                        width: 92px;
+                        background: transparent;
+                        horizontal-stretch: 0;
+
+                        Rectangle {
+                            x: 0px;
+                            y: 11px;
+                            width: 1px;
+                            height: parent.height - 22px;
+                            background: Theme.border;
+                        }
+
+                        Text {
+                            x: 10px;
+                            width: parent.width - 10px;
+                            height: parent.height;
+                            text: label;
+                            color: Theme.text-faint;
+                            font-size: 11px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                if !root.moved : Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: 122px;
+                    height: 28px;
+                    background: Theme.panel;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    border-radius: 14px;
+
+                    Text {
+                        width: parent.width;
+                        height: parent.height;
+                        text: @tr("Roll the thumb wheel");
+                        color: Theme.text-muted;
+                        font-size: 10px;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                test-area := TouchArea {
+                    mouse-cursor: col-resize;
+                    scroll-event(event) => {
+                        if (event.delta-x != 0px) {
+                            root.track-offset = clamp(
+                                root.track-offset + event.delta-x,
+                                -260px,
+                                260px,
+                            );
+                            root.moved = true;
+                            return accept;
+                        }
+                        return reject;
+                    }
+                }
+            }
+        }
+    }
+}
+
+component ToggleRow inherits Rectangle {
+    in property <string> title;
+    in-out property <bool> checked;
+    in property <bool> enabled: true;
+    callback edited();
+
+    height: 52px;
+    background: transparent;
+    opacity: root.enabled ? 1 : 0.45;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 18px;
+
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+
+        VerticalLayout {
+            width: 44px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            AccentSwitch {
+                width: 44px;
+                label: root.title;
+                checked <=> root.checked;
+                enabled: root.enabled;
+                toggled => { root.edited(); }
+                vertical-stretch: 0;
+            }
+        }
+    }
+}
+
+component SelectRow inherits Rectangle {
+    in property <string> title;
+    in property <[string]> options;
+    in-out property <int> current-index;
+    in property <string> badge;
+    in property <BadgeTone> badge-tone: BadgeTone.neutral;
+    in property <bool> enabled: true;
+    callback edited();
+
+    height: 54px;
+    background: transparent;
+    opacity: root.enabled ? 1 : 0.45;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 18px;
+
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+
+        if root.badge != "" : VerticalLayout {
+            width: 66px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            MetaBadge {
+                width: parent.width;
+                title: root.badge;
+                tone: root.badge-tone;
+            }
+        }
+
+        VerticalLayout {
+            width: 196px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            FormComboBox {
+                width: parent.width;
+                height: 34px;
+                accessible-label: root.title;
+                model: root.options;
+                current-index <=> root.current-index;
+                enabled: root.enabled;
+                selected(value) => { root.edited(); }
+                vertical-stretch: 0;
+            }
+        }
+    }
+}
+
+component WheelModeRow inherits Rectangle {
+    in-out property <int> current-index;
+    callback edited();
+
+    height: 54px;
+    background: transparent;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 18px;
+
+        Text {
+            text: @tr("Scroll mode");
+            color: Theme.text;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+
+        VerticalLayout {
+            width: 196px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            FormComboBox {
+                width: parent.width;
+                height: 34px;
+                accessible-label: @tr("Scroll mode");
+                model: [
+                    SettingsTranslations.wheel-mode(0),
+                    SettingsTranslations.wheel-mode(1),
+                    SettingsTranslations.wheel-mode(2),
+                ];
+                current-index <=> root.current-index;
+                selected(value) => { root.edited(); }
+                vertical-stretch: 0;
+            }
+        }
+    }
+}
+
+component DeviceListItem inherits Rectangle {
+    in property <string> name;
+    in property <string> connection;
+    in property <string> battery;
+    in property <string> accessibility-status;
+    in property <bool> ready;
+    in property <bool> busy;
+    in property <bool> is-mouse;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 72px;
+    background: root.selected ? Theme.sidebar-selected : device-area.has-hover ? Theme.sidebar-hover : transparent;
+    border-radius: 7px;
+    border-width: device-area.has-focus ? 2px : Theme.high-contrast && root.selected ? 1px : 0px;
+    border-color: Theme.accent;
+    accessible-role: list-item;
+    accessible-label: root.name
+        + ", " + root.connection
+        + (root.battery == "" ? "" : ", " + root.battery)
+        + ", " + root.accessibility-status;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 11px;
+
+        VerticalLayout {
+            width: 34px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            Rectangle {
+                width: 34px;
+                height: 46px;
+                background: transparent;
+                vertical-stretch: 0;
+
+                if root.is-mouse : Path {
+                    x: 5px;
+                    y: 2px;
+                    width: 24px;
+                    height: 40px;
+                    viewbox-x: 0;
+                    viewbox-y: 0;
+                    viewbox-width: 24;
+                    viewbox-height: 40;
+                    commands: "M12 1 C5 1 2 7 2 16 L2 25 C2 34 6 39 12 39 C18 39 22 34 22 25 L22 16 C22 7 19 1 12 1 Z";
+                    fill: root.selected ? Theme.sidebar-text : Theme.sidebar-icon;
+                    stroke: root.selected ? Theme.sidebar-text : Theme.sidebar-muted;
+                    stroke-width: 1px;
+                }
+
+                if root.is-mouse : Rectangle {
+                    x: 16px;
+                    y: 5px;
+                    width: 1px;
+                    height: 13px;
+                    background: root.selected ? Theme.sidebar-muted : Theme.sidebar-text;
+                }
+
+                if root.is-mouse : Rectangle {
+                    x: 13px;
+                    y: 8px;
+                    width: 7px;
+                    height: 11px;
+                    border-radius: 4px;
+                    background: Theme.sidebar;
+                }
+
+                if !root.is-mouse : BoltReceiverDrawing {
+                    x: 3px;
+                    y: 6px;
+                    width: 28px;
+                    height: 34px;
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 1px;
+            alignment: center;
+
+            Text {
+                height: 21px;
+                text: root.name;
+                color: Theme.sidebar-text;
+                font-size: 11px;
+                font-weight: root.selected ? 650 : 500;
+                overflow: elide;
+                vertical-stretch: 0;
+            }
+
+            HorizontalLayout {
+                height: 18px;
+                spacing: 6px;
+                vertical-stretch: 0;
+
+                VerticalLayout {
+                    width: 6px;
+                    horizontal-stretch: 0;
+                    alignment: center;
+
+                    Rectangle {
+                        width: 6px;
+                        height: 6px;
+                        border-radius: 3px;
+                        background: root.busy ? Theme.accent
+                            : root.ready ? Theme.success
+                            : Theme.warning;
+                        vertical-stretch: 0;
+                    }
+                }
+
+                Text {
+                    text: root.busy
+                        ? root.connection + "  ·  " + root.accessibility-status
+                        : root.battery == ""
+                        ? root.connection + (root.ready ? "" : "  ·  " + root.accessibility-status)
+                        : root.connection + "  ·  " + root.battery;
+                    color: Theme.sidebar-muted;
+                    font-size: 10px;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+    device-area := FocusableArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.clicked(); }
+    }
+}
+
+component SidebarSettingsItem inherits Rectangle {
+    in property <string> title;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 42px;
+    border-radius: 7px;
+    border-width: settings-area.has-focus ? 2px : Theme.high-contrast && root.selected ? 1px : 0px;
+    border-color: Theme.accent;
+    background: root.selected ? Theme.sidebar-selected : settings-area.has-hover ? Theme.sidebar-hover : transparent;
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-action-default => { root.clicked(); }
+    vertical-stretch: 0;
+
+    Rectangle {
+        x: 12px;
+        y: 12px;
+        width: 18px;
+        height: 18px;
+        background: transparent;
+
+        Rectangle { x: 1px; y: 3px; width: 16px; height: 1px; background: root.selected ? Theme.sidebar-text : Theme.sidebar-muted; }
+        Rectangle { x: 1px; y: 9px; width: 16px; height: 1px; background: root.selected ? Theme.sidebar-text : Theme.sidebar-muted; }
+        Rectangle { x: 1px; y: 15px; width: 16px; height: 1px; background: root.selected ? Theme.sidebar-text : Theme.sidebar-muted; }
+        Rectangle { x: 5px; y: 1px; width: 4px; height: 5px; border-radius: 2px; background: root.selected ? Theme.sidebar-text : Theme.sidebar-icon; }
+        Rectangle { x: 11px; y: 7px; width: 4px; height: 5px; border-radius: 2px; background: root.selected ? Theme.sidebar-text : Theme.sidebar-icon; }
+        Rectangle { x: 3px; y: 13px; width: 4px; height: 5px; border-radius: 2px; background: root.selected ? Theme.sidebar-text : Theme.sidebar-icon; }
+    }
+
+    Text {
+        x: 42px;
+        width: parent.width - 54px;
+        height: parent.height;
+        text: root.title;
+        color: root.selected ? Theme.sidebar-text : Theme.sidebar-muted;
+        font-size: 11px;
+        font-weight: root.selected ? 650 : 500;
+        vertical-alignment: center;
+    }
+
+    settings-area := FocusableArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.clicked(); }
+    }
+}
+
+component TaskTab inherits Rectangle {
+    in-out property <int> current-index;
+    in property <int> index;
+    in property <string> title;
+    in property <bool> enabled: true;
+
+    width: 148px;
+    background: root.enabled
+        ? (tab-area.has-focus ? Theme.selected : tab-area.has-hover ? Theme.surface : transparent)
+        : transparent;
+    opacity: root.enabled ? 1 : 0.56;
+    accessible-role: tab;
+    accessible-label: root.title;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if (root.enabled) { root.current-index = root.index; } }
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.title;
+        color: root.current-index == root.index ? Theme.text : Theme.text-muted;
+        font-size: 11px;
+        font-weight: root.current-index == root.index ? 650 : 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    Rectangle {
+        x: 22px;
+        y: parent.height - 3px;
+        width: parent.width - 44px;
+        height: 3px;
+        border-radius: 2px;
+        background: root.current-index == root.index ? Theme.accent : transparent;
+    }
+
+    tab-area := FocusableArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.enabled;
+        clicked => { root.current-index = root.index; }
+    }
+}
+
+component PageHeading inherits VerticalLayout {
+    in property <string> title;
+
+    height: 28px;
+    spacing: 0px;
+    vertical-stretch: 0;
+
+    Text {
+        height: 28px;
+        text: root.title;
+        color: Theme.text;
+        font-size: 17px;
+        font-weight: 650;
+        vertical-alignment: center;
+        vertical-stretch: 0;
+    }
+}
+
+component DeviceDrawing inherits Rectangle {
+    in property <bool> connected;
+    in property <bool> detected;
+    in property <bool> busy: false;
+    in property <bool> receiver-detected: false;
+    in property <int> interface-count: 0;
+    in property <string> connection-label;
+    in property <float> pointer-speed;
+    in property <string> wheel-mode;
+    in property <string> thumb-mode;
+    property <string> status-label:
+        root.busy ? @tr("Identifying…")
+        : root.connected ? @tr("Connected")
+        : root.detected ? @tr("Detected")
+        : @tr("Offline");
+
+    background: Theme.panel;
+    border-width: 1px;
+    border-color: Theme.border;
+    border-radius: 8px;
+
+    Text {
+        x: 20px;
+        y: 17px;
+        width: parent.width - 40px;
+        height: 20px;
+        text: root.receiver-detected
+            ? @tr("Receiver overview")
+            : root.detected ? @tr("Device overview")
+            : @tr("Preview");
+        color: Theme.text;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    Rectangle {
+        x: 20px;
+        y: 43px;
+        width: root.busy ? 102px : 88px;
+        height: 24px;
+        border-radius: 12px;
+        background: root.busy ? Theme.accent-soft
+            : root.connected ? Theme.success-soft
+            : Theme.surface;
+
+        Rectangle {
+            x: 10px;
+            y: 8px;
+            width: 7px;
+            height: 7px;
+            border-radius: 4px;
+            background: root.busy ? Theme.accent
+                : root.connected ? Theme.success
+                : root.detected ? Theme.text-muted
+                : Theme.text-faint;
+        }
+
+        Text {
+            x: 23px;
+            width: 57px;
+            height: parent.height;
+            text: root.status-label;
+            color: root.busy ? Theme.accent
+                : root.connected ? Theme.success
+                : Theme.text-muted;
+            font-size: 10px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    if !root.receiver-detected : Master3sDrawing {
+        width: root.connected ? 190px : 152px;
+        height: root.connected ? 306px : 244px;
+        x: (parent.width - self.width) / 2;
+        y: root.connected ? 76px : 82px;
+        connected: root.connected;
+    }
+
+    if root.receiver-detected : BoltReceiverDrawing {
+        x: (parent.width - self.width) / 2;
+        y: 91px;
+        width: 190px;
+        height: 210px;
+    }
+
+    Rectangle {
+        x: 20px;
+        y: parent.height - 82px;
+        width: parent.width - 40px;
+        height: 62px;
+        background: Theme.surface;
+        border-radius: 6px;
+
+        if !root.receiver-detected : HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            spacing: 0px;
+
+            VerticalLayout {
+                spacing: 0px;
+                alignment: center;
+                Text { height: 18px; text: round(root.pointer-speed) + "%"; color: Theme.text; font-size: 12px; font-weight: 650; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+                Text { height: 18px; text: @tr("Pointer"); color: Theme.text-muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+            }
+            VerticalLayout {
+                width: 1px;
+                horizontal-stretch: 0;
+                alignment: center;
+                Rectangle { width: 1px; height: 30px; background: Theme.border; vertical-stretch: 0; }
+            }
+            VerticalLayout {
+                spacing: 0px;
+                alignment: center;
+                Text { height: 18px; text: root.wheel-mode; color: Theme.text; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; overflow: elide; vertical-stretch: 0; }
+                Text { height: 18px; text: @tr("Main wheel"); color: Theme.text-muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+            }
+            VerticalLayout {
+                width: 1px;
+                horizontal-stretch: 0;
+                alignment: center;
+                Rectangle { width: 1px; height: 30px; background: Theme.border; vertical-stretch: 0; }
+            }
+            VerticalLayout {
+                spacing: 0px;
+                alignment: center;
+                Text { height: 18px; text: root.thumb-mode; color: Theme.text; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; overflow: elide; vertical-stretch: 0; }
+                Text { height: 18px; text: @tr("Thumb wheel"); color: Theme.text-muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+            }
+        }
+
+        if root.receiver-detected : HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            spacing: 0px;
+
+            VerticalLayout {
+                spacing: 0px;
+                alignment: center;
+                Text { height: 18px; text: root.connection-label; color: Theme.text; font-size: 11px; font-weight: 650; horizontal-alignment: center; vertical-alignment: center; overflow: elide; vertical-stretch: 0; }
+                Text { height: 18px; text: @tr("Transport"); color: Theme.text-muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+            }
+            VerticalLayout {
+                width: 1px;
+                horizontal-stretch: 0;
+                alignment: center;
+                Rectangle { width: 1px; height: 30px; background: Theme.border; vertical-stretch: 0; }
+            }
+            VerticalLayout {
+                spacing: 0px;
+                alignment: center;
+                Text { height: 18px; text: @tr("USB"); color: Theme.text; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+                Text { height: 18px; text: @tr("Interface"); color: Theme.text-muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+            }
+            VerticalLayout {
+                width: 1px;
+                horizontal-stretch: 0;
+                alignment: center;
+                Rectangle { width: 1px; height: 30px; background: Theme.border; vertical-stretch: 0; }
+            }
+            VerticalLayout {
+                spacing: 0px;
+                alignment: center;
+                Text { height: 18px; text: root.interface-count; color: Theme.text; font-size: 11px; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+                Text { height: 18px; text: @tr("Interfaces"); color: Theme.text-muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+            }
+        }
+    }
+}
+
+component Hotspot inherits Rectangle {
+    in property <string> number;
+    in property <string> title;
+    in property <bool> selected;
+    callback clicked();
+
+    width: 28px;
+    height: 28px;
+    border-radius: 14px;
+    background: root.selected ? Theme.accent-bg : Theme.panel;
+    border-width: 2px;
+    border-color: hotspot-area.has-focus ? Theme.accent : root.selected ? Theme.accent-bg : Theme.control-border;
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-action-default => { root.clicked(); }
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.number;
+        color: root.selected ? Theme.accent-text : Theme.text;
+        font-size: 9px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    hotspot-area := FocusableArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.clicked(); }
+    }
+}
+
+component ControlChip inherits Rectangle {
+    in property <string> number;
+    in property <string> title;
+    in property <string> action;
+    in property <bool> selected;
+    callback clicked();
+
+    width: 168px;
+    height: 56px;
+    background: root.selected ? Theme.selected : chip-area.has-hover ? Theme.hover : Theme.panel;
+    border-width: 1px;
+    border-color: chip-area.has-focus ? Theme.accent : root.selected ? Theme.accent : Theme.control-border;
+    border-radius: 6px;
+    accessible-role: button;
+    accessible-label: root.title + ", " + root.action;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 9px;
+
+        VerticalLayout {
+            width: 22px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            Rectangle {
+                width: 22px;
+                height: 22px;
+                border-radius: 11px;
+                background: root.selected ? Theme.accent-bg : Theme.surface;
+                border-width: root.selected ? 0px : 1px;
+                border-color: Theme.control-border;
+                vertical-stretch: 0;
+
+                Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: root.number;
+                    color: root.selected ? Theme.accent-text : Theme.text-muted;
+                    font-size: 9px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 0px;
+            alignment: center;
+            Text { height: 19px; text: root.title; color: Theme.text; font-size: 10px; font-weight: 600; overflow: elide; vertical-stretch: 0; }
+            Text { height: 17px; text: root.action; color: root.selected ? Theme.accent : Theme.text-muted; font-size: 10px; overflow: elide; vertical-stretch: 0; }
+        }
+    }
+
+    chip-area := FocusableArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.clicked(); }
+    }
+}
+
+component ButtonDrawing inherits Rectangle {
+    in property <string> back-action;
+    in property <string> forward-action;
+    in property <string> gesture-action;
+    in property <string> mode-shift-action;
+    in property <string> middle-action;
+    in-out property <int> selected-button-index;
+
+    background: Theme.panel;
+    border-width: 1px;
+    border-color: Theme.border;
+    border-radius: 8px;
+    clip: true;
+
+    Text {
+        x: 18px;
+        y: 14px;
+        width: parent.width - 36px;
+        height: 20px;
+        text: @tr("Select a control on the mouse");
+        color: Theme.text-muted;
+        font-size: 11px;
+    }
+
+    Master3sDrawing {
+        x: (parent.width - self.width) / 2;
+        y: 55px;
+        width: 203px;
+        height: 328px;
+        connected: true;
+    }
+
+    ControlChip { x: 18px; y: 150px; number: "2"; title: SettingsTranslations.button(1); action: root.forward-action; selected: root.selected-button-index == 1; clicked => { root.selected-button-index = 1; } }
+    Rectangle { x: 186px; y: 177px; width: 19px; height: 1px; background: Theme.control-border; }
+    Rectangle { x: 205px; y: 177px; width: 1px; height: 24px; background: Theme.control-border; }
+    Rectangle { x: 205px; y: 201px; width: parent.width / 2 - 232px; height: 1px; background: Theme.control-border; }
+    ControlChip { x: 18px; y: 245px; number: "1"; title: SettingsTranslations.button(0); action: root.back-action; selected: root.selected-button-index == 0; clicked => { root.selected-button-index = 0; } }
+    Rectangle { x: 186px; y: 272px; width: 19px; height: 1px; background: Theme.control-border; }
+    Rectangle { x: 205px; y: 236px; width: 1px; height: 36px; background: Theme.control-border; }
+    Rectangle { x: 205px; y: 236px; width: parent.width / 2 - 221px; height: 1px; background: Theme.control-border; }
+
+    ControlChip { x: parent.width - 186px; y: 89px; number: "5"; title: SettingsTranslations.button(4); action: root.middle-action; selected: root.selected-button-index == 4; clicked => { root.selected-button-index = 4; } }
+    Rectangle { x: parent.width / 2 + 41px; y: 116px; width: parent.width / 2 - 227px; height: 1px; background: Theme.control-border; }
+    ControlChip { x: parent.width - 186px; y: 151px; number: "4"; title: SettingsTranslations.button(3); action: root.mode-shift-action; selected: root.selected-button-index == 3; clicked => { root.selected-button-index = 3; } }
+    Rectangle { x: parent.width / 2 + 61px; y: 178px; width: parent.width / 2 - 247px; height: 1px; background: Theme.control-border; }
+
+    ControlChip { x: (parent.width - 168px) / 2; y: parent.height - 64px; number: "3"; title: SettingsTranslations.button(2); action: root.gesture-action; selected: root.selected-button-index == 2; clicked => { root.selected-button-index = 2; } }
+    Rectangle { x: parent.width / 2 - 82px; y: 251px; width: 1px; height: parent.height - 315px; background: Theme.control-border; }
+    Rectangle { x: parent.width / 2 - 82px; y: parent.height - 64px; width: 42px; height: 1px; background: Theme.control-border; }
+
+    Hotspot { x: parent.width / 2 - 30px; y: 222px; number: "1"; title: SettingsTranslations.button(0); selected: root.selected-button-index == 0; clicked => { root.selected-button-index = 0; } }
+    Hotspot { x: parent.width / 2 - 41px; y: 188px; number: "2"; title: SettingsTranslations.button(1); selected: root.selected-button-index == 1; clicked => { root.selected-button-index = 1; } }
+    Hotspot { x: parent.width / 2 - 96px; y: 237px; number: "3"; title: SettingsTranslations.button(2); selected: root.selected-button-index == 2; clicked => { root.selected-button-index = 2; } }
+    Hotspot { x: parent.width / 2 + 47px; y: 164px; number: "4"; title: SettingsTranslations.button(3); selected: root.selected-button-index == 3; clicked => { root.selected-button-index = 3; } }
+    Hotspot { x: parent.width / 2 + 27px; y: 102px; number: "5"; title: SettingsTranslations.button(4); selected: root.selected-button-index == 4; clicked => { root.selected-button-index = 4; } }
+}
+
+component AssignmentRow inherits Rectangle {
+    in property <string> number;
+    in property <string> title;
+    in property <string> action;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 42px;
+    background: root.selected ? Theme.selected : assignment-area.has-hover ? Theme.hover : transparent;
+    border-radius: 5px;
+    border-width: assignment-area.has-focus ? 1px : 0px;
+    border-color: Theme.accent;
+    accessible-role: list-item;
+    accessible-label: root.title + ", " + root.action;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 9px;
+        padding-right: 10px;
+        spacing: 9px;
+
+        Text { width: 18px; text: root.number; color: root.selected ? Theme.accent : Theme.text-faint; font-size: 9px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; horizontal-stretch: 0; }
+        Text { text: root.title; color: Theme.text; font-size: 10px; font-weight: 600; overflow: elide; vertical-alignment: center; }
+        Text { width: 108px; text: root.action; color: root.selected ? Theme.accent : Theme.text-muted; font-size: 10px; overflow: elide; horizontal-alignment: right; vertical-alignment: center; horizontal-stretch: 0; }
+    }
+
+    assignment-area := FocusableArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.clicked(); }
+    }
+}
+
+component ProfileRow inherits Rectangle {
+    in property <string> app;
+    in property <string> initial;
+    in property <string> summary;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 66px;
+    background: root.selected ? Theme.selected : profile-area.has-hover ? Theme.hover : transparent;
+    border-radius: 6px;
+    border-width: profile-area.has-focus ? 1px : 0px;
+    border-color: Theme.accent;
+    accessible-role: list-item;
+    accessible-label: root.app + ", " + root.summary;
+    accessible-action-default => { root.clicked(); }
+
+    Rectangle {
+        x: 0px;
+        y: 9px;
+        width: 3px;
+        height: 48px;
+        border-radius: 2px;
+        background: root.selected ? Theme.accent-bg : transparent;
+    }
+
+    HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 10px;
+        spacing: 10px;
+
+        VerticalLayout {
+            width: 32px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 7px;
+                background: root.selected ? Theme.panel : Theme.surface;
+                border-width: 1px;
+                border-color: Theme.border;
+                vertical-stretch: 0;
+
+                Text { width: parent.width; height: parent.height; text: root.initial; color: Theme.text; font-size: 11px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+            }
+        }
+
+        VerticalLayout {
+            spacing: 1px;
+            alignment: center;
+            Text { height: 20px; text: root.app; color: Theme.text; font-size: 11px; font-weight: 600; overflow: elide; vertical-stretch: 0; }
+            Text { height: 18px; text: root.summary; color: Theme.text-muted; font-size: 10px; overflow: elide; vertical-stretch: 0; }
+        }
+    }
+
+    profile-area := FocusableArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.clicked(); }
+    }
+}
+
+component ChangeRow inherits Rectangle {
+    in property <PlanScope> scope;
+    in property <string> title;
+
+    height: 44px;
+    background: transparent;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 11px;
+
+        VerticalLayout {
+            width: 8px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.scope == PlanScope.device ? Theme.accent : root.scope == PlanScope.local ? Theme.success : Theme.warning;
+                vertical-stretch: 0;
+            }
+        }
+
+        Text { text: root.title; color: Theme.text; font-size: 10px; overflow: elide; vertical-alignment: center; }
+    }
+
+    Rectangle { x: 12px; y: parent.height - 1px; width: parent.width - 24px; height: 1px; background: Theme.border; }
+}
+
+component SettingsSelectRow inherits Rectangle {
+    in property <string> title;
+    in property <[string]> options;
+    in-out property <int> current-index;
+    callback selected(int);
+
+    height: 64px;
+    background: transparent;
+    vertical-stretch: 0;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 18px;
+
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+
+        VerticalLayout {
+            width: 224px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            FormComboBox {
+                width: parent.width;
+                height: 36px;
+                accessible-label: root.title;
+                model: root.options;
+                current-index <=> root.current-index;
+                selected(value) => { root.selected(root.current-index); }
+                vertical-stretch: 0;
+            }
+        }
+    }
+}
+
+component SettingsRuntimeRow inherits Rectangle {
+    in property <DesktopRuntimeState> state;
+    in-out property <bool> desired-enabled;
+    in property <bool> busy;
+    in property <bool> supported;
+    in property <string> detail;
+    callback enabled-changed(bool);
+    callback restart();
+
+    property <string> state-label:
+        root.busy || root.state == DesktopRuntimeState.starting ? @tr("Starting…")
+        : root.state == DesktopRuntimeState.running ? @tr("Running")
+        : root.state == DesktopRuntimeState.stopped ? @tr("Off")
+        : @tr("Needs attention");
+    property <BadgeTone> state-tone:
+        root.state == DesktopRuntimeState.running ? BadgeTone.success
+        : root.state == DesktopRuntimeState.degraded ? BadgeTone.warning
+        : BadgeTone.neutral;
+
+    height: root.state == DesktopRuntimeState.degraded && root.detail != "" ? 76px : 64px;
+    background: transparent;
+    vertical-stretch: 0;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 12px;
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                height: 20px;
+                text: @tr("Background operations");
+                color: Theme.text;
+                font-size: 12px;
+                font-weight: 600;
+                vertical-alignment: center;
+                vertical-stretch: 0;
+            }
+
+            if root.state == DesktopRuntimeState.degraded && root.detail != "" : Text {
+                height: 18px;
+                text: root.detail;
+                color: Theme.warning;
+                font-size: 10px;
+                overflow: elide;
+                vertical-alignment: center;
+                vertical-stretch: 0;
+            }
+        }
+
+        VerticalLayout {
+            width: 92px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            MetaBadge {
+                title: root.state-label;
+                tone: root.state-tone;
+            }
+        }
+
+        VerticalLayout {
+            width: 78px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            ActionButton {
+                width: 78px;
+                height: 32px;
+                title: root.state == DesktopRuntimeState.degraded ? @tr("Retry") : @tr("Restart");
+                enabled: root.supported
+                    && !root.busy
+                    && (root.desired-enabled || root.state == DesktopRuntimeState.degraded);
+                clicked => { root.restart(); }
+                vertical-stretch: 0;
+            }
+        }
+
+        VerticalLayout {
+            width: 44px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            AccentSwitch {
+                width: 44px;
+                label: @tr("Background operations");
+                checked <=> root.desired-enabled;
+                enabled: root.supported && !root.busy;
+                toggled => { root.enabled-changed(self.checked); }
+                vertical-stretch: 0;
+            }
+        }
+    }
+}
+
+component ConfirmationOverlay inherits Rectangle {
+    in property <string> title;
+    in property <string> message;
+    in property <string> confirm-title;
+    in property <bool> destructive: false;
+    callback accepted();
+    callback cancelled();
+
+    background: Theme.overlay;
+    forward-focus: modal-focus;
+    init => { modal-focus.focus(); }
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    modal-focus := FocusScope {
+        width: 0px;
+        height: 0px;
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.cancelled();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 430px;
+        height: 214px;
+        background: Theme.panel;
+        border-width: 1px;
+        border-color: Theme.control-border;
+        border-radius: 10px;
+        accessible-role: groupbox;
+        accessible-label: root.title;
+
+        VerticalLayout {
+            padding: 0px;
+            spacing: 0px;
+
+            VerticalLayout {
+                padding-left: 24px;
+                padding-right: 24px;
+                padding-top: 22px;
+                padding-bottom: 18px;
+                spacing: 10px;
+
+                Text {
+                    height: 28px;
+                    text: root.title;
+                    color: Theme.text;
+                    font-size: 18px;
+                    font-weight: 650;
+                    vertical-stretch: 0;
+                }
+                Text {
+                    text: root.message;
+                    color: Theme.text-muted;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+            }
+
+            Divider {}
+
+            HorizontalLayout {
+                height: 70px;
+                padding-left: 24px;
+                padding-right: 24px;
+                padding-top: 17px;
+                padding-bottom: 17px;
+                spacing: 10px;
+                vertical-stretch: 0;
+
+                Rectangle { horizontal-stretch: 1; }
+                ActionButton {
+                    width: 88px;
+                    height: 36px;
+                    title: @tr("Cancel");
+                    clicked => { root.cancelled(); }
+                    horizontal-stretch: 0;
+                }
+                ActionButton {
+                    width: 132px;
+                    height: 36px;
+                    title: root.confirm-title;
+                    destructive: root.destructive;
+                    primary: !root.destructive;
+                    clicked => { root.accepted(); }
+                    horizontal-stretch: 0;
+                }
+            }
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    in property <[DeviceRow]> devices;
+    in property <[AppProfileRow]> app-profile-rows;
+    in property <[PlanRow]> plan-rows;
+    in property <DeviceRow> selected-device;
+    in property <bool> rescan-enabled: false;
+    in property <bool> rescan-in-progress: false;
+    in-out property <bool> confirm-visible: false;
+    in-out property <bool> revert-confirm-visible: false;
+    in-out property <bool> quit-confirm-visible: false;
+    in-out property <int> confirm-change-count: 0;
+    in-out property <UiStatus> status;
+    in-out property <bool> draft-dirty: false;
+    in-out property <int> language-index: 0;
+    in-out property <int> theme-index: 0;
+    in-out property <int> close-behavior-index: 0;
+    in-out property <bool> high-contrast: false;
+    in property <DesktopRuntimeState> runtime-state: DesktopRuntimeState.running;
+    in-out property <bool> runtime-enabled: true;
+    in property <bool> runtime-busy: false;
+    in property <bool> runtime-management-supported: false;
+    in property <bool> app-profiles-supported: false;
+    in property <string> runtime-detail;
+    in-out property <bool> horizontal-scroll-test-open: false;
+    in-out property <int> horizontal-scroll-test-mode-index: 1;
+    in property <bool> horizontal-scroll-test-active: false;
+    in property <bool> horizontal-scroll-test-busy: false;
+    in property <bool> horizontal-scroll-test-supported: false;
+    in property <string> horizontal-scroll-test-detail;
+    in-out property <bool> horizontal-scroll-test-moved: false;
+
+    out property <bool> selected-device-ready:
+        root.selected-device-index >= 0
+        && root.selected-device.access-state == DeviceAccessState.ready
+        && root.selected-device.discovery-state == DeviceDiscoveryState.idle;
+    out property <bool> device-discovering:
+        root.selected-device-index >= 0
+        && root.selected-device.discovery-state == DeviceDiscoveryState.enriching;
+    out property <bool> selected-device-is-receiver:
+        root.selected-device-index >= 0 && !root.selected-device.is-mouse;
+
+    callback save-for-later();
+    callback apply-requested();
+    callback cancel-apply();
+    callback save-app-profile();
+    callback remove-app-profile();
+    callback select-app-profile(int);
+    callback select-device(int);
+    callback rescan-devices();
+    callback revert-current-device();
+    callback language-selected(int);
+    callback theme-selected(int);
+    callback close-behavior-selected(int);
+    callback runtime-enabled-changed(bool);
+    callback restart-runtime();
+    callback confirm-quit();
+    callback cancel-quit();
+    callback settings-edited();
+    callback horizontal-scroll-test-toggled(bool);
+    callback horizontal-scroll-test-mode-selected(int);
+    callback horizontal-scroll-speed-edited();
+
+    in-out property <float> pointer-speed: 100;
+    in-out property <float> smart-shift-threshold: 45;
+    in-out property <bool> high-resolution-scroll: true;
+    in-out property <int> scroll-direction-index: 0;
+    in-out property <int> wheel-mode-index: 2;
+    in-out property <int> thumb-wheel-index: 0;
+    in-out property <float> thumb-wheel-speed: 100;
+    in-out property <int> back-action-index: 10;
+    in-out property <int> forward-action-index: 10;
+    in-out property <int> gesture-action-index: 10;
+    in-out property <int> mode-shift-action-index: 10;
+    in-out property <int> middle-action-index: 10;
+    in-out property <string> app-profile-editor-app;
+    in-out property <float> app-profile-editor-pointer-speed: 100;
+    in-out property <int> app-profile-editor-thumb-wheel-index: 0;
+    in-out property <int> page-index: 0;
+    in-out property <int> selected-button-index: 2;
+    in-out property <int> selected-app-profile-index: -1;
+    in-out property <int> selected-device-index: -1;
+
+    out property <bool> local-actions-configured:
+        root.back-action-index != 10
+        || root.forward-action-index != 10
+        || root.gesture-action-index != 10
+        || root.mode-shift-action-index != 10
+        || root.middle-action-index != 10
+        || (root.thumb-wheel-index >= 1 && root.thumb-wheel-index <= 3)
+        || (root.thumb-wheel-index == 0 && round(root.thumb-wheel-speed) != 100)
+        || root.app-profile-rows.length > 0;
+    out property <bool> selected-action-requires-runtime:
+        root.selected-button-index == 0 ? root.back-action-index != 10
+        : root.selected-button-index == 1 ? root.forward-action-index != 10
+        : root.selected-button-index == 2 ? root.gesture-action-index != 10
+        : root.selected-button-index == 3 ? root.mode-shift-action-index != 10
+        : root.middle-action-index != 10;
+    out property <bool> horizontal-scroll-test-enabled:
+        root.selected-device-ready
+        && root.horizontal-scroll-test-supported
+        && root.runtime-state == DesktopRuntimeState.running
+        && root.thumb-wheel-index == 0;
+
+    function mark-dirty() {
+        root.settings-edited();
+        root.confirm-visible = false;
+        root.status = {};
+    }
+
+    function apply-theme() {
+        Palette.color-scheme = root.theme-index == 1 ? ColorScheme.light
+            : root.theme-index == 2 ? ColorScheme.dark
+            : ColorScheme.unknown;
+    }
+
+    property <[string]> action-options: [
+        SettingsTranslations.action(0),
+        SettingsTranslations.action(1),
+        SettingsTranslations.action(2),
+        SettingsTranslations.action(3),
+        SettingsTranslations.action(4),
+        SettingsTranslations.action(5),
+        SettingsTranslations.action(6),
+        SettingsTranslations.action(7),
+        SettingsTranslations.action(8),
+        SettingsTranslations.action(9),
+        SettingsTranslations.action(10),
+    ];
+    property <[string]> thumb-options: [
+        SettingsTranslations.thumb-wheel(0),
+        SettingsTranslations.thumb-wheel(1),
+        SettingsTranslations.thumb-wheel(2),
+        SettingsTranslations.thumb-wheel(3),
+        SettingsTranslations.thumb-wheel(4),
+    ];
+    property <[string]> wheel-options: [
+        SettingsTranslations.wheel-mode(0),
+        SettingsTranslations.wheel-mode(1),
+        SettingsTranslations.wheel-mode(2),
+    ];
+    property <[string]> language-options: [
+        @tr("System language"),
+        "English",
+        "简体中文",
+    ];
+    property <[string]> theme-options: [
+        @tr("System theme"),
+        @tr("Light"),
+        @tr("Dark"),
+    ];
+    property <[string]> close-behavior-options: [
+        @tr("Quit dogi"),
+        @tr("Keep running in tray"),
+    ];
+
+    title: "dogi";
+    min-width: 1180px;
+    min-height: 720px;
+    preferred-width: 1260px;
+    preferred-height: 780px;
+    background: Theme.canvas;
+
+    init => {
+        Theme.high-contrast = root.high-contrast;
+        root.apply-theme();
+    }
+    changed theme-index => { root.apply-theme(); }
+    changed high-contrast => { Theme.high-contrast = root.high-contrast; }
+    changed page-index => {
+        if (root.page-index != 0 && root.horizontal-scroll-test-open) {
+            root.horizontal-scroll-test-open = false;
+            root.horizontal-scroll-test-toggled(false);
+        }
+    }
+
+    HorizontalLayout {
+        padding: 0px;
+        spacing: 0px;
+
+        Rectangle {
+            width: 244px;
+            background: Theme.sidebar;
+
+            VerticalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                padding-top: 14px;
+                padding-bottom: 14px;
+                spacing: 8px;
+
+                HorizontalLayout {
+                    height: 48px;
+                    padding-left: 5px;
+                    spacing: 0px;
+                    vertical-stretch: 0;
+
+                    VerticalLayout {
+                        width: 62px;
+                        horizontal-stretch: 0;
+                        alignment: center;
+
+                        BrandWordmark {
+                            width: 62px;
+                            height: 28px;
+                            vertical-stretch: 0;
+                        }
+                    }
+
+                    Rectangle {}
+                }
+
+                Rectangle { height: 1px; background: Theme.sidebar-divider; vertical-stretch: 0; }
+
+                HorizontalLayout {
+                    height: 38px;
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    vertical-stretch: 0;
+
+                    Text { text: @tr("Devices"); color: Theme.sidebar-text; font-size: 11px; font-weight: 650; vertical-alignment: center; }
+                    Text { width: 30px; text: root.devices.length; color: Theme.sidebar-muted; font-size: 10px; horizontal-alignment: right; vertical-alignment: center; horizontal-stretch: 0; }
+                }
+
+                if root.devices.length == 0 : VerticalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    Rectangle { vertical-stretch: 1; }
+                    Text { text: @tr("No mouse found"); color: Theme.sidebar-text; font-size: 12px; font-weight: 600; horizontal-alignment: center; vertical-stretch: 0; }
+                    Rectangle { vertical-stretch: 1; }
+                }
+
+                if root.devices.length != 0 : ListView {
+                    for device[i] in root.devices : DeviceListItem {
+                        name: device.discovery-state == DeviceDiscoveryState.enriching
+                            ? @tr("Logitech device")
+                            : device.name;
+                        connection: DeviceTranslations.connection(device.connection);
+                        battery: device.discovery-state == DeviceDiscoveryState.idle
+                            && device.access-state == DeviceAccessState.ready
+                            ? DeviceTranslations.battery(device.battery-level, device.battery-state)
+                            : "";
+                        accessibility-status: device.discovery-state == DeviceDiscoveryState.enriching
+                            ? DeviceTranslations.discovery-label()
+                            : DeviceTranslations.access-label(device.access-state);
+                        ready: device.access-state == DeviceAccessState.ready;
+                        busy: device.discovery-state == DeviceDiscoveryState.enriching;
+                        is-mouse: device.is-mouse;
+                        selected: root.page-index != 3 && root.selected-device-index == i;
+                        clicked => { root.page-index = 0; root.select-device(i); }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Theme.sidebar-divider; vertical-stretch: 0; }
+
+                SidebarSettingsItem {
+                    title: @tr("Settings");
+                    selected: root.page-index == 3;
+                    clicked => { root.confirm-visible = false; root.status = {}; root.page-index = 3; }
+                }
+
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            background: Theme.canvas;
+            clip: true;
+
+            VerticalLayout {
+                padding: 0px;
+                spacing: 0px;
+
+                Rectangle {
+                    height: root.page-index == 3 ? 66px : 112px;
+                    background: Theme.panel;
+                    vertical-stretch: 0;
+
+                    Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
+
+                    VerticalLayout {
+                        x: (parent.width - self.width) / 2;
+                        width: min(parent.width, 1320px);
+                        height: parent.height;
+                        padding: 0px;
+                        spacing: 0px;
+
+                        HorizontalLayout {
+                            height: 65px;
+                            padding-left: 26px;
+                            padding-right: 26px;
+                            padding-top: 7px;
+                            padding-bottom: 8px;
+                            spacing: 14px;
+                            vertical-stretch: 0;
+
+                            VerticalLayout {
+                                spacing: 0px;
+
+                                HorizontalLayout {
+                                    height: 30px;
+                                    spacing: 10px;
+                                    vertical-stretch: 0;
+                                    Text {
+                                        text: root.page-index == 3
+                                            ? @tr("Settings")
+                                            : root.selected-device-index < 0
+                                            ? @tr("No mouse connected")
+                                            : root.device-discovering
+                                            ? @tr("Logitech device")
+                                            : root.selected-device.name;
+                                        color: Theme.text;
+                                        font-size: 19px;
+                                        font-weight: 650;
+                                        vertical-alignment: bottom;
+                                        overflow: elide;
+                                    }
+                                    if root.page-index != 3 && root.selected-device-ready : VerticalLayout {
+                                        width: 58px;
+                                        horizontal-stretch: 0;
+                                        alignment: center;
+                                        MetaBadge { width: parent.width; title: @tr("Supported"); tone: BadgeTone.success; }
+                                    }
+                                }
+
+                                if root.page-index != 3 : HorizontalLayout {
+                                    height: 20px;
+                                    spacing: 8px;
+                                    vertical-stretch: 0;
+
+                                    VerticalLayout {
+                                        width: 7px;
+                                        horizontal-stretch: 0;
+                                        alignment: center;
+                                        Rectangle {
+                                            width: 7px;
+                                            height: 7px;
+                                            border-radius: 4px;
+                                            background: root.selected-device-index < 0
+                                                ? Theme.text-faint
+                                                : root.device-discovering
+                                                ? Theme.accent
+                                                : root.selected-device-ready
+                                                ? Theme.success
+                                                : Theme.warning;
+                                            vertical-stretch: 0;
+                                        }
+                                    }
+                                    Text {
+                                        text: root.selected-device-index < 0
+                                            ? @tr("Editing default settings")
+                                            : root.device-discovering
+                                            ? @tr("{} · Identifying…",
+                                                DeviceTranslations.connection(root.selected-device.connection))
+                                            : root.selected-device-ready
+                                            ? @tr("{} · {} · {}",
+                                                DeviceTranslations.connection(root.selected-device.connection),
+                                                DeviceTranslations.capability(root.selected-device.protocol),
+                                                DeviceTranslations.battery(root.selected-device.battery-level, root.selected-device.battery-state))
+                                            : @tr("{} · {}",
+                                                DeviceTranslations.connection(root.selected-device.connection),
+                                                DeviceTranslations.interfaces(root.selected-device.interface-count));
+                                        color: Theme.text-muted;
+                                        font-size: 11px;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            if root.page-index != 3 : VerticalLayout {
+                                width: 82px;
+                                horizontal-stretch: 0;
+                                alignment: center;
+
+                                ActionButton {
+                                    width: parent.width;
+                                    height: 34px;
+                                    title: root.rescan-in-progress ? @tr("Scanning…") : @tr("Rescan");
+                                    enabled: root.rescan-enabled && !root.rescan-in-progress;
+                                    clicked => { root.rescan-devices(); }
+                                    vertical-stretch: 0;
+                                }
+                            }
+
+                            if root.page-index != 3 : VerticalLayout {
+                                width: 108px;
+                                horizontal-stretch: 0;
+                                alignment: center;
+
+                                ActionButton {
+                                    width: parent.width;
+                                    height: 34px;
+                                    title: @tr("Revert Changes");
+                                    enabled: root.draft-dirty && !root.device-discovering;
+                                    clicked => { root.revert-confirm-visible = true; }
+                                    vertical-stretch: 0;
+                                }
+                            }
+                        }
+
+                        if root.page-index != 3 : HorizontalLayout {
+                            height: 47px;
+                            padding-left: 18px;
+                            spacing: 0px;
+                            vertical-stretch: 0;
+
+                            TaskTab { title: @tr("Pointer & Wheel"); index: 0; current-index <=> root.page-index; enabled: !root.device-discovering; }
+                            TaskTab { title: @tr("Buttons"); index: 1; current-index <=> root.page-index; enabled: !root.device-discovering; }
+                            TaskTab { title: @tr("App Profiles"); index: 2; current-index <=> root.page-index; enabled: !root.device-discovering; }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    max-height: 4096px;
+                    vertical-stretch: 1;
+                    background: Theme.canvas;
+
+                    VerticalLayout {
+                        x: (parent.width - self.width) / 2;
+                        width: min(parent.width, 1320px);
+                        height: parent.height;
+                        padding-left: 26px;
+                        padding-right: 26px;
+                        padding-top: 14px;
+                        padding-bottom: 14px;
+                        spacing: 10px;
+
+                        if root.page-index != 3
+                            && root.devices.length != 0
+                            && !root.selected-device-ready : DeviceAccessNotice {
+                            title: DeviceTranslations.access-title(root.selected-device.access-state);
+                            message: DeviceTranslations.access-guidance(
+                                root.selected-device.access-state,
+                                root.selected-device.path,
+                            );
+                        }
+
+                        if root.page-index != 3
+                            && root.selected-device-ready
+                            && root.local-actions-configured
+                            && root.runtime-state != DesktopRuntimeState.running : WarningBar {
+                            message: root.runtime-state == DesktopRuntimeState.starting
+                                ? @tr("Preparing custom actions…")
+                                : root.runtime-state == DesktopRuntimeState.stopped
+                                ? @tr("Background operations are off")
+                                : @tr("Custom actions are unavailable: {}", root.runtime-detail);
+                        }
+
+                        if root.page-index == 0 : VerticalLayout {
+                            spacing: 12px;
+                            vertical-stretch: 1;
+
+                            PageHeading { title: @tr("Pointer & Wheel"); }
+
+                            HorizontalLayout {
+                                spacing: 24px;
+                                vertical-stretch: 1;
+
+                                DeviceDrawing {
+                                    width: 330px;
+                                    connected: root.selected-device-ready;
+                                    detected: root.selected-device-index >= 0;
+                                    busy: root.device-discovering;
+                                    receiver-detected: root.selected-device-is-receiver && !root.selected-device-ready;
+                                    interface-count: root.selected-device.interface-count;
+                                    connection-label: DeviceTranslations.connection(root.selected-device.connection);
+                                    pointer-speed: root.pointer-speed;
+                                    wheel-mode: root.wheel-options[root.wheel-mode-index];
+                                    thumb-mode: root.thumb-wheel-index == 0 && round(root.thumb-wheel-speed) != 100
+                                        ? @tr("{} · {}%", root.thumb-options[root.thumb-wheel-index], round(root.thumb-wheel-speed))
+                                        : root.thumb-options[root.thumb-wheel-index];
+                                    horizontal-stretch: 0;
+                                }
+
+                                VerticalLayout {
+                                    spacing: 12px;
+                                    vertical-stretch: 1;
+
+                                    Rectangle {
+                                        height: root.height < 760px ? 62px : 72px;
+                                        background: Theme.panel;
+                                        border-width: 1px;
+                                        border-color: Theme.border;
+                                        border-radius: 7px;
+                                        vertical-stretch: 0;
+
+                                        SliderRow { title: @tr("Pointer speed"); suffix: "%"; minimum: 50; maximum: 200; value <=> root.pointer-speed; edited => { root.mark-dirty(); } }
+                                    }
+
+                                    Rectangle {
+                                        vertical-stretch: 1;
+                                        background: Theme.panel;
+                                        border-width: 1px;
+                                        border-color: Theme.border;
+                                        border-radius: 7px;
+
+                                        VerticalLayout {
+                                            padding: 0px;
+                                            spacing: 0px;
+
+                                            HorizontalLayout {
+                                                height: root.height < 760px ? 36px : 42px;
+                                                padding-left: 18px;
+                                                padding-right: 18px;
+                                                vertical-stretch: 0;
+                                                Text { text: @tr("Scroll wheel"); color: Theme.text; font-size: 12px; font-weight: 650; vertical-alignment: center; }
+                                            }
+                                            Divider {}
+                                            SliderRow { height: !root.selected-device-ready ? 52px : root.height < 760px ? 46px : root.horizontal-scroll-test-open ? 52px : 68px; vertical-stretch: 1; title: @tr("SmartShift sensitivity"); suffix: ""; minimum: 1; maximum: 50; value <=> root.smart-shift-threshold; enabled: root.wheel-mode-index == 2; edited => { root.mark-dirty(); } }
+                                            Divider {}
+                                            WheelModeRow { height: !root.selected-device-ready ? 46px : root.height < 760px ? 42px : root.horizontal-scroll-test-open ? 46px : 54px; vertical-stretch: 1; current-index <=> root.wheel-mode-index; edited => { root.mark-dirty(); } }
+                                            Divider {}
+                                            ToggleRow { height: !root.selected-device-ready ? 44px : root.height < 760px ? 40px : root.horizontal-scroll-test-open ? 44px : 52px; vertical-stretch: 1; title: @tr("Smooth scrolling"); checked <=> root.high-resolution-scroll; edited => { root.mark-dirty(); } }
+                                            Divider {}
+                                            SelectRow {
+                                                height: !root.selected-device-ready ? 46px : root.height < 760px ? 42px : root.horizontal-scroll-test-open ? 46px : 54px;
+                                                vertical-stretch: 1;
+                                                title: @tr("Scroll direction");
+                                                options: [@tr("Standard"), @tr("Natural")];
+                                                current-index <=> root.scroll-direction-index;
+                                                edited => { root.mark-dirty(); }
+                                            }
+                                            Divider {}
+                                            SelectRow {
+                                                height: !root.selected-device-ready ? 46px : root.height < 760px ? 42px : root.horizontal-scroll-test-open ? 46px : 54px;
+                                                vertical-stretch: 1;
+                                                title: @tr("Thumb wheel");
+                                                badge: (root.thumb-wheel-index >= 1 && root.thumb-wheel-index <= 3)
+                                                    || (root.thumb-wheel-index == 0 && round(root.thumb-wheel-speed) != 100)
+                                                    ? @tr("Dogi")
+                                                    : "";
+                                                badge-tone: BadgeTone.accent;
+                                                options: root.thumb-options;
+                                                current-index <=> root.thumb-wheel-index;
+                                                edited => {
+                                                    root.mark-dirty();
+                                                    if (root.thumb-wheel-index != 0
+                                                        && root.horizontal-scroll-test-open) {
+                                                        root.horizontal-scroll-test-open = false;
+                                                        root.horizontal-scroll-test-toggled(false);
+                                                    }
+                                                }
+                                            }
+                                            Divider {}
+                                            SliderRow {
+                                                height: !root.selected-device-ready ? 52px : root.height < 760px ? 46px : root.horizontal-scroll-test-open ? 52px : 64px;
+                                                vertical-stretch: 1;
+                                                title: @tr("Horizontal scroll speed");
+                                                suffix: "%";
+                                                minimum: 25;
+                                                maximum: 400;
+                                                value <=> root.thumb-wheel-speed;
+                                                enabled: root.thumb-wheel-index == 0;
+                                                edited => {
+                                                    root.mark-dirty();
+                                                    root.horizontal-scroll-speed-edited();
+                                                }
+                                            }
+                                            Divider {}
+                                            HorizontalScrollTest {
+                                                current-speed: root.thumb-wheel-speed;
+                                                enabled: root.horizontal-scroll-test-enabled;
+                                                open <=> root.horizontal-scroll-test-open;
+                                                mode-index <=> root.horizontal-scroll-test-mode-index;
+                                                active: root.horizontal-scroll-test-active;
+                                                busy: root.horizontal-scroll-test-busy;
+                                                detail: root.horizontal-scroll-test-detail;
+                                                compact: root.height < 760px;
+                                                moved <=> root.horizontal-scroll-test-moved;
+                                                toggled(open) => {
+                                                    root.horizontal-scroll-test-toggled(open);
+                                                }
+                                                mode-selected(index) => {
+                                                    root.horizontal-scroll-test-mode-selected(index);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if root.page-index == 1 : VerticalLayout {
+                            height: root.selected-device-ready ? 520px : 464px;
+                            spacing: 12px;
+                            vertical-stretch: 0;
+
+                            PageHeading { title: @tr("Button assignments"); }
+
+                            HorizontalLayout {
+                                spacing: 20px;
+
+                                ButtonDrawing {
+                                    width: 596px;
+                                    back-action: SettingsTranslations.button-action(0, root.back-action-index);
+                                    forward-action: SettingsTranslations.button-action(1, root.forward-action-index);
+                                    gesture-action: SettingsTranslations.button-action(2, root.gesture-action-index);
+                                    mode-shift-action: SettingsTranslations.button-action(3, root.mode-shift-action-index);
+                                    middle-action: SettingsTranslations.button-action(4, root.middle-action-index);
+                                    selected-button-index <=> root.selected-button-index;
+                                    horizontal-stretch: 0;
+                                }
+
+                                VerticalLayout {
+                                    spacing: 10px;
+
+                                    Rectangle {
+                                        height: root.selected-device-ready ? 180px : 170px;
+                                        background: Theme.panel;
+                                        border-width: 1px;
+                                        border-color: Theme.border;
+                                        border-radius: 7px;
+                                        vertical-stretch: 0;
+
+                                        VerticalLayout {
+                                            padding-left: 16px;
+                                            padding-right: 16px;
+                                            padding-top: 12px;
+                                            padding-bottom: 12px;
+                                            spacing: 6px;
+
+                                            HorizontalLayout {
+                                                height: 24px;
+                                                spacing: 8px;
+                                                vertical-stretch: 0;
+                                                Text { text: SettingsTranslations.button(root.selected-button-index); color: Theme.text; font-size: 15px; font-weight: 650; overflow: elide; vertical-alignment: center; }
+                                                if root.selected-action-requires-runtime : VerticalLayout {
+                                                    width: 66px;
+                                                    horizontal-stretch: 0;
+                                                    alignment: center;
+                                                    MetaBadge { width: parent.width; title: @tr("Dogi"); tone: BadgeTone.accent; }
+                                                }
+                                            }
+                                            Text {
+                                                height: 17px;
+                                                text: root.selected-button-index == 0 ? @tr("Thumb · rear")
+                                                    : root.selected-button-index == 1 ? @tr("Thumb · front")
+                                                    : root.selected-button-index == 2 ? @tr("Thumb rest")
+                                                    : root.selected-button-index == 3 ? @tr("Behind the wheel")
+                                                    : @tr("Wheel press");
+                                                color: Theme.text-muted;
+                                                font-size: 11px;
+                                                vertical-stretch: 0;
+                                            }
+                                            Divider {}
+                                            Label { text: @tr("Assigned action"); }
+
+                                            if root.selected-button-index == 0 : FormComboBox { height: 34px; accessible-label: @tr("Assigned action"); model: root.action-options; current-index <=> root.back-action-index; selected(value) => { root.mark-dirty(); } vertical-stretch: 0; }
+                                            if root.selected-button-index == 1 : FormComboBox { height: 34px; accessible-label: @tr("Assigned action"); model: root.action-options; current-index <=> root.forward-action-index; selected(value) => { root.mark-dirty(); } vertical-stretch: 0; }
+                                            if root.selected-button-index == 2 : FormComboBox { height: 34px; accessible-label: @tr("Assigned action"); model: root.action-options; current-index <=> root.gesture-action-index; selected(value) => { root.mark-dirty(); } vertical-stretch: 0; }
+                                            if root.selected-button-index == 3 : FormComboBox { height: 34px; accessible-label: @tr("Assigned action"); model: root.action-options; current-index <=> root.mode-shift-action-index; selected(value) => { root.mark-dirty(); } vertical-stretch: 0; }
+                                            if root.selected-button-index == 4 : FormComboBox { height: 34px; accessible-label: @tr("Assigned action"); model: root.action-options; current-index <=> root.middle-action-index; selected(value) => { root.mark-dirty(); } vertical-stretch: 0; }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        height: 244px;
+                                        background: Theme.panel;
+                                        border-width: 1px;
+                                        border-color: Theme.border;
+                                        border-radius: 7px;
+                                        vertical-stretch: 0;
+
+                                        VerticalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            padding-top: 8px;
+                                            padding-bottom: 8px;
+                                            spacing: 2px;
+
+                                            Text { height: 22px; text: @tr("All controls"); color: Theme.text; font-size: 12px; font-weight: 650; vertical-stretch: 0; }
+                                            AssignmentRow { height: 37px; number: "1"; title: SettingsTranslations.button(0); action: SettingsTranslations.button-action(0, root.back-action-index); selected: root.selected-button-index == 0; clicked => { root.selected-button-index = 0; } }
+                                            AssignmentRow { height: 37px; number: "2"; title: SettingsTranslations.button(1); action: SettingsTranslations.button-action(1, root.forward-action-index); selected: root.selected-button-index == 1; clicked => { root.selected-button-index = 1; } }
+                                            AssignmentRow { height: 37px; number: "3"; title: SettingsTranslations.button(2); action: SettingsTranslations.button-action(2, root.gesture-action-index); selected: root.selected-button-index == 2; clicked => { root.selected-button-index = 2; } }
+                                            AssignmentRow { height: 37px; number: "4"; title: SettingsTranslations.button(3); action: SettingsTranslations.button-action(3, root.mode-shift-action-index); selected: root.selected-button-index == 3; clicked => { root.selected-button-index = 3; } }
+                                            AssignmentRow { height: 37px; number: "5"; title: SettingsTranslations.button(4); action: SettingsTranslations.button-action(4, root.middle-action-index); selected: root.selected-button-index == 4; clicked => { root.selected-button-index = 4; } }
+                                        }
+                                    }
+
+                                    Rectangle { vertical-stretch: 1; }
+                                }
+                            }
+                        }
+
+                        if root.page-index == 2 : VerticalLayout {
+                            spacing: 12px;
+
+                            PageHeading { title: @tr("App Profiles"); }
+
+                            if !root.app-profiles-supported : WarningBar {
+                                message: @tr("Automatic app switching is unavailable in this Wayland session.");
+                            }
+
+                            Rectangle {
+                                background: Theme.panel;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                border-radius: 8px;
+                                clip: true;
+
+                                HorizontalLayout {
+                                    padding: 0px;
+                                    spacing: 0px;
+
+                                    Rectangle {
+                                        width: 292px;
+                                        background: Theme.surface;
+                                        horizontal-stretch: 0;
+
+                                        Rectangle { x: parent.width - 1px; width: 1px; height: parent.height; background: Theme.border; }
+
+                                        VerticalLayout {
+                                            padding: 0px;
+                                            spacing: 0px;
+
+                                            HorizontalLayout {
+                                                height: 62px;
+                                                padding-left: 16px;
+                                                padding-right: 12px;
+                                                spacing: 10px;
+                                                vertical-stretch: 0;
+
+                                                VerticalLayout {
+                                                    spacing: 0px;
+                                                    alignment: center;
+                                                    Label { text: @tr("Profiles"); }
+                                                    Hint { text: @tr("{n} profile configured" | "{n} profiles configured" % root.app-profile-rows.length); }
+                                                }
+
+                                                VerticalLayout {
+                                                    width: 64px;
+                                                    horizontal-stretch: 0;
+                                                    alignment: center;
+
+                                                    ActionButton {
+                                                        width: parent.width;
+                                                        height: 34px;
+                                                        title: @tr("New");
+                                                        enabled: root.app-profiles-supported;
+                                                        clicked => {
+                                                            root.selected-app-profile-index = -1;
+                                                            root.app-profile-editor-app = "";
+                                                            root.app-profile-editor-pointer-speed = 100;
+                                                            root.app-profile-editor-thumb-wheel-index = 0;
+                                                        }
+                                                        vertical-stretch: 0;
+                                                    }
+                                                }
+                                            }
+
+                                            Divider {}
+
+                                            if root.app-profile-rows.length == 0 : VerticalLayout {
+                                                padding-left: 24px;
+                                                padding-right: 24px;
+                                                spacing: 6px;
+                                                Rectangle { vertical-stretch: 1; }
+                                                Label { text: @tr("No profiles yet"); horizontal-alignment: center; }
+                                                Hint {
+                                                    text: root.app-profiles-supported
+                                                        ? @tr("Create one to override settings for an application.")
+                                                        : @tr("Profiles switch pointer and thumb wheel settings for the active app.");
+                                                    horizontal-alignment: center;
+                                                    wrap: word-wrap;
+                                                }
+                                                Rectangle { vertical-stretch: 1; }
+                                            }
+
+                                            if root.app-profile-rows.length != 0 : Rectangle {
+                                                background: transparent;
+
+                                                ListView {
+                                                    x: 8px;
+                                                    y: 8px;
+                                                    width: parent.width - 16px;
+                                                    height: parent.height - 8px;
+
+                                                    for profile[i] in root.app-profile-rows : ProfileRow {
+                                                        app: profile.app;
+                                                        initial: profile.initial;
+                                                        summary: SettingsTranslations.profile-summary(profile.pointer-speed, profile.thumb-wheel-index);
+                                                        selected: root.selected-app-profile-index == i;
+                                                        clicked => {
+                                                            root.selected-app-profile-index = i;
+                                                            root.select-app-profile(i);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        background: Theme.panel;
+
+                                        VerticalLayout {
+                                            padding-left: 26px;
+                                            padding-right: 26px;
+                                            padding-top: 12px;
+                                            padding-bottom: 12px;
+                                            spacing: 9px;
+
+                                            HorizontalLayout {
+                                                height: 34px;
+                                                spacing: 10px;
+                                                vertical-stretch: 0;
+
+                                                Text { text: root.selected-app-profile-index < 0 ? @tr("New profile") : root.app-profile-editor-app; color: Theme.text; font-size: 16px; font-weight: 650; vertical-alignment: center; overflow: elide; }
+                                                VerticalLayout {
+                                                    width: 66px;
+                                                    horizontal-stretch: 0;
+                                                    alignment: center;
+
+                                                    MetaBadge {
+                                                        width: parent.width;
+                                                        title: root.app-profiles-supported ? @tr("Dogi") : @tr("Unavailable");
+                                                        tone: root.app-profiles-supported ? BadgeTone.accent : BadgeTone.warning;
+                                                    }
+                                                }
+                                                ActionButton { width: 76px; height: 34px; title: @tr("Remove"); destructive: true; enabled: root.app-profiles-supported && root.selected-app-profile-index >= 0; clicked => { root.remove-app-profile(); } horizontal-stretch: 0; vertical-stretch: 0; }
+                                                ActionButton { width: 108px; height: 34px; title: root.selected-app-profile-index < 0 ? @tr("Add profile") : @tr("Update profile"); primary: true; enabled: root.app-profiles-supported && root.app-profile-editor-app != ""; clicked => { root.save-app-profile(); } horizontal-stretch: 0; vertical-stretch: 0; }
+                                            }
+
+                                            Divider {}
+
+                                            VerticalLayout {
+                                                height: 60px;
+                                                spacing: 3px;
+                                                vertical-stretch: 0;
+                                                Label { text: @tr("App name or ID"); }
+                                                FormLineEdit { height: 36px; accessible-label: @tr("App name or ID"); placeholder-text: @tr("For example: firefox"); text <=> root.app-profile-editor-app; enabled: root.app-profiles-supported; vertical-stretch: 0; }
+                                            }
+
+                                            Text { height: 20px; text: @tr("Overrides"); color: Theme.text; font-size: 12px; font-weight: 650; vertical-stretch: 0; }
+
+                                            Rectangle {
+                                                height: 112px;
+                                                background: Theme.surface;
+                                                border-width: 1px;
+                                                border-color: Theme.border;
+                                                border-radius: 7px;
+                                                vertical-stretch: 0;
+
+                                                VerticalLayout {
+                                                    padding: 0px;
+                                                    spacing: 0px;
+                                                    SliderRow { height: 60px; title: @tr("Pointer speed"); suffix: "%"; minimum: 50; maximum: 200; value <=> root.app-profile-editor-pointer-speed; enabled: root.app-profiles-supported; }
+                                                    Divider {}
+                                                    SelectRow { height: 51px; title: @tr("Thumb wheel"); options: root.thumb-options; current-index <=> root.app-profile-editor-thumb-wheel-index; enabled: root.app-profiles-supported; }
+                                                }
+                                            }
+
+                                            Text { height: 20px; text: @tr("Inherited from the device"); color: Theme.text; font-size: 12px; font-weight: 650; vertical-stretch: 0; }
+
+                                            Rectangle {
+                                                height: 60px;
+                                                background: Theme.surface;
+                                                border-width: 1px;
+                                                border-color: Theme.border;
+                                                border-radius: 7px;
+                                                vertical-stretch: 0;
+
+                                                HorizontalLayout {
+                                                    padding-left: 16px;
+                                                    padding-right: 16px;
+                                                    spacing: 0px;
+
+                                                    VerticalLayout {
+                                                        spacing: 1px;
+                                                        alignment: center;
+                                                        Text { height: 18px; text: root.wheel-options[root.wheel-mode-index]; color: Theme.text; font-size: 11px; font-weight: 650; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+                                                        Text { height: 18px; text: @tr("Main wheel"); color: Theme.text-muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+                                                    }
+                                                    VerticalLayout {
+                                                        width: 1px;
+                                                        horizontal-stretch: 0;
+                                                        alignment: center;
+                                                        Rectangle { width: 1px; height: 34px; background: Theme.border; vertical-stretch: 0; }
+                                                    }
+                                                    VerticalLayout {
+                                                        spacing: 1px;
+                                                        alignment: center;
+                                                        Text { height: 18px; text: @tr("5 controls"); color: Theme.text; font-size: 11px; font-weight: 650; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+                                                        Text { height: 18px; text: @tr("Button assignments"); color: Theme.text-muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+                                                    }
+                                                    VerticalLayout {
+                                                        width: 1px;
+                                                        horizontal-stretch: 0;
+                                                        alignment: center;
+                                                        Rectangle { width: 1px; height: 34px; background: Theme.border; vertical-stretch: 0; }
+                                                    }
+                                                    VerticalLayout {
+                                                        spacing: 1px;
+                                                        alignment: center;
+                                                        Text { height: 18px; text: @tr("Device defaults"); color: Theme.text; font-size: 11px; font-weight: 650; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+                                                        Text { height: 18px; text: @tr("When unmatched"); color: Theme.text-muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle { vertical-stretch: 1; }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if root.page-index == 3 : VerticalLayout {
+                            spacing: 10px;
+                            vertical-stretch: 1;
+
+                            PageHeading { title: @tr("Appearance"); }
+
+                            Rectangle {
+                                width: 720px;
+                                height: 129px;
+                                background: Theme.panel;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                border-radius: 8px;
+                                clip: true;
+                                horizontal-stretch: 0;
+                                vertical-stretch: 0;
+
+                                VerticalLayout {
+                                    padding: 0px;
+                                    spacing: 0px;
+
+                                    SettingsSelectRow {
+                                        title: @tr("Language");
+                                        options: root.language-options;
+                                        current-index <=> root.language-index;
+                                        selected(index) => { root.language-selected(index); }
+                                    }
+                                    Divider {}
+                                    SettingsSelectRow {
+                                        title: @tr("Theme");
+                                        options: root.theme-options;
+                                        current-index <=> root.theme-index;
+                                        selected(index) => { root.theme-selected(index); }
+                                    }
+                                }
+                            }
+
+                            Rectangle { height: 6px; vertical-stretch: 0; }
+
+                            PageHeading { title: @tr("Window"); }
+
+                            Rectangle {
+                                width: 720px;
+                                height: 65px;
+                                background: Theme.panel;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                border-radius: 8px;
+                                clip: true;
+                                horizontal-stretch: 0;
+                                vertical-stretch: 0;
+
+                                SettingsSelectRow {
+                                    title: @tr("When closing the window");
+                                    options: root.close-behavior-options;
+                                    current-index <=> root.close-behavior-index;
+                                    selected(index) => { root.close-behavior-selected(index); }
+                                }
+                            }
+
+                            Rectangle { height: 6px; vertical-stretch: 0; }
+
+                            PageHeading { title: @tr("Background"); }
+
+                            Rectangle {
+                                width: 720px;
+                                height: runtime-row.height + 1px;
+                                background: Theme.panel;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                border-radius: 8px;
+                                clip: true;
+                                horizontal-stretch: 0;
+                                vertical-stretch: 0;
+
+                                runtime-row := SettingsRuntimeRow {
+                                    width: parent.width;
+                                    state: root.runtime-state;
+                                    desired-enabled <=> root.runtime-enabled;
+                                    busy: root.runtime-busy;
+                                    supported: root.runtime-management-supported;
+                                    detail: root.runtime-detail;
+                                    enabled-changed(enabled) => { root.runtime-enabled-changed(enabled); }
+                                    restart => { root.restart-runtime(); }
+                                }
+                            }
+
+                            Rectangle { vertical-stretch: 1; }
+                        }
+                    }
+
+                    if root.page-index != 3 && root.device-discovering : Rectangle {
+                        width: parent.width;
+                        height: parent.height;
+                        background: Theme.canvas;
+
+                        TouchArea {
+                            width: parent.width;
+                            height: parent.height;
+                        }
+
+                        VerticalLayout {
+                            x: (parent.width - self.width) / 2;
+                            width: min(parent.width, 1320px);
+                            height: parent.height;
+                            padding-left: 26px;
+                            padding-right: 26px;
+                            padding-top: 14px;
+                            padding-bottom: 14px;
+                            spacing: 12px;
+
+                            PageHeading {
+                                title: root.page-index == 1
+                                    ? @tr("Button assignments")
+                                    : root.page-index == 2
+                                    ? @tr("App Profiles")
+                                    : @tr("Pointer & Wheel");
+                            }
+
+                            if root.page-index == 0 : HorizontalLayout {
+                                spacing: 24px;
+                                vertical-stretch: 1;
+
+                                DeviceDrawing {
+                                    width: 330px;
+                                    connected: false;
+                                    detected: true;
+                                    busy: true;
+                                    receiver-detected: root.selected-device-is-receiver;
+                                    interface-count: root.selected-device.interface-count;
+                                    connection-label: DeviceTranslations.connection(root.selected-device.connection);
+                                    pointer-speed: root.pointer-speed;
+                                    wheel-mode: root.wheel-options[root.wheel-mode-index];
+                                    thumb-mode: root.thumb-options[root.thumb-wheel-index];
+                                    horizontal-stretch: 0;
+                                }
+
+                                DeviceConfigSkeleton {
+                                    compact: root.height < 760px;
+                                }
+                            }
+
+                            if root.page-index == 1 || root.page-index == 2 : DiscoveryPageSkeleton {}
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: root.page-index == 3 && root.status.message == UiMessage.none ? 0px : 68px;
+                    background: Theme.panel;
+                    vertical-stretch: 0;
+
+                    Rectangle { x: 0px; y: 0px; width: parent.width; height: 1px; background: Theme.border; }
+
+                    HorizontalLayout {
+                        x: (parent.width - self.width) / 2;
+                        width: min(parent.width, 1320px);
+                        height: parent.height;
+                        padding-left: 26px;
+                        padding-right: 26px;
+                        padding-top: 16px;
+                        padding-bottom: 16px;
+                        spacing: 12px;
+
+                        HorizontalLayout {
+                            spacing: 9px;
+                            VerticalLayout {
+                                width: 8px;
+                                horizontal-stretch: 0;
+                                alignment: center;
+
+                                Rectangle {
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 4px;
+                                background: root.status.kind == UiStatusKind.error ? Theme.danger
+                                    : root.status.kind == UiStatusKind.warning ? Theme.warning
+                                    : root.status.kind == UiStatusKind.success ? Theme.success
+                                    : root.status.kind == UiStatusKind.info ? Theme.accent
+                                    : root.page-index != 3 && root.device-discovering ? Theme.accent
+                                    : root.page-index != 3 && root.draft-dirty ? Theme.warning
+                                        : Theme.text-faint;
+                                    vertical-stretch: 0;
+                                }
+                            }
+                            Text {
+                                text: root.status.message == UiMessage.none
+                                    ? (root.page-index != 3 && root.device-discovering
+                                        ? @tr("Identifying device…")
+                                        : root.draft-dirty
+                                        ? (root.selected-device-ready ? @tr("Ready to apply") : @tr("Changes not saved"))
+                                        : @tr("Settings saved"))
+                                    : StatusTranslations.text(root.status);
+                                color: root.status.kind == UiStatusKind.error ? Theme.danger
+                                    : root.status.kind == UiStatusKind.warning ? Theme.warning
+                                    : Theme.text-muted;
+                                font-size: 11px;
+                                overflow: elide;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        if root.page-index != 3 && root.selected-device-ready : ActionButton {
+                            width: 136px;
+                            title: @tr("Apply Changes…");
+                            primary: true;
+                            enabled: root.draft-dirty && !root.device-discovering;
+                            clicked => { root.apply-requested(); }
+                            horizontal-stretch: 0;
+                            vertical-stretch: 0;
+                        }
+                        if root.page-index != 3 && !root.selected-device-ready : ActionButton {
+                            width: 126px;
+                            title: @tr("Save Changes");
+                            primary: true;
+                            enabled: root.draft-dirty && !root.device-discovering;
+                            clicked => { root.save-for-later(); }
+                            horizontal-stretch: 0;
+                            vertical-stretch: 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.confirm-visible : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: Theme.overlay;
+        TouchArea { width: parent.width; height: parent.height; }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 560px;
+            height: 246px + min(188px, max(44px, root.plan-rows.length * 44px));
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.control-border;
+            border-radius: 10px;
+            clip: true;
+
+            VerticalLayout {
+                padding: 0px;
+                spacing: 0px;
+
+                HorizontalLayout {
+                    height: 74px;
+                    padding-left: 24px;
+                    padding-right: 24px;
+                    spacing: 12px;
+                    vertical-stretch: 0;
+
+                    VerticalLayout {
+                        spacing: 2px;
+                        alignment: center;
+                        Text { height: 27px; text: @tr("Apply Changes"); color: Theme.text; font-size: 18px; font-weight: 650; vertical-stretch: 0; }
+                        Text {
+                            height: 19px;
+                            text: @tr("{n} setting · {}" | "{n} settings · {}" % root.confirm-change-count, root.selected-device.name);
+                            color: Theme.text-muted;
+                            font-size: 11px;
+                            overflow: elide;
+                            vertical-stretch: 0;
+                        }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+
+                Divider {}
+
+                Rectangle {
+                    height: 58px;
+                    background: Theme.accent-soft;
+                    vertical-stretch: 0;
+
+                    HorizontalLayout {
+                        padding-left: 24px;
+                        padding-right: 24px;
+                        spacing: 11px;
+                        VerticalLayout {
+                            width: 22px;
+                            horizontal-stretch: 0;
+                            alignment: center;
+
+                            Rectangle {
+                                width: 22px;
+                                height: 22px;
+                                border-radius: 11px;
+                                background: Theme.accent-bg;
+                                vertical-stretch: 0;
+                                Text { width: parent.width; height: parent.height; text: "i"; color: Theme.accent-text; font-size: 11px; font-weight: 750; horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                        }
+                        Text {
+                            text: @tr("Dogi adjusts active settings only; it does not update firmware or manage onboard profiles.");
+                            color: Theme.text-muted;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 40px;
+                    background: Theme.surface;
+                    vertical-stretch: 0;
+
+                    HorizontalLayout {
+                        padding-left: 24px;
+                        padding-right: 24px;
+                        Text { text: @tr("Settings to apply"); color: Theme.text; font-size: 11px; font-weight: 650; vertical-alignment: center; }
+                        Text {
+                            width: 120px;
+                            text: @tr("{n} setting" | "{n} settings" % root.plan-rows.length);
+                            color: Theme.text-muted;
+                            font-size: 10px;
+                            horizontal-alignment: right;
+                            vertical-alignment: center;
+                            horizontal-stretch: 0;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: min(188px, max(44px, root.plan-rows.length * 44px));
+                    background: transparent;
+
+                    ListView {
+                        x: 12px;
+                        width: parent.width - 24px;
+                        height: parent.height;
+                        for step[i] in root.plan-rows : ChangeRow {
+                            scope: step.scope;
+                            title: SettingsTranslations.plan(step);
+                        }
+                    }
+                }
+
+                Divider {}
+
+                HorizontalLayout {
+                    height: 72px;
+                    padding-left: 24px;
+                    padding-right: 24px;
+                    padding-top: 18px;
+                    padding-bottom: 18px;
+                    spacing: 10px;
+                    vertical-stretch: 0;
+
+                    Rectangle { horizontal-stretch: 1; }
+                    ActionButton { width: 84px; height: 36px; title: @tr("Cancel"); clicked => { root.cancel-apply(); } horizontal-stretch: 0; vertical-stretch: 0; }
+                    ActionButton { width: 96px; height: 36px; title: @tr("Apply"); primary: true; clicked => { root.apply-requested(); } horizontal-stretch: 0; vertical-stretch: 0; }
+                }
+            }
+        }
+    }
+
+    if root.revert-confirm-visible : ConfirmationOverlay {
+        width: parent.width;
+        height: parent.height;
+        title: @tr("Revert Unsaved Changes?");
+        message: @tr("The saved configuration for this mouse will be restored.");
+        confirm-title: @tr("Revert Changes");
+        destructive: true;
+        cancelled => { root.revert-confirm-visible = false; }
+        accepted => {
+            root.revert-confirm-visible = false;
+            root.revert-current-device();
+        }
+    }
+
+    if root.quit-confirm-visible : ConfirmationOverlay {
+        width: parent.width;
+        height: parent.height;
+        title: @tr("Quit Without Saving?");
+        message: @tr("Unsaved mouse configuration changes will be lost.");
+        confirm-title: @tr("Quit Without Saving");
+        destructive: true;
+        cancelled => { root.cancel-quit(); }
+        accepted => { root.confirm-quit(); }
+    }
+
+}
+
+export component AppTray inherits SystemTrayIcon {
+    icon: @image-url("assets/tray-icon.svg");
+    title: "dogi";
+    tooltip: "dogi";
+    visible: false;
+
+    callback open-window();
+    callback quit-app();
+
+    clicked => { root.open-window(); }
+
+    Menu {
+        MenuItem {
+            title: @tr("Open dogi");
+            activated => { root.open-window(); }
+        }
+        MenuSeparator {}
+        MenuItem {
+            title: @tr("Quit dogi");
+            activated => { root.quit-app(); }
+        }
+    }
+}

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.oksyd.dogi</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <name>Dogi</name>
+  <summary>Configure Logitech mice on Linux</summary>
+  <summary xml:lang="zh-CN">在 Linux 上配置 Logitech 鼠标</summary>
+  <description>
+    <p>
+      Dogi is a Linux desktop application for configuring Logitech mice, with
+      direct HID++ access and local runtime actions.
+    </p>
+    <p xml:lang="zh-CN">
+      Dogi 是一款用于配置 Logitech 鼠标的 Linux 桌面应用，支持直接访问
+      HID++ 设备以及本地运行时操作。
+    </p>
+    <ul>
+      <li>Manage independent settings for multiple devices</li>
+      <li>Configure scrolling, pointer speed, buttons, and application profiles</li>
+      <li>Review explicit device changes before applying them</li>
+    </ul>
+  </description>
+  <developer id="io.github.oksyd">
+    <name>oksyd</name>
+  </developer>
+  <launchable type="desktop-id">io.github.oksyd.dogi.desktop</launchable>
+  <provides>
+    <binary>dogi</binary>
+  </provides>
+  <url type="homepage">https://github.com/oksyd/dogi</url>
+  <url type="bugtracker">https://github.com/oksyd/dogi/issues</url>
+  <url type="vcs-browser">https://github.com/oksyd/dogi</url>
+  <categories>
+    <category>Settings</category>
+  </categories>
+  <releases>
+    <release version="0.1.0" date="2026-08-05" type="development">
+      <description>
+        <p>Initial preview release.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>

@@ -1,0 +1,215 @@
+import {
+    BatteryState,
+    DeviceAccessState,
+    DeviceConnection,
+    PlanKind,
+    PlanRow,
+    UiMessage,
+    UiStatus,
+} from "view-models.slint";
+
+export global DeviceTranslations {
+    public pure function connection(kind: DeviceConnection) -> string {
+        return kind == DeviceConnection.usb ? @tr("USB")
+            : kind == DeviceConnection.bluetooth ? @tr("Bluetooth")
+            : kind == DeviceConnection.unifying ? @tr("Unifying")
+            : kind == DeviceConnection.bolt ? @tr("Bolt")
+            : kind == DeviceConnection.lightspeed ? @tr("LIGHTSPEED")
+            : @tr("Unknown");
+    }
+
+    public pure function battery(level: int, state: BatteryState) -> string {
+        return level < 0 ? @tr("Battery unavailable")
+            : state == BatteryState.charging ? @tr("{}% charging", level)
+            : state == BatteryState.discharging ? @tr("{}% discharging", level)
+            : state == BatteryState.full ? @tr("{}% full", level)
+            : state == BatteryState.low ? @tr("{}% low", level)
+            : state == BatteryState.critical ? @tr("{}% critical", level)
+            : state == BatteryState.offline ? @tr("{}% offline", level)
+            : @tr("{}%", level);
+    }
+
+    public pure function access-label(state: DeviceAccessState) -> string {
+        return state == DeviceAccessState.ready ? @tr("Connected")
+            : root.access-title(state);
+    }
+
+    public pure function discovery-label() -> string {
+        return @tr("Identifying…");
+    }
+
+    public pure function capability(protocol: string) -> string {
+        return protocol != "" ? @tr("HID++ {}", protocol) : @tr("HID++ unavailable");
+    }
+
+    public pure function access-title(state: DeviceAccessState) -> string {
+        return state == DeviceAccessState.hid-device-missing
+            ? @tr("HID device unavailable")
+            : state == DeviceAccessState.hid-permission-denied
+            ? @tr("HID access required")
+            : state == DeviceAccessState.read-only
+            ? @tr("Full HID access required")
+            : state == DeviceAccessState.no-paired-response
+            ? @tr("Mouse not responding")
+            : state == DeviceAccessState.unsupported
+            ? @tr("Settings unavailable for this mouse")
+            : @tr("HID++ unavailable");
+    }
+
+    public pure function access-guidance(state: DeviceAccessState, path: string) -> string {
+        return state == DeviceAccessState.hid-device-missing
+            ? @tr("Run dogi on the host or expose {} to this environment.", path)
+            : state == DeviceAccessState.hid-permission-denied || state == DeviceAccessState.read-only
+            ? @tr("Install the dogi udev rule, then reconnect the device.")
+            : state == DeviceAccessState.no-paired-response
+            ? @tr("Wake or reconnect the mouse.")
+            : state == DeviceAccessState.unsupported
+            ? @tr("Dogi can identify this device, but its settings are not supported yet.")
+            : @tr("This device does not expose a compatible configuration endpoint.");
+    }
+
+    public pure function interfaces(count: int) -> string {
+        return @tr("{n} interface" | "{n} interfaces" % count);
+    }
+
+    public pure function endpoint(interface-count: int, path: string) -> string {
+        return @tr("{n} interface  {}" | "{n} interfaces  {}" % interface-count, path);
+    }
+}
+
+export global SettingsTranslations {
+    public pure function wheel-mode(index: int) -> string {
+        return index == 0 ? @tr("Ratchet")
+            : index == 1 ? @tr("Free-spin")
+            : @tr("SmartShift");
+    }
+
+    public pure function thumb-wheel(index: int) -> string {
+        return index == 0 ? @tr("Horizontal Scroll")
+            : index == 1 ? @tr("Tab Switch")
+            : index == 2 ? @tr("Zoom")
+            : index == 3 ? @tr("Volume")
+            : @tr("Disabled");
+    }
+
+    public pure function button(index: int) -> string {
+        return index == 0 ? @tr("Back button")
+            : index == 1 ? @tr("Forward button")
+            : index == 2 ? @tr("Gesture button")
+            : index == 3 ? @tr("Mode shift")
+            : @tr("Middle click");
+    }
+
+    public pure function action(index: int) -> string {
+        return index == 0 ? @tr("Back")
+            : index == 1 ? @tr("Forward")
+            : index == 2 ? @tr("Activities Overview")
+            : index == 3 ? @tr("Switch Windows")
+            : index == 4 ? @tr("Previous Workspace")
+            : index == 5 ? @tr("Next Workspace")
+            : index == 6 ? @tr("Middle Click")
+            : index == 7 ? @tr("Copy")
+            : index == 8 ? @tr("Paste")
+            : index == 9 ? @tr("Disabled")
+            : @tr("Default Behavior");
+    }
+
+    public pure function button-action(button-index: int, action-index: int) -> string {
+        return action-index != 10 ? root.action(action-index)
+            : button-index == 0 ? @tr("Back")
+            : button-index == 1 ? @tr("Forward")
+            : button-index == 3 ? @tr("Scroll Mode Switch")
+            : button-index == 4 ? @tr("Middle Click")
+            : @tr("Default Behavior");
+    }
+
+    public pure function profile-summary(pointer-speed: int, thumb-wheel-index: int) -> string {
+        return @tr("{}% pointer, thumb wheel {}", pointer-speed, root.thumb-wheel(thumb-wheel-index));
+    }
+
+    public pure function plan(row: PlanRow) -> string {
+        return row.kind == PlanKind.pointer-speed
+            ? @tr("Set pointer speed to {}%", row.value)
+            : row.kind == PlanKind.wheel-behavior && row.primary-index == 2
+            ? @tr("Use SmartShift with sensitivity {}", row.value)
+            : row.kind == PlanKind.wheel-behavior
+            ? @tr("Use {} scrolling", root.wheel-mode(row.primary-index))
+            : row.kind == PlanKind.scroll-behavior && row.primary-changed && row.secondary-changed && row.enabled && row.secondary-enabled
+            ? @tr("Smooth scrolling · Natural direction")
+            : row.kind == PlanKind.scroll-behavior && row.primary-changed && row.secondary-changed && row.enabled
+            ? @tr("Smooth scrolling · Standard direction")
+            : row.kind == PlanKind.scroll-behavior && row.primary-changed && row.secondary-changed && row.secondary-enabled
+            ? @tr("Smooth scrolling off · Natural direction")
+            : row.kind == PlanKind.scroll-behavior && row.primary-changed && row.secondary-changed
+            ? @tr("Smooth scrolling off · Standard direction")
+            : row.kind == PlanKind.scroll-behavior && row.primary-changed && row.enabled
+            ? @tr("Enable smooth scrolling")
+            : row.kind == PlanKind.scroll-behavior && row.primary-changed
+            ? @tr("Disable smooth scrolling")
+            : row.kind == PlanKind.scroll-behavior && row.secondary-enabled
+            ? @tr("Use natural scroll direction")
+            : row.kind == PlanKind.scroll-behavior
+            ? @tr("Use standard scroll direction")
+            : row.kind == PlanKind.thumb-wheel && row.primary-index == 0 && row.value == 100
+            ? @tr("Use native horizontal scrolling")
+            : row.kind == PlanKind.thumb-wheel && row.primary-index == 0
+            ? @tr("Use horizontal scrolling at {}% through Dogi", row.value)
+            : row.kind == PlanKind.thumb-wheel
+            ? @tr("Route thumb wheel through Dogi for {}", root.thumb-wheel(row.primary-index))
+            : row.kind == PlanKind.button-routing && row.enabled
+            ? @tr("Route {} through dogi for {}", root.button(row.primary-index), root.action(row.secondary-index))
+            : row.kind == PlanKind.button-routing
+            ? @tr("Use native behavior for {}", root.button(row.primary-index))
+            : row.kind == PlanKind.local-runtime
+            ? @tr("Run the local runtime listener")
+            : @tr("Save local app profile {} at {}%, thumb wheel {}", row.name, row.value, root.thumb-wheel(row.primary-index));
+    }
+}
+
+export global StatusTranslations {
+    public pure function apply-summary(status: UiStatus) -> string {
+        return status.failed > 0
+            ? @tr("Applied with {} failed, {} successful, {} unsupported", status.failed, status.applied, status.unsupported)
+            : status.unsupported > 0
+            ? @tr("Applied {} settings, {} unsupported", status.applied, status.unsupported)
+            : @tr("Applied {} settings", status.applied);
+    }
+
+    public pure function text(status: UiStatus) -> string {
+        return status.message == UiMessage.scanner-stopped ? @tr("Device scanner stopped unexpectedly")
+            : status.message == UiMessage.scan-failed ? @tr("Scan failed: {}", status.detail)
+            : status.message == UiMessage.no-devices ? @tr("No Logitech devices found")
+            : status.message == UiMessage.scanning ? @tr("Scanning devices…")
+            : status.message == UiMessage.scan-start-failed ? @tr("Scan failed to start: {}", status.detail)
+            : status.message == UiMessage.editing-device ? @tr("Editing {}", status.subject)
+            : status.message == UiMessage.changes-reverted ? @tr("Changes reverted")
+            : status.message == UiMessage.changes-saved ? @tr("Changes saved")
+            : status.message == UiMessage.changes-saved-for-later
+            ? @tr("Changes saved. Apply them when the mouse is available.")
+            : status.message == UiMessage.save-failed ? @tr("Save failed: {}", status.detail)
+            : status.message == UiMessage.app-name-required ? @tr("Enter an app name")
+            : status.message == UiMessage.profile-not-found ? @tr("App profile {} was not found", status.subject)
+            : status.message == UiMessage.apply-unavailable ? @tr("Connect a supported mouse with full HID access to apply settings")
+            : status.message == UiMessage.no-device ? @tr("Connect the mouse to apply {n} setting" | "Connect the mouse to apply {n} settings" % status.count)
+            : status.message == UiMessage.apply-backend-unavailable ? @tr("Applying {n} setting is unavailable" | "Applying {n} settings is unavailable" % status.count)
+            : status.message == UiMessage.review-plan ? @tr("Review {n} mouse setting" | "Review {n} mouse settings" % status.count)
+            : status.message == UiMessage.apply-summary && status.path != ""
+            ? @tr("{} · Settings saved", root.apply-summary(status))
+            : status.message == UiMessage.apply-summary ? root.apply-summary(status)
+            : status.message == UiMessage.apply-failed && status.path != ""
+            ? @tr("Could not apply settings: {}. Your changes were saved.", status.detail)
+            : status.message == UiMessage.apply-failed
+            ? @tr("Apply failed: {}", status.detail)
+            : status.message == UiMessage.app-config-save-failed
+            ? @tr("Could not save application settings: {}", status.detail)
+            : status.message == UiMessage.app-config-load-failed
+            ? @tr("Could not load application settings: {}", status.detail)
+            : status.message == UiMessage.language-unavailable
+            ? @tr("Could not switch language: {}", status.detail)
+            : status.message == UiMessage.tray-unavailable && status.detail != ""
+            ? @tr("System tray is unavailable: {}", status.detail)
+            : status.message == UiMessage.tray-unavailable
+            ? @tr("System tray is unavailable")
+            : "";
+    }
+}

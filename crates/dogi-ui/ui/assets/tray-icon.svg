@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <path
+    fill="#f4f5f7"
+    fill-rule="evenodd"
+    stroke="#202126"
+    stroke-linejoin="round"
+    stroke-opacity=".62"
+    stroke-width="4"
+    paint-order="stroke fill"
+    d="
+      M42 8
+      C45.314 8 48 10.686 48 14
+      V42
+      C48 49.732 41.732 56 34 56
+      H22
+      C14.268 56 8 49.732 8 42
+      C8 34.268 14.268 28 22 28
+      H36
+      V14
+      C36 10.686 38.686 8 42 8
+      Z
+
+      M22 36
+      H34
+      C37.314 36 40 38.686 40 42
+      C40 45.314 37.314 48 34 48
+      H22
+      C18.686 48 16 45.314 16 42
+      C16 38.686 18.686 36 22 36
+      Z
+    "
+  />
+</svg>

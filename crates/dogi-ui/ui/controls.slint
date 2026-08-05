@@ -1,0 +1,313 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+
+export component FormComboBox inherits Rectangle {
+    in property <[string]> model;
+    in property <bool> enabled: true;
+    in-out property <int> current-index: 0;
+    out property <string> current-value:
+        root.current-index >= 0 && root.current-index < root.model.length
+        ? root.model[root.current-index]
+        : "";
+    callback selected(string);
+
+    private property <bool> has-focus: control-focus.has-focus || popup.is-open;
+
+    public function select(index: int) {
+        if (!root.enabled || root.model.length == 0) {
+            return;
+        }
+        root.current-index = clamp(index, 0, root.model.length - 1);
+        root.selected(root.current-value);
+    }
+
+    public function open() {
+        if (root.enabled && root.model.length > 0) {
+            popup.show();
+        }
+    }
+
+    changed model => {
+        root.current-index = root.model.length == 0
+            ? 0
+            : clamp(root.current-index, 0, root.model.length - 1);
+    }
+
+    min-width: 160px;
+    min-height: 34px;
+    background: !root.enabled ? Theme.surface
+        : control-area.pressed ? Theme.selected
+        : control-area.has-hover || popup.is-open ? Theme.hover
+        : Theme.panel;
+    border-width: root.has-focus ? 2px : 1px;
+    border-color: root.has-focus ? Theme.accent : Theme.control-border;
+    border-radius: 5px;
+    opacity: root.enabled ? 1 : 0.55;
+    forward-focus: control-focus;
+    accessible-role: combobox;
+    accessible-enabled: root.enabled;
+    accessible-expandable: true;
+    accessible-expanded: popup.is-open;
+    accessible-value: root.current-value;
+    accessible-action-expand => { root.open(); }
+
+    Text {
+        x: 12px;
+        width: parent.width - 38px;
+        height: parent.height;
+        text: root.current-value;
+        color: root.enabled ? Theme.text : Theme.text-faint;
+        font-size: 11px;
+        overflow: elide;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+
+    Path {
+        x: parent.width - 24px;
+        y: (parent.height - self.height) / 2;
+        width: 12px;
+        height: 7px;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 12;
+        viewbox-height: 7;
+        commands: popup.is-open ? "M1 6 L6 1 L11 6" : "M1 1 L6 6 L11 1";
+        fill: transparent;
+        stroke: root.enabled ? Theme.text-muted : Theme.text-faint;
+        stroke-width: 1px;
+        accessible-role: none;
+    }
+
+    control-focus := FocusScope {
+        key-pressed(event) => {
+            if (!root.enabled) {
+                return reject;
+            }
+            if (event.text == Key.UpArrow) {
+                root.select(root.current-index - 1);
+                return accept;
+            } else if (event.text == Key.DownArrow) {
+                root.select(root.current-index + 1);
+                return accept;
+            } else if (event.text == Key.Return || event.text == " ") {
+                root.open();
+                return accept;
+            }
+            return reject;
+        }
+
+        control-area := TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: root.enabled ? pointer : default;
+            clicked => {
+                control-focus.focus();
+                root.open();
+            }
+            scroll-event(event) => {
+                if (!control-focus.has-focus) {
+                    return reject;
+                }
+                if (event.delta-y < -2px) {
+                    root.select(root.current-index + 1);
+                    return accept;
+                } else if (event.delta-y > 2px) {
+                    root.select(root.current-index - 1);
+                    return accept;
+                }
+                return reject;
+            }
+        }
+    }
+
+    popup := PopupWindow {
+        x: 0px;
+        y: root.height + 4px;
+        width: root.width;
+        height: min(6, root.model.length) * 34px + 8px;
+        close-policy: close-on-click-outside;
+        forward-focus: popup-focus;
+
+        Rectangle {
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.control-border;
+            border-radius: 7px;
+            clip: true;
+
+            popup-focus := FocusScope {
+                key-pressed(event) => {
+                    if (event.text == Key.UpArrow) {
+                        root.select(root.current-index - 1);
+                        return accept;
+                    } else if (event.text == Key.DownArrow) {
+                        root.select(root.current-index + 1);
+                        return accept;
+                    } else if (event.text == Key.Return || event.text == Key.Escape) {
+                        control-focus.focus();
+                        popup.close();
+                        return accept;
+                    }
+                    return reject;
+                }
+            }
+
+            ListView {
+                x: 4px;
+                y: 4px;
+                width: parent.width - 8px;
+                height: parent.height - 8px;
+
+                for option[index] in root.model : Rectangle {
+                    height: 34px;
+                    background: index == root.current-index ? Theme.selected
+                        : option-area.has-hover ? Theme.hover
+                        : transparent;
+                    border-radius: 4px;
+                    accessible-role: list-item;
+                    accessible-label: option;
+                    accessible-action-default => {
+                        control-focus.focus();
+                        root.select(index);
+                        popup.close();
+                    }
+
+                    Text {
+                        x: 10px;
+                        width: parent.width - 36px;
+                        height: parent.height;
+                        text: option;
+                        color: Theme.text;
+                        font-size: 11px;
+                        font-weight: index == root.current-index ? 600 : 400;
+                        overflow: elide;
+                        vertical-alignment: center;
+                        accessible-role: none;
+                    }
+
+                    if index == root.current-index : Path {
+                        x: parent.width - 22px;
+                        y: (parent.height - self.height) / 2;
+                        width: 12px;
+                        height: 9px;
+                        viewbox-x: 0;
+                        viewbox-y: 0;
+                        viewbox-width: 12;
+                        viewbox-height: 9;
+                        commands: "M1 5 L4 8 L11 1";
+                        fill: transparent;
+                        stroke: Theme.accent;
+                        stroke-width: 2px;
+                        accessible-role: none;
+                    }
+
+                    option-area := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            control-focus.focus();
+                            root.select(index);
+                            popup.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component FormLineEdit inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder-text;
+    in property <bool> enabled: true;
+    in property <bool> read-only: false;
+    callback edited(string);
+    callback accepted(string);
+
+    private property <length> text-offset: 0px;
+
+    min-width: 160px;
+    min-height: 36px;
+    background: root.enabled ? Theme.panel : Theme.surface;
+    border-width: input.has-focus ? 2px : 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.control-border;
+    border-radius: 5px;
+    opacity: root.enabled ? 1 : 0.55;
+    clip: true;
+    forward-focus: input;
+    accessible-role: text-input;
+    accessible-enabled: root.enabled;
+    accessible-value: root.text;
+    accessible-placeholder-text: root.placeholder-text;
+    accessible-read-only: root.read-only;
+    accessible-action-set-value(value) => {
+        if (root.enabled && !root.read-only) {
+            root.text = value;
+            root.edited(value);
+        }
+    }
+
+    if root.text == "" && input.preedit-text == "" : Text {
+        x: 12px;
+        width: parent.width - 24px;
+        height: parent.height;
+        text: root.placeholder-text;
+        color: Theme.text-faint;
+        font-size: 11px;
+        overflow: elide;
+        vertical-alignment: center;
+        accessible-role: none;
+    }
+
+    ContextMenuArea {
+        enabled: root.enabled;
+
+        Menu {
+            MenuItem {
+                title: @tr("Cut");
+                enabled: root.enabled && !root.read-only;
+                activated => { input.cut(); }
+            }
+            MenuItem {
+                title: @tr("Copy");
+                enabled: root.text != "";
+                activated => { input.copy(); }
+            }
+            MenuItem {
+                title: @tr("Paste");
+                enabled: root.enabled && !root.read-only;
+                activated => { input.paste(); }
+            }
+            MenuItem {
+                title: @tr("Select All");
+                enabled: root.text != "";
+                activated => { input.select-all(); }
+            }
+        }
+
+        input := TextInput {
+            x: 12px + root.text-offset;
+            width: max(root.width - 24px, self.preferred-width);
+            height: root.height;
+            text <=> root.text;
+            enabled: root.enabled;
+            read-only: root.read-only;
+            single-line: true;
+            color: root.enabled ? Theme.text : Theme.text-faint;
+            font-size: 11px;
+            vertical-alignment: center;
+            selection-background-color: Theme.accent-bg;
+            selection-foreground-color: Theme.accent-text;
+            accessible-role: none;
+
+            cursor-position-changed(position) => {
+                if (position.x + self.x < 12px) {
+                    root.text-offset = -position.x;
+                } else if (position.x + self.x > root.width - 12px) {
+                    root.text-offset = root.width - 12px - position.x;
+                }
+            }
+            edited => { root.edited(self.text); }
+            accepted => { root.accepted(self.text); }
+        }
+    }
+}

@@ -1,0 +1,18 @@
+[package]
+name = "dogi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "Linux desktop application for configuring Logitech mice"
+readme = "../../README.md"
+
+[dependencies]
+clap.workspace = true
+dogi-core.workspace = true
+dogi-hid.workspace = true
+dogi-ui.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true

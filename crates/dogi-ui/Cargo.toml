@@ -1,0 +1,16 @@
+[package]
+name = "dogi-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dogi-core.workspace = true
+slint.workspace = true
+zbus.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true
+
+[dev-dependencies]
+slint-snapshot.workspace = true

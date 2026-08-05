@@ -1,0 +1,48 @@
+import { Theme } from "theme.slint";
+
+export component BrandWordmark inherits Rectangle {
+    in property <color> mark-color: Theme.accent-bg;
+    in property <color> word-color: Theme.sidebar-text;
+    in property <color> surface-color: Theme.sidebar;
+
+    background: transparent;
+
+    Rectangle {
+        x: 0px;
+        y: 9px;
+        width: 17px;
+        height: 17px;
+        border-radius: 9px;
+        background: root.mark-color;
+    }
+
+    Rectangle {
+        x: 4px;
+        y: 13px;
+        width: 9px;
+        height: 9px;
+        border-radius: 5px;
+        background: root.surface-color;
+    }
+
+    Rectangle {
+        x: 13px;
+        y: 1px;
+        width: 4px;
+        height: 24px;
+        border-radius: 2px;
+        background: root.mark-color;
+    }
+
+    Text {
+        x: 20px;
+        width: parent.width - 20px;
+        height: parent.height;
+        text: "ogi";
+        color: root.word-color;
+        font-size: 18px;
+        font-weight: 650;
+        letter-spacing: -0.6px;
+        vertical-alignment: center;
+    }
+}

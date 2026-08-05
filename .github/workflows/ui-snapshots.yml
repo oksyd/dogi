@@ -1,0 +1,71 @@
+name: UI snapshots
+
+on:
+  pull_request:
+    paths:
+      - crates/dogi-ui/**
+      - crates/dogi-core/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/ui-snapshots.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-snapshots-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  render:
+    name: Render
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libfontconfig1-dev
+
+      - name: Prepare Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Render representative states
+        run: |
+          mkdir -p target/ui-snapshots
+
+          render() {
+            local name=$1
+            shift
+            env \
+              DOGI_UI_SNAPSHOT="$GITHUB_WORKSPACE/target/ui-snapshots/$name.png" \
+              "$@" \
+              cargo test --locked --package dogi-ui --lib \
+                tests::render_preview_snapshot_when_requested -- --exact
+          }
+
+          render default
+          render multi-device DOGI_UI_SNAPSHOT_MULTI=1
+          render permission-error DOGI_UI_SNAPSHOT_ACCESS=permission
+          render settings DOGI_UI_SNAPSHOT_PAGE=3
+          render settings-dark DOGI_UI_SNAPSHOT_PAGE=3 DOGI_UI_SNAPSHOT_THEME=2
+          render settings-zh-cn DOGI_UI_SNAPSHOT_PAGE=3 DOGI_UI_SNAPSHOT_LOCALE=zh_CN
+          render language-menu DOGI_UI_SNAPSHOT_LANGUAGE_MENU=1
+
+      - name: Upload rendered snapshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dogi-ui-snapshots-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/ui-snapshots/
+          if-no-files-found: error
+          retention-days: 14

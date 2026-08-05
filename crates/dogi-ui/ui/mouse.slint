@@ -1,0 +1,13 @@
+export component Master3sDrawing inherits Rectangle {
+    in property <bool> connected: true;
+
+    background: transparent;
+
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("assets/mx-master-3s.png");
+        image-fit: contain;
+        opacity: root.connected ? 1 : 0.34;
+    }
+}

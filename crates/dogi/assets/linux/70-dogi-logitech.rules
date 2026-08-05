@@ -1,0 +1,5 @@
+# Dogi: Logitech HID++ access for discovery, settings, and app profiles.
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", MODE="0660", TAG+="uaccess"
+
+# Dogi: uinput access for custom keyboard and mouse actions.
+KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", TAG+="uaccess", OPTIONS+="static_node=uinput"

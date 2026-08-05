@@ -1,0 +1,154 @@
+import { Theme } from "theme.slint";
+
+component SkeletonDivider inherits Rectangle {
+    height: 1px;
+    background: Theme.border;
+    vertical-stretch: 0;
+}
+
+component SkeletonLine inherits Rectangle {
+    in property <bool> strong: false;
+
+    height: 10px;
+    border-radius: 5px;
+    background: root.strong ? Theme.skeleton-strong : Theme.skeleton;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+}
+
+component SkeletonSettingRow inherits HorizontalLayout {
+    in property <length> label-width: 128px;
+    in property <length> value-width: 176px;
+
+    height: 54px;
+    padding-left: 18px;
+    padding-right: 18px;
+    spacing: 18px;
+    vertical-stretch: 1;
+
+    VerticalLayout {
+        width: root.label-width;
+        horizontal-stretch: 0;
+        alignment: center;
+        SkeletonLine { width: parent.width; strong: true; }
+    }
+    Rectangle { horizontal-stretch: 1; }
+    VerticalLayout {
+        width: root.value-width;
+        horizontal-stretch: 0;
+        alignment: center;
+        SkeletonLine { width: parent.width; height: 12px; }
+    }
+}
+
+export component DeviceConfigSkeleton inherits VerticalLayout {
+    in property <bool> compact: false;
+
+    spacing: 12px;
+    vertical-stretch: 1;
+    accessible-role: progress-indicator;
+    accessible-label: @tr("Identifying device…");
+
+    Rectangle {
+        height: root.compact ? 62px : 72px;
+        background: Theme.panel;
+        border-width: 1px;
+        border-color: Theme.border;
+        border-radius: 7px;
+        vertical-stretch: 0;
+
+        HorizontalLayout {
+            padding-left: 18px;
+            padding-right: 18px;
+            spacing: 24px;
+
+            VerticalLayout {
+                width: 116px;
+                horizontal-stretch: 0;
+                alignment: center;
+                SkeletonLine { width: parent.width; strong: true; }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            VerticalLayout {
+                width: 214px;
+                horizontal-stretch: 0;
+                spacing: 9px;
+                alignment: center;
+                SkeletonLine { width: 34px; height: 9px; }
+                SkeletonLine { width: parent.width; height: 6px; }
+            }
+        }
+    }
+
+    Rectangle {
+        vertical-stretch: 1;
+        background: Theme.panel;
+        border-width: 1px;
+        border-color: Theme.border;
+        border-radius: 7px;
+        clip: true;
+
+        VerticalLayout {
+            padding: 0px;
+            spacing: 0px;
+
+            HorizontalLayout {
+                height: root.compact ? 36px : 42px;
+                padding-left: 18px;
+                vertical-stretch: 0;
+                VerticalLayout {
+                    width: 88px;
+                    horizontal-stretch: 0;
+                    alignment: center;
+                    SkeletonLine { width: parent.width; strong: true; }
+                }
+                Rectangle {}
+            }
+            SkeletonDivider {}
+            SkeletonSettingRow { label-width: 142px; value-width: 206px; }
+            SkeletonDivider {}
+            SkeletonSettingRow { label-width: 96px; value-width: 154px; }
+            SkeletonDivider {}
+            SkeletonSettingRow { label-width: 118px; value-width: 44px; }
+            SkeletonDivider {}
+            SkeletonSettingRow { label-width: 104px; value-width: 154px; }
+            SkeletonDivider {}
+            SkeletonSettingRow { label-width: 84px; value-width: 154px; }
+            SkeletonDivider {}
+            SkeletonSettingRow { label-width: 144px; value-width: 206px; }
+        }
+    }
+}
+
+export component DiscoveryPageSkeleton inherits Rectangle {
+    background: Theme.panel;
+    border-width: 1px;
+    border-color: Theme.border;
+    border-radius: 8px;
+    accessible-role: progress-indicator;
+    accessible-label: @tr("Identifying device…");
+
+    VerticalLayout {
+        padding-left: 22px;
+        padding-right: 22px;
+        padding-top: 22px;
+        padding-bottom: 22px;
+        spacing: 18px;
+
+        HorizontalLayout {
+            height: 28px;
+            spacing: 12px;
+            vertical-stretch: 0;
+            SkeletonLine { width: 154px; height: 12px; strong: true; }
+            Rectangle {}
+            SkeletonLine { width: 96px; height: 28px; }
+        }
+        SkeletonDivider {}
+        SkeletonSettingRow { height: 66px; label-width: 126px; value-width: 212px; }
+        SkeletonDivider {}
+        SkeletonSettingRow { height: 66px; label-width: 154px; value-width: 168px; }
+        SkeletonDivider {}
+        SkeletonSettingRow { height: 66px; label-width: 112px; value-width: 212px; }
+        Rectangle {}
+    }
+}

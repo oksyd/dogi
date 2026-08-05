@@ -1,0 +1,1069 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: dogi-ui 0.1.0\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-07-24 07:09+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: zh_CN <LL@li.org>\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"Generated-By: Babel 2.17.0\n"
+
+#: crates/dogi-ui/ui/app.slint:540 ui/app.slint:541
+msgid "Test horizontal scrolling"
+msgstr "测试横向滚动"
+
+#: crates/dogi-ui/ui/app.slint:563 ui/app.slint:564
+msgid "Baseline · 100%"
+msgstr "基准 · 100%"
+
+#: crates/dogi-ui/ui/app.slint:592 ui/app.slint:593
+msgid "Current · {}%"
+msgstr "当前 · {}%"
+
+#: crates/dogi-ui/ui/app.slint:615 ui/app.slint:617 ui/app.slint:1605
+msgid "Starting…"
+msgstr "正在启动…"
+
+#: crates/dogi-ui/ui/app.slint:616 ui/app.slint:618
+msgid "Stop"
+msgstr "停止"
+
+#: crates/dogi-ui/ui/app.slint:617 ui/app.slint:619
+msgid "Test"
+msgstr "测试"
+
+#: crates/dogi-ui/ui/app.slint:694 ui/app.slint:706
+msgid "Roll the thumb wheel"
+msgstr "滚动拇指滚轮"
+
+#: crates/dogi-ui/ui/app.slint:596 crates/dogi-ui/ui/app.slint:611
+#: crates/dogi-ui/ui/app.slint:596 crates/dogi-ui/ui/app.slint:611 crates/dogi-ui/ui/app.slint:611
+#: crates/dogi-ui/ui/app.slint:596 crates/dogi-ui/ui/app.slint:611 crates/dogi-ui/ui/app.slint:611 crates/dogi-ui/ui/app.slint:596
+#: crates/dogi-ui/ui/app.slint:596 crates/dogi-ui/ui/app.slint:611 crates/dogi-ui/ui/app.slint:611 crates/dogi-ui/ui/app.slint:596 crates/dogi-ui/ui/app.slint:611
+#: crates/dogi-ui/ui/app.slint:596 crates/dogi-ui/ui/app.slint:611 crates/dogi-ui/ui/app.slint:611 crates/dogi-ui/ui/app.slint:596 crates/dogi-ui/ui/app.slint:611 ui/app.slint:860
+msgid "Scroll mode"
+msgstr "滚轮模式"
+
+#: crates/dogi-ui/ui/app.slint:871 crates/dogi-ui/ui/i18n.slint:33
+#: crates/dogi-ui/ui/app.slint:871 crates/dogi-ui/ui/i18n.slint:33 crates/dogi-ui/ui/i18n.slint:33
+#: crates/dogi-ui/ui/app.slint:871 crates/dogi-ui/ui/i18n.slint:33 crates/dogi-ui/ui/i18n.slint:33 crates/dogi-ui/ui/app.slint:871
+#: crates/dogi-ui/ui/app.slint:871 crates/dogi-ui/ui/i18n.slint:33 crates/dogi-ui/ui/i18n.slint:33 crates/dogi-ui/ui/app.slint:871 crates/dogi-ui/ui/i18n.slint:33
+#: crates/dogi-ui/ui/app.slint:871 crates/dogi-ui/ui/i18n.slint:33 crates/dogi-ui/ui/i18n.slint:33 crates/dogi-ui/ui/app.slint:871 crates/dogi-ui/ui/i18n.slint:33 ui/i18n.slint:33
+msgid "Connected"
+msgstr "已连接"
+
+#: crates/dogi-ui/ui/app.slint:872 ui/app.slint:1121
+msgid "Detected"
+msgstr "已检测"
+
+#: crates/dogi-ui/ui/app.slint:873 ui/app.slint:1122
+msgid "Offline"
+msgstr "离线"
+
+#: crates/dogi-ui/ui/app.slint:886 ui/app.slint:1135
+msgid "Receiver overview"
+msgstr "接收器概览"
+
+#: crates/dogi-ui/ui/app.slint:887 ui/app.slint:1136
+msgid "Device overview"
+msgstr "设备概览"
+
+#: crates/dogi-ui/ui/app.slint:888 ui/app.slint:1137
+msgid "Preview"
+msgstr "预览"
+
+#: crates/dogi-ui/ui/app.slint:955 ui/app.slint:1204
+msgid "Pointer"
+msgstr "指针"
+
+#: crates/dogi-ui/ui/app.slint:967 crates/dogi-ui/ui/app.slint:2217
+#: crates/dogi-ui/ui/app.slint:967 crates/dogi-ui/ui/app.slint:2217 crates/dogi-ui/ui/app.slint:2217
+#: crates/dogi-ui/ui/app.slint:967 crates/dogi-ui/ui/app.slint:2217 crates/dogi-ui/ui/app.slint:2217 crates/dogi-ui/ui/app.slint:967
+#: crates/dogi-ui/ui/app.slint:967 crates/dogi-ui/ui/app.slint:2217 crates/dogi-ui/ui/app.slint:2217 crates/dogi-ui/ui/app.slint:967 crates/dogi-ui/ui/app.slint:2217
+#: crates/dogi-ui/ui/app.slint:967 crates/dogi-ui/ui/app.slint:2217 crates/dogi-ui/ui/app.slint:2217 crates/dogi-ui/ui/app.slint:967 crates/dogi-ui/ui/app.slint:2217 ui/app.slint:2627 ui/app.slint:2630
+msgid "Main wheel"
+msgstr "主滚轮"
+
+#: crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900
+#: crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:1900
+#: crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:979
+#: crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900
+#: crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900 ui/app.slint:1228 ui/app.slint:2282
+#: crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900 ui/app.slint:1228 ui/app.slint:2282 crates/dogi-ui/ui/app.slint:1900
+#: crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900 ui/app.slint:1228 ui/app.slint:2282 crates/dogi-ui/ui/app.slint:1900 ui/app.slint:2602 ui/app.slint:1228
+#: crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:1900 crates/dogi-ui/ui/app.slint:979 crates/dogi-ui/ui/app.slint:1900 ui/app.slint:1228 ui/app.slint:2282 crates/dogi-ui/ui/app.slint:1900 ui/app.slint:2602 ui/app.slint:1228 ui/app.slint:2285 ui/app.slint:2607
+msgid "Thumb wheel"
+msgstr "拇指滚轮"
+
+#: crates/dogi-ui/ui/app.slint:992 ui/app.slint:1241
+msgid "Transport"
+msgstr "连接方式"
+
+#: crates/dogi-ui/ui/app.slint:1003 crates/dogi-ui/ui/i18n.slint:13
+#: crates/dogi-ui/ui/app.slint:1003 crates/dogi-ui/ui/i18n.slint:13 crates/dogi-ui/ui/i18n.slint:13
+#: crates/dogi-ui/ui/app.slint:1003 crates/dogi-ui/ui/i18n.slint:13 crates/dogi-ui/ui/i18n.slint:13 crates/dogi-ui/ui/app.slint:1003
+#: crates/dogi-ui/ui/app.slint:1003 crates/dogi-ui/ui/i18n.slint:13 crates/dogi-ui/ui/i18n.slint:13 crates/dogi-ui/ui/app.slint:1003 crates/dogi-ui/ui/i18n.slint:13
+#: crates/dogi-ui/ui/app.slint:1003 crates/dogi-ui/ui/i18n.slint:13 crates/dogi-ui/ui/i18n.slint:13 crates/dogi-ui/ui/app.slint:1003 crates/dogi-ui/ui/i18n.slint:13 ui/i18n.slint:13
+msgid "USB"
+msgstr "USB"
+
+#: crates/dogi-ui/ui/app.slint:1004 ui/app.slint:1253
+msgid "Interface"
+msgstr "接口"
+
+#: crates/dogi-ui/ui/app.slint:1016 ui/app.slint:1265
+msgid "Interfaces"
+msgstr "接口数量"
+
+#: crates/dogi-ui/ui/app.slint:1139 ui/app.slint:1388
+msgid "Select a control on the mouse"
+msgstr "选择鼠标上的按键"
+
+#: crates/dogi-ui/ui/app.slint:1429 crates/dogi-ui/ui/app.slint:2519
+#: crates/dogi-ui/ui/app.slint:1429 crates/dogi-ui/ui/app.slint:2519 crates/dogi-ui/ui/app.slint:2519
+#: crates/dogi-ui/ui/app.slint:1429 crates/dogi-ui/ui/app.slint:2519 crates/dogi-ui/ui/app.slint:2519 crates/dogi-ui/ui/app.slint:1429
+#: crates/dogi-ui/ui/app.slint:1429 crates/dogi-ui/ui/app.slint:2519 crates/dogi-ui/ui/app.slint:2519 crates/dogi-ui/ui/app.slint:1429 crates/dogi-ui/ui/app.slint:2519
+#: crates/dogi-ui/ui/app.slint:1429 crates/dogi-ui/ui/app.slint:2519 crates/dogi-ui/ui/app.slint:2519 crates/dogi-ui/ui/app.slint:1429 crates/dogi-ui/ui/app.slint:2519 ui/app.slint:2957 ui/app.slint:2960
+msgid "Cancel"
+msgstr "取消"
+
+#: crates/dogi-ui/ui/app.slint:1564 ui/app.slint:1929 ui/app.slint:1931
+msgid "System language"
+msgstr "跟随系统"
+
+#: crates/dogi-ui/ui/app.slint:1569 ui/app.slint:1934 ui/app.slint:1936
+msgid "System theme"
+msgstr "跟随系统"
+
+#: crates/dogi-ui/ui/app.slint:1570 ui/app.slint:1935 ui/app.slint:1937
+msgid "Light"
+msgstr "浅色"
+
+#: crates/dogi-ui/ui/app.slint:1571 ui/app.slint:1936 ui/app.slint:1938
+msgid "Dark"
+msgstr "深色"
+
+#: crates/dogi-ui/ui/app.slint:1574 crates/dogi-ui/ui/app.slint:2571
+#: crates/dogi-ui/ui/app.slint:1574 crates/dogi-ui/ui/app.slint:2571 crates/dogi-ui/ui/app.slint:2571
+#: crates/dogi-ui/ui/app.slint:1574 crates/dogi-ui/ui/app.slint:2571 crates/dogi-ui/ui/app.slint:2571 crates/dogi-ui/ui/app.slint:1574
+#: crates/dogi-ui/ui/app.slint:1574 crates/dogi-ui/ui/app.slint:2571 crates/dogi-ui/ui/app.slint:2571 crates/dogi-ui/ui/app.slint:1574 crates/dogi-ui/ui/app.slint:2571
+#: crates/dogi-ui/ui/app.slint:1574 crates/dogi-ui/ui/app.slint:2571 crates/dogi-ui/ui/app.slint:2571 crates/dogi-ui/ui/app.slint:1574 crates/dogi-ui/ui/app.slint:2571 ui/app.slint:3009 ui/app.slint:3012
+msgid "Quit dogi"
+msgstr "退出 dogi"
+
+#: crates/dogi-ui/ui/app.slint:1575 ui/app.slint:1940 ui/app.slint:1942
+msgid "Keep running in tray"
+msgstr "在托盘中继续运行"
+
+#: crates/dogi-ui/ui/app.slint:1636 ui/app.slint:2007 ui/app.slint:2009
+msgid "Devices"
+msgstr "设备"
+
+#: crates/dogi-ui/ui/app.slint:1644 ui/app.slint:2015 ui/app.slint:2017
+msgid "No mouse found"
+msgstr "未发现鼠标"
+
+#: crates/dogi-ui/ui/app.slint:1666 crates/dogi-ui/ui/app.slint:1714
+#: crates/dogi-ui/ui/app.slint:1666 crates/dogi-ui/ui/app.slint:1714 crates/dogi-ui/ui/app.slint:1714
+#: crates/dogi-ui/ui/app.slint:1666 crates/dogi-ui/ui/app.slint:1714 crates/dogi-ui/ui/app.slint:1714 crates/dogi-ui/ui/app.slint:1666
+#: crates/dogi-ui/ui/app.slint:1666 crates/dogi-ui/ui/app.slint:1714 crates/dogi-ui/ui/app.slint:1714 crates/dogi-ui/ui/app.slint:1666 crates/dogi-ui/ui/app.slint:1714
+#: crates/dogi-ui/ui/app.slint:1666 crates/dogi-ui/ui/app.slint:1714 crates/dogi-ui/ui/app.slint:1714 crates/dogi-ui/ui/app.slint:1666 crates/dogi-ui/ui/app.slint:1714 ui/app.slint:2087
+msgid "Settings"
+msgstr "设置"
+
+#: crates/dogi-ui/ui/app.slint:1714 ui/app.slint:2085 ui/app.slint:2087
+msgid "No mouse connected"
+msgstr "未连接鼠标"
+
+#: crates/dogi-ui/ui/app.slint:1719 ui/app.slint:2090 ui/app.slint:2092
+msgid "Supported"
+msgstr "已支持"
+
+#: crates/dogi-ui/ui/app.slint:1736 ui/app.slint:2107 ui/app.slint:2109
+msgid "Editing default settings"
+msgstr "正在编辑默认设置"
+
+#: crates/dogi-ui/ui/app.slint:1738 ui/app.slint:2109 ui/app.slint:2111
+msgid "{} · {} · {}"
+msgstr "{} · {} · {}"
+
+#: crates/dogi-ui/ui/app.slint:1742 ui/app.slint:2113 ui/app.slint:2115
+msgid "{} · {}"
+msgstr "{} · {}"
+
+#: crates/dogi-ui/ui/app.slint:1761 ui/app.slint:2132 ui/app.slint:2134
+msgid "Scanning…"
+msgstr "正在扫描…"
+
+#: crates/dogi-ui/ui/app.slint:1761 ui/app.slint:2132 ui/app.slint:2134
+msgid "Rescan"
+msgstr "重新扫描"
+
+#: crates/dogi-ui/ui/app.slint:1776 crates/dogi-ui/ui/app.slint:2531
+#: crates/dogi-ui/ui/app.slint:1776 crates/dogi-ui/ui/app.slint:2531 crates/dogi-ui/ui/app.slint:2531
+#: crates/dogi-ui/ui/app.slint:1776 crates/dogi-ui/ui/app.slint:2531 crates/dogi-ui/ui/app.slint:2531 crates/dogi-ui/ui/app.slint:1776
+#: crates/dogi-ui/ui/app.slint:1776 crates/dogi-ui/ui/app.slint:2531 crates/dogi-ui/ui/app.slint:2531 crates/dogi-ui/ui/app.slint:1776 crates/dogi-ui/ui/app.slint:2531
+#: crates/dogi-ui/ui/app.slint:1776 crates/dogi-ui/ui/app.slint:2531 crates/dogi-ui/ui/app.slint:2531 crates/dogi-ui/ui/app.slint:1776 crates/dogi-ui/ui/app.slint:2531 ui/app.slint:2969 ui/app.slint:2972
+msgid "Revert Changes"
+msgstr "撤销更改"
+
+#: crates/dogi-ui/ui/app.slint:1790 crates/dogi-ui/ui/app.slint:1834
+#: crates/dogi-ui/ui/app.slint:1790 crates/dogi-ui/ui/app.slint:1834 crates/dogi-ui/ui/app.slint:1834
+#: crates/dogi-ui/ui/app.slint:1790 crates/dogi-ui/ui/app.slint:1834 crates/dogi-ui/ui/app.slint:1834 crates/dogi-ui/ui/app.slint:1790
+#: crates/dogi-ui/ui/app.slint:1790 crates/dogi-ui/ui/app.slint:1834 crates/dogi-ui/ui/app.slint:1834 crates/dogi-ui/ui/app.slint:1790 crates/dogi-ui/ui/app.slint:1834
+#: crates/dogi-ui/ui/app.slint:1790 crates/dogi-ui/ui/app.slint:1834 crates/dogi-ui/ui/app.slint:1834 crates/dogi-ui/ui/app.slint:1790 crates/dogi-ui/ui/app.slint:1834 ui/app.slint:2209 ui/app.slint:2212
+msgid "Pointer & Wheel"
+msgstr "指针与滚轮"
+
+#: crates/dogi-ui/ui/app.slint:1791 ui/app.slint:2162 ui/app.slint:2164
+msgid "Buttons"
+msgstr "按键"
+
+#: crates/dogi-ui/ui/app.slint:1792 crates/dogi-ui/ui/app.slint:2033
+#: crates/dogi-ui/ui/app.slint:1792 crates/dogi-ui/ui/app.slint:2033 crates/dogi-ui/ui/app.slint:2033
+#: crates/dogi-ui/ui/app.slint:1792 crates/dogi-ui/ui/app.slint:2033 crates/dogi-ui/ui/app.slint:2033 crates/dogi-ui/ui/app.slint:1792
+#: crates/dogi-ui/ui/app.slint:1792 crates/dogi-ui/ui/app.slint:2033 crates/dogi-ui/ui/app.slint:2033 crates/dogi-ui/ui/app.slint:1792 crates/dogi-ui/ui/app.slint:2033
+#: crates/dogi-ui/ui/app.slint:1792 crates/dogi-ui/ui/app.slint:2033 crates/dogi-ui/ui/app.slint:2033 crates/dogi-ui/ui/app.slint:1792 crates/dogi-ui/ui/app.slint:2033 ui/app.slint:2443 ui/app.slint:2446
+msgid "App Profiles"
+msgstr "应用配置"
+
+#: crates/dogi-ui/ui/app.slint:1826 ui/app.slint:2197 ui/app.slint:2199
+#: crates/dogi-ui/ui/app.slint:1826 ui/app.slint:2197 ui/app.slint:2199
+msgid "Preparing custom actions…"
+msgstr "正在准备自定义操作…"
+
+#: crates/dogi-ui/ui/app.slint:1827 ui/app.slint:2200 ui/app.slint:2202
+#: crates/dogi-ui/ui/app.slint:1827 ui/app.slint:2200 ui/app.slint:2202
+msgid "Custom actions are unavailable: {}"
+msgstr "自定义操作暂不可用：{}"
+
+#: crates/dogi-ui/ui/app.slint:1850 ui/app.slint:2223 ui/app.slint:2225
+#: crates/dogi-ui/ui/app.slint:1850 ui/app.slint:2223 ui/app.slint:2225
+msgid "{} · {}%"
+msgstr "{} · {}%"
+
+#: crates/dogi-ui/ui/app.slint:1867 crates/dogi-ui/ui/app.slint:2192
+#: crates/dogi-ui/ui/app.slint:1867 crates/dogi-ui/ui/app.slint:2192 crates/dogi-ui/ui/app.slint:2192
+#: crates/dogi-ui/ui/app.slint:1867 crates/dogi-ui/ui/app.slint:2192 crates/dogi-ui/ui/app.slint:2192 crates/dogi-ui/ui/app.slint:1867
+#: crates/dogi-ui/ui/app.slint:1867 crates/dogi-ui/ui/app.slint:2192 crates/dogi-ui/ui/app.slint:2192 crates/dogi-ui/ui/app.slint:1867 crates/dogi-ui/ui/app.slint:2192
+#: crates/dogi-ui/ui/app.slint:1867 crates/dogi-ui/ui/app.slint:2192 crates/dogi-ui/ui/app.slint:2192 crates/dogi-ui/ui/app.slint:1867 crates/dogi-ui/ui/app.slint:2192 ui/app.slint:2602 ui/app.slint:2245 ui/app.slint:2605
+msgid "Pointer speed"
+msgstr "指针速度"
+
+#: crates/dogi-ui/ui/app.slint:1886 ui/app.slint:2259 ui/app.slint:2261
+#: crates/dogi-ui/ui/app.slint:1886 ui/app.slint:2259 ui/app.slint:2261
+msgid "Scroll wheel"
+msgstr "滚轮"
+
+#: crates/dogi-ui/ui/app.slint:1889 ui/app.slint:2262 ui/app.slint:2264
+#: crates/dogi-ui/ui/app.slint:1889 ui/app.slint:2262 ui/app.slint:2264
+msgid "SmartShift sensitivity"
+msgstr "SmartShift 灵敏度"
+
+#: crates/dogi-ui/ui/app.slint:2163 ui/app.slint:2266 ui/app.slint:2268
+#: crates/dogi-ui/ui/app.slint:2163 ui/app.slint:2266 ui/app.slint:2268
+msgid "Smooth scrolling"
+msgstr "平滑滚动"
+
+#: crates/dogi-ui/ui/app.slint:2168 ui/app.slint:2271 ui/app.slint:2273
+#: crates/dogi-ui/ui/app.slint:2168 ui/app.slint:2271 ui/app.slint:2273
+msgid "Scroll direction"
+msgstr "滚动方向"
+
+#: crates/dogi-ui/ui/app.slint:2169 ui/app.slint:2272 ui/app.slint:2274
+#: crates/dogi-ui/ui/app.slint:2169 ui/app.slint:2272 ui/app.slint:2274
+msgid "Standard"
+msgstr "标准"
+
+#: crates/dogi-ui/ui/app.slint:2169 ui/app.slint:2272 ui/app.slint:2274
+#: crates/dogi-ui/ui/app.slint:2169 ui/app.slint:2272 ui/app.slint:2274
+msgid "Natural"
+msgstr "自然"
+
+#: crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976
+#: crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1976
+#: crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1903
+#: crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976
+#: crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976 ui/app.slint:2285 ui/app.slint:2386
+#: crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976 ui/app.slint:2285 ui/app.slint:2386 crates/dogi-ui/ui/app.slint:1976
+#: crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976 ui/app.slint:2285 ui/app.slint:2386 crates/dogi-ui/ui/app.slint:1976 ui/app.slint:2569 ui/app.slint:2285
+#: crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1976 crates/dogi-ui/ui/app.slint:1903 crates/dogi-ui/ui/app.slint:1976 ui/app.slint:2285 ui/app.slint:2386 crates/dogi-ui/ui/app.slint:1976 ui/app.slint:2569 ui/app.slint:2285 ui/app.slint:2288 ui/app.slint:2389 ui/app.slint:2574
+msgid "Dogi"
+msgstr "Dogi"
+
+#: crates/dogi-ui/ui/app.slint:1914 ui/app.slint:2301 ui/app.slint:2303
+#: crates/dogi-ui/ui/app.slint:1914 ui/app.slint:2301 ui/app.slint:2303
+msgid "Horizontal scroll speed"
+msgstr "横向滚动速度"
+
+#: crates/dogi-ui/ui/app.slint:1933 crates/dogi-ui/ui/app.slint:2229
+#: crates/dogi-ui/ui/app.slint:1933 crates/dogi-ui/ui/app.slint:2229 crates/dogi-ui/ui/app.slint:2229
+#: crates/dogi-ui/ui/app.slint:1933 crates/dogi-ui/ui/app.slint:2229 crates/dogi-ui/ui/app.slint:2229 crates/dogi-ui/ui/app.slint:1933
+#: crates/dogi-ui/ui/app.slint:1933 crates/dogi-ui/ui/app.slint:2229 crates/dogi-ui/ui/app.slint:2229 crates/dogi-ui/ui/app.slint:1933 crates/dogi-ui/ui/app.slint:2229
+#: crates/dogi-ui/ui/app.slint:1933 crates/dogi-ui/ui/app.slint:2229 crates/dogi-ui/ui/app.slint:2229 crates/dogi-ui/ui/app.slint:1933 crates/dogi-ui/ui/app.slint:2229 ui/app.slint:2639 ui/app.slint:2346 ui/app.slint:2642
+msgid "Button assignments"
+msgstr "按键分配"
+
+#: crates/dogi-ui/ui/app.slint:1981 ui/app.slint:2389 ui/app.slint:2391
+#: crates/dogi-ui/ui/app.slint:1981 ui/app.slint:2389 ui/app.slint:2391
+msgid "Thumb · rear"
+msgstr "拇指区 · 后键"
+
+#: crates/dogi-ui/ui/app.slint:1982 ui/app.slint:2390 ui/app.slint:2392
+#: crates/dogi-ui/ui/app.slint:1982 ui/app.slint:2390 ui/app.slint:2392
+msgid "Thumb · front"
+msgstr "拇指区 · 前键"
+
+#: crates/dogi-ui/ui/app.slint:1983 ui/app.slint:2391 ui/app.slint:2393
+#: crates/dogi-ui/ui/app.slint:1983 ui/app.slint:2391 ui/app.slint:2393
+msgid "Thumb rest"
+msgstr "拇指托"
+
+#: crates/dogi-ui/ui/app.slint:1984 ui/app.slint:2392 ui/app.slint:2394
+#: crates/dogi-ui/ui/app.slint:1984 ui/app.slint:2392 ui/app.slint:2394
+msgid "Behind the wheel"
+msgstr "滚轮后方"
+
+#: crates/dogi-ui/ui/app.slint:1985 ui/app.slint:2393 ui/app.slint:2395
+#: crates/dogi-ui/ui/app.slint:1985 ui/app.slint:2393 ui/app.slint:2395
+msgid "Wheel press"
+msgstr "滚轮按下"
+
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 crates/dogi-ui/ui/app.slint:1991
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 ui/app.slint:2405 ui/app.slint:2404
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 ui/app.slint:2405 ui/app.slint:2404 crates/dogi-ui/ui/app.slint:1991
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 ui/app.slint:2405 ui/app.slint:2404 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 ui/app.slint:2405 ui/app.slint:2404 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 ui/app.slint:2405 ui/app.slint:2404 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 ui/app.slint:2405 ui/app.slint:2404 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 ui/app.slint:2405 ui/app.slint:2404
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 ui/app.slint:2405 ui/app.slint:2404 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 ui/app.slint:2405 ui/app.slint:2404 ui/app.slint:2407 ui/app.slint:2408 ui/app.slint:2409
+#: crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1991 ui/app.slint:2402 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 ui/app.slint:2405 ui/app.slint:2404 crates/dogi-ui/ui/app.slint:1991 crates/dogi-ui/ui/app.slint:1993 crates/dogi-ui/ui/app.slint:1997 ui/app.slint:2403 crates/dogi-ui/ui/app.slint:1993 ui/app.slint:2402 ui/app.slint:2405 ui/app.slint:2404 ui/app.slint:2407 ui/app.slint:2408 ui/app.slint:2409
+msgid "Assigned action"
+msgstr "已分配操作"
+
+#: crates/dogi-ui/ui/app.slint:2016 ui/app.slint:2424 ui/app.slint:2426
+#: crates/dogi-ui/ui/app.slint:2016 ui/app.slint:2424 ui/app.slint:2426
+msgid "All controls"
+msgstr "全部按键"
+
+#: crates/dogi-ui/ui/app.slint:2036 ui/app.slint:2444 ui/app.slint:2446
+#: crates/dogi-ui/ui/app.slint:2036 ui/app.slint:2444 ui/app.slint:2446
+msgid "Automatic app switching is unavailable in this Wayland session."
+msgstr "当前 Wayland 会话无法自动切换应用配置。"
+
+#: crates/dogi-ui/ui/app.slint:2071 ui/app.slint:2479 ui/app.slint:2481
+#: crates/dogi-ui/ui/app.slint:2071 ui/app.slint:2479 ui/app.slint:2481
+msgid "Profiles"
+msgstr "配置"
+
+#: crates/dogi-ui/ui/app.slint:2072 ui/app.slint:2480 ui/app.slint:2482
+#: crates/dogi-ui/ui/app.slint:2072 ui/app.slint:2480 ui/app.slint:2482
+msgid "{n} profile configured"
+msgid_plural "{n} profiles configured"
+msgstr[0] "已配置 {n} 个应用"
+
+#: crates/dogi-ui/ui/app.slint:2083 ui/app.slint:2491 ui/app.slint:2493
+#: crates/dogi-ui/ui/app.slint:2083 ui/app.slint:2491 ui/app.slint:2493
+msgid "New"
+msgstr "新建"
+
+#: crates/dogi-ui/ui/app.slint:2103 ui/app.slint:2511 ui/app.slint:2513
+#: crates/dogi-ui/ui/app.slint:2103 ui/app.slint:2511 ui/app.slint:2513
+msgid "No profiles yet"
+msgstr "尚无配置"
+
+#: crates/dogi-ui/ui/app.slint:2106 ui/app.slint:2514 ui/app.slint:2516
+#: crates/dogi-ui/ui/app.slint:2106 ui/app.slint:2514 ui/app.slint:2516
+msgid "Create one to override settings for an application."
+msgstr "新建配置可为指定应用覆盖设置。"
+
+#: crates/dogi-ui/ui/app.slint:2107 ui/app.slint:2515 ui/app.slint:2517
+#: crates/dogi-ui/ui/app.slint:2107 ui/app.slint:2515 ui/app.slint:2517
+msgid "Profiles switch pointer and thumb wheel settings for the active app."
+msgstr "应用配置可随当前应用切换指针速度和拇指滚轮。"
+
+#: crates/dogi-ui/ui/app.slint:2153 ui/app.slint:2561 ui/app.slint:2563
+#: crates/dogi-ui/ui/app.slint:2153 ui/app.slint:2561 ui/app.slint:2563
+msgid "New profile"
+msgstr "新配置"
+
+#: crates/dogi-ui/ui/app.slint:2161 ui/app.slint:616 ui/app.slint:2569
+#: crates/dogi-ui/ui/app.slint:2161 ui/app.slint:616 ui/app.slint:2569 ui/app.slint:616 ui/app.slint:2569
+#: crates/dogi-ui/ui/app.slint:2161 ui/app.slint:616 ui/app.slint:2569 ui/app.slint:616 ui/app.slint:2569
+msgid "Unavailable"
+msgstr "不可用"
+
+#: crates/dogi-ui/ui/app.slint:2165 ui/app.slint:2573 ui/app.slint:2575
+#: crates/dogi-ui/ui/app.slint:2165 ui/app.slint:2573 ui/app.slint:2575
+msgid "Remove"
+msgstr "移除"
+
+#: crates/dogi-ui/ui/app.slint:2166 ui/app.slint:2574 ui/app.slint:2576
+#: crates/dogi-ui/ui/app.slint:2166 ui/app.slint:2574 ui/app.slint:2576
+msgid "Add profile"
+msgstr "添加配置"
+
+#: crates/dogi-ui/ui/app.slint:2166 ui/app.slint:2574 ui/app.slint:2576
+#: crates/dogi-ui/ui/app.slint:2166 ui/app.slint:2574 ui/app.slint:2576
+msgid "Update profile"
+msgstr "更新配置"
+
+#: crates/dogi-ui/ui/app.slint:2175 crates/dogi-ui/ui/app.slint:2176
+#: crates/dogi-ui/ui/app.slint:2175 crates/dogi-ui/ui/app.slint:2176 crates/dogi-ui/ui/app.slint:2176
+#: crates/dogi-ui/ui/app.slint:2175 crates/dogi-ui/ui/app.slint:2176 crates/dogi-ui/ui/app.slint:2176 crates/dogi-ui/ui/app.slint:2175
+#: crates/dogi-ui/ui/app.slint:2175 crates/dogi-ui/ui/app.slint:2176 crates/dogi-ui/ui/app.slint:2176 crates/dogi-ui/ui/app.slint:2175 crates/dogi-ui/ui/app.slint:2176
+#: crates/dogi-ui/ui/app.slint:2175 crates/dogi-ui/ui/app.slint:2176 crates/dogi-ui/ui/app.slint:2176 crates/dogi-ui/ui/app.slint:2175 crates/dogi-ui/ui/app.slint:2176 ui/app.slint:2586 ui/app.slint:2588 ui/app.slint:2589
+msgid "App name or ID"
+msgstr "应用名称或标识"
+
+#: crates/dogi-ui/ui/app.slint:2176 ui/app.slint:2584 ui/app.slint:2586
+#: crates/dogi-ui/ui/app.slint:2176 ui/app.slint:2584 ui/app.slint:2586
+msgid "For example: firefox"
+msgstr "例如：firefox"
+
+#: crates/dogi-ui/ui/app.slint:2179 ui/app.slint:2587 ui/app.slint:2589
+#: crates/dogi-ui/ui/app.slint:2179 ui/app.slint:2587 ui/app.slint:2589
+msgid "Overrides"
+msgstr "覆盖项"
+
+#: crates/dogi-ui/ui/app.slint:2198 ui/app.slint:2606 ui/app.slint:2608
+#: crates/dogi-ui/ui/app.slint:2198 ui/app.slint:2606 ui/app.slint:2608
+msgid "Inherited from the device"
+msgstr "继承设备设置"
+
+#: crates/dogi-ui/ui/app.slint:2228 ui/app.slint:2636 ui/app.slint:2638
+#: crates/dogi-ui/ui/app.slint:2228 ui/app.slint:2636 ui/app.slint:2638
+msgid "5 controls"
+msgstr "5 个按键"
+
+#: crates/dogi-ui/ui/app.slint:2240 ui/app.slint:2648 ui/app.slint:2650
+#: crates/dogi-ui/ui/app.slint:2240 ui/app.slint:2648 ui/app.slint:2650
+msgid "Device defaults"
+msgstr "设备默认值"
+
+#: crates/dogi-ui/ui/app.slint:2241 ui/app.slint:2649 ui/app.slint:2651
+#: crates/dogi-ui/ui/app.slint:2241 ui/app.slint:2649 ui/app.slint:2651
+msgid "When unmatched"
+msgstr "未匹配应用时"
+
+#: crates/dogi-ui/ui/app.slint:2257 ui/app.slint:2665 ui/app.slint:2667
+#: crates/dogi-ui/ui/app.slint:2257 ui/app.slint:2665 ui/app.slint:2667
+msgid "Appearance"
+msgstr "外观"
+
+#: crates/dogi-ui/ui/app.slint:2275 ui/app.slint:2683 ui/app.slint:2685
+#: crates/dogi-ui/ui/app.slint:2275 ui/app.slint:2683 ui/app.slint:2685
+msgid "Language"
+msgstr "语言"
+
+#: crates/dogi-ui/ui/app.slint:2282 ui/app.slint:2690 ui/app.slint:2692
+#: crates/dogi-ui/ui/app.slint:2282 ui/app.slint:2690 ui/app.slint:2692
+msgid "Theme"
+msgstr "主题"
+
+#: crates/dogi-ui/ui/app.slint:2292 ui/app.slint:2700 ui/app.slint:2702
+#: crates/dogi-ui/ui/app.slint:2292 ui/app.slint:2700 ui/app.slint:2702
+msgid "Window"
+msgstr "窗口"
+
+#: crates/dogi-ui/ui/app.slint:2306 ui/app.slint:2714 ui/app.slint:2716
+#: crates/dogi-ui/ui/app.slint:2306 ui/app.slint:2714 ui/app.slint:2716
+msgid "When closing the window"
+msgstr "关闭窗口时"
+
+#: crates/dogi-ui/ui/app.slint:2358 ui/app.slint:2793 ui/app.slint:2795
+#: crates/dogi-ui/ui/app.slint:2358 ui/app.slint:2793 ui/app.slint:2795
+msgid "Ready to apply"
+msgstr "可以应用"
+
+#: crates/dogi-ui/ui/app.slint:2358 ui/app.slint:2793 ui/app.slint:2795
+#: crates/dogi-ui/ui/app.slint:2358 ui/app.slint:2793 ui/app.slint:2795
+msgid "Changes not saved"
+msgstr "更改尚未保存"
+
+#: crates/dogi-ui/ui/app.slint:2359 ui/app.slint:2794 ui/app.slint:2796
+#: crates/dogi-ui/ui/app.slint:2359 ui/app.slint:2794 ui/app.slint:2796
+msgid "Settings saved"
+msgstr "设置已保存"
+
+#: crates/dogi-ui/ui/app.slint:2372 ui/app.slint:2807 ui/app.slint:2809
+#: crates/dogi-ui/ui/app.slint:2372 ui/app.slint:2807 ui/app.slint:2809
+msgid "Apply Changes…"
+msgstr "应用更改…"
+
+#: crates/dogi-ui/ui/app.slint:2380 ui/app.slint:2816 ui/app.slint:2818
+#: crates/dogi-ui/ui/app.slint:2380 ui/app.slint:2816 ui/app.slint:2818
+msgid "Save Changes"
+msgstr "保存更改"
+
+#: crates/dogi-ui/ui/app.slint:2424 ui/app.slint:2860 ui/app.slint:2862
+#: crates/dogi-ui/ui/app.slint:2424 ui/app.slint:2860 ui/app.slint:2862
+msgid "Apply Changes"
+msgstr "应用更改"
+
+#: crates/dogi-ui/ui/app.slint:2427 ui/app.slint:2863 ui/app.slint:2865
+#: crates/dogi-ui/ui/app.slint:2427 ui/app.slint:2863 ui/app.slint:2865
+msgid "{n} setting · {}"
+msgid_plural "{n} settings · {}"
+msgstr[0] "{n} 项鼠标设置 · {}"
+
+#: crates/dogi-ui/ui/app.slint:2463 ui/app.slint:2899 ui/app.slint:2901
+#: crates/dogi-ui/ui/app.slint:2463 ui/app.slint:2899 ui/app.slint:2901
+msgid ""
+"Dogi adjusts active settings only; it does not update firmware or manage "
+"onboard profiles."
+msgstr "Dogi 仅调整当前设置，不会更新固件或管理板载配置。"
+
+#: crates/dogi-ui/ui/app.slint:2479 ui/app.slint:2915 ui/app.slint:2917
+#: crates/dogi-ui/ui/app.slint:2479 ui/app.slint:2915 ui/app.slint:2917
+msgid "Settings to apply"
+msgstr "即将应用的设置"
+
+#: crates/dogi-ui/ui/app.slint:2482 ui/app.slint:2918 ui/app.slint:2920
+#: crates/dogi-ui/ui/app.slint:2482 ui/app.slint:2918 ui/app.slint:2920
+msgid "{n} setting"
+msgid_plural "{n} settings"
+msgstr[0] "{n} 项设置"
+
+#: crates/dogi-ui/ui/app.slint:2520 ui/app.slint:2956 ui/app.slint:2958
+#: crates/dogi-ui/ui/app.slint:2520 ui/app.slint:2956 ui/app.slint:2958
+msgid "Apply"
+msgstr "应用"
+
+#: crates/dogi-ui/ui/app.slint:2529 ui/app.slint:2965 ui/app.slint:2967
+#: crates/dogi-ui/ui/app.slint:2529 ui/app.slint:2965 ui/app.slint:2967
+msgid "Revert Unsaved Changes?"
+msgstr "撤销未保存的更改？"
+
+#: crates/dogi-ui/ui/app.slint:2530 ui/app.slint:2966 ui/app.slint:2968
+#: crates/dogi-ui/ui/app.slint:2530 ui/app.slint:2966 ui/app.slint:2968
+msgid "The saved configuration for this mouse will be restored."
+msgstr "将恢复此鼠标已保存的配置。"
+
+#: crates/dogi-ui/ui/app.slint:2543 ui/app.slint:2979 ui/app.slint:2981
+#: crates/dogi-ui/ui/app.slint:2543 ui/app.slint:2979 ui/app.slint:2981
+msgid "Quit Without Saving?"
+msgstr "不保存并退出？"
+
+#: crates/dogi-ui/ui/app.slint:2544 ui/app.slint:2980 ui/app.slint:2982
+#: crates/dogi-ui/ui/app.slint:2544 ui/app.slint:2980 ui/app.slint:2982
+msgid "Unsaved mouse configuration changes will be lost."
+msgstr "未保存的鼠标配置更改将会丢失。"
+
+#: crates/dogi-ui/ui/app.slint:2545 ui/app.slint:2981 ui/app.slint:2983
+#: crates/dogi-ui/ui/app.slint:2545 ui/app.slint:2981 ui/app.slint:2983
+msgid "Quit Without Saving"
+msgstr "不保存并退出"
+
+#: crates/dogi-ui/ui/app.slint:2566 ui/app.slint:3002 ui/app.slint:3004
+#: crates/dogi-ui/ui/app.slint:2566 ui/app.slint:3002 ui/app.slint:3004
+msgid "Open dogi"
+msgstr "打开 dogi"
+
+# Slint's built-in text editing menu.
+#: crates/dogi-ui/ui/controls.slint:266
+msgid "Cut"
+msgstr "剪切"
+
+#: crates/dogi-ui/ui/controls.slint:271 crates/dogi-ui/ui/i18n.slint:107
+#: crates/dogi-ui/ui/controls.slint:271 crates/dogi-ui/ui/i18n.slint:107 crates/dogi-ui/ui/i18n.slint:107
+#: crates/dogi-ui/ui/controls.slint:271 crates/dogi-ui/ui/i18n.slint:107 crates/dogi-ui/ui/i18n.slint:107 crates/dogi-ui/ui/controls.slint:271
+#: crates/dogi-ui/ui/controls.slint:271 crates/dogi-ui/ui/i18n.slint:107 crates/dogi-ui/ui/i18n.slint:107 crates/dogi-ui/ui/controls.slint:271 crates/dogi-ui/ui/i18n.slint:107
+#: crates/dogi-ui/ui/controls.slint:271 crates/dogi-ui/ui/i18n.slint:107 crates/dogi-ui/ui/i18n.slint:107 crates/dogi-ui/ui/controls.slint:271 crates/dogi-ui/ui/i18n.slint:107
+msgid "Copy"
+msgstr "复制"
+
+#: crates/dogi-ui/ui/controls.slint:276 crates/dogi-ui/ui/i18n.slint:108
+#: crates/dogi-ui/ui/controls.slint:276 crates/dogi-ui/ui/i18n.slint:108 crates/dogi-ui/ui/i18n.slint:108
+#: crates/dogi-ui/ui/controls.slint:276 crates/dogi-ui/ui/i18n.slint:108 crates/dogi-ui/ui/i18n.slint:108 crates/dogi-ui/ui/controls.slint:276
+#: crates/dogi-ui/ui/controls.slint:276 crates/dogi-ui/ui/i18n.slint:108 crates/dogi-ui/ui/i18n.slint:108 crates/dogi-ui/ui/controls.slint:276 crates/dogi-ui/ui/i18n.slint:108
+#: crates/dogi-ui/ui/controls.slint:276 crates/dogi-ui/ui/i18n.slint:108 crates/dogi-ui/ui/i18n.slint:108 crates/dogi-ui/ui/controls.slint:276 crates/dogi-ui/ui/i18n.slint:108
+msgid "Paste"
+msgstr "粘贴"
+
+#: crates/dogi-ui/ui/controls.slint:281
+msgid "Select All"
+msgstr "全选"
+
+#: crates/dogi-ui/ui/i18n.slint:14 ui/i18n.slint:14
+msgid "Bluetooth"
+msgstr "蓝牙"
+
+#: crates/dogi-ui/ui/i18n.slint:15 ui/i18n.slint:15
+msgid "Unifying"
+msgstr "Unifying"
+
+#: crates/dogi-ui/ui/i18n.slint:16 ui/i18n.slint:16
+msgid "Bolt"
+msgstr "Bolt"
+
+#: crates/dogi-ui/ui/i18n.slint:17 ui/i18n.slint:17
+msgid "LIGHTSPEED"
+msgstr "LIGHTSPEED"
+
+#: crates/dogi-ui/ui/i18n.slint:18 ui/i18n.slint:18
+msgid "Unknown"
+msgstr "未知"
+
+#: crates/dogi-ui/ui/i18n.slint:22 ui/i18n.slint:22
+msgid "Battery unavailable"
+msgstr "电量不可用"
+
+#: crates/dogi-ui/ui/i18n.slint:23 ui/i18n.slint:23
+msgid "{}% charging"
+msgstr "{}% · 充电中"
+
+#: crates/dogi-ui/ui/i18n.slint:24 ui/i18n.slint:24
+msgid "{}% discharging"
+msgstr "{}% · 使用中"
+
+#: crates/dogi-ui/ui/i18n.slint:25 ui/i18n.slint:25
+msgid "{}% full"
+msgstr "{}% · 已充满"
+
+#: crates/dogi-ui/ui/i18n.slint:26 ui/i18n.slint:26
+msgid "{}% low"
+msgstr "{}% · 电量低"
+
+#: crates/dogi-ui/ui/i18n.slint:27 ui/i18n.slint:27
+msgid "{}% critical"
+msgstr "{}% · 电量严重不足"
+
+#: crates/dogi-ui/ui/i18n.slint:28 ui/i18n.slint:28
+msgid "{}% offline"
+msgstr "{}% · 离线"
+
+#: crates/dogi-ui/ui/i18n.slint:29 ui/i18n.slint:29
+msgid "{}%"
+msgstr "{}%"
+
+#: crates/dogi-ui/ui/i18n.slint:38 ui/i18n.slint:38 ui/i18n.slint:39
+msgid "HID++ {}"
+msgstr "HID++ {}"
+
+#: crates/dogi-ui/ui/i18n.slint:38 crates/dogi-ui/ui/i18n.slint:52
+#: crates/dogi-ui/ui/i18n.slint:38 crates/dogi-ui/ui/i18n.slint:52 crates/dogi-ui/ui/i18n.slint:52
+#: crates/dogi-ui/ui/i18n.slint:38 crates/dogi-ui/ui/i18n.slint:52 crates/dogi-ui/ui/i18n.slint:52 crates/dogi-ui/ui/i18n.slint:38
+#: crates/dogi-ui/ui/i18n.slint:38 crates/dogi-ui/ui/i18n.slint:52 crates/dogi-ui/ui/i18n.slint:52 crates/dogi-ui/ui/i18n.slint:38 crates/dogi-ui/ui/i18n.slint:52
+#: crates/dogi-ui/ui/i18n.slint:38 crates/dogi-ui/ui/i18n.slint:52 crates/dogi-ui/ui/i18n.slint:52 crates/dogi-ui/ui/i18n.slint:38 crates/dogi-ui/ui/i18n.slint:52 ui/i18n.slint:39 ui/i18n.slint:55
+msgid "HID++ unavailable"
+msgstr "HID++ 不可用"
+
+#: crates/dogi-ui/ui/i18n.slint:43 ui/i18n.slint:43 ui/i18n.slint:46
+msgid "HID device unavailable"
+msgstr "HID 设备不可用"
+
+#: crates/dogi-ui/ui/i18n.slint:45 ui/i18n.slint:45 ui/i18n.slint:48
+msgid "HID access required"
+msgstr "需要 HID 访问权限"
+
+#: crates/dogi-ui/ui/i18n.slint:47 ui/i18n.slint:47 ui/i18n.slint:50
+msgid "Full HID access required"
+msgstr "需要完整 HID 访问权限"
+
+#: crates/dogi-ui/ui/i18n.slint:49 ui/i18n.slint:49 ui/i18n.slint:52
+msgid "Mouse not responding"
+msgstr "鼠标无响应"
+
+#: crates/dogi-ui/ui/i18n.slint:51 ui/i18n.slint:51 ui/i18n.slint:54
+msgid "Settings unavailable for this mouse"
+msgstr "暂不支持此鼠标的设置"
+
+#: crates/dogi-ui/ui/i18n.slint:57 ui/i18n.slint:57 ui/i18n.slint:62
+msgid "Run dogi on the host or expose {} to this environment."
+msgstr "请在宿主机运行 dogi，或将 {} 暴露到当前环境。"
+
+#: crates/dogi-ui/ui/i18n.slint:59 ui/i18n.slint:59 ui/i18n.slint:64
+msgid "Install the dogi udev rule, then reconnect the device."
+msgstr "请安装 dogi udev 规则，然后重新连接设备。"
+
+#: crates/dogi-ui/ui/i18n.slint:61 ui/i18n.slint:61 ui/i18n.slint:66
+msgid "Wake or reconnect the mouse."
+msgstr "请唤醒或重新连接鼠标。"
+
+#: crates/dogi-ui/ui/i18n.slint:63 ui/i18n.slint:63 ui/i18n.slint:68
+msgid "Dogi can identify this device, but its settings are not supported yet."
+msgstr "Dogi 可以识别此设备，但暂不支持它的设置。"
+
+#: crates/dogi-ui/ui/i18n.slint:64 ui/i18n.slint:64 ui/i18n.slint:69
+msgid "This device does not expose a compatible configuration endpoint."
+msgstr "此设备未提供兼容的配置端点。"
+
+#: crates/dogi-ui/ui/i18n.slint:68 ui/i18n.slint:68 ui/i18n.slint:73
+msgid "{n} interface"
+msgid_plural "{n} interfaces"
+msgstr[0] "{n} 个接口"
+
+#: crates/dogi-ui/ui/i18n.slint:72 ui/i18n.slint:72 ui/i18n.slint:77
+msgid "{n} interface  {}"
+msgid_plural "{n} interfaces  {}"
+msgstr[0] "{n} 个接口  {}"
+
+#: crates/dogi-ui/ui/i18n.slint:78 ui/i18n.slint:78 ui/i18n.slint:83
+msgid "Ratchet"
+msgstr "分段滚动"
+
+#: crates/dogi-ui/ui/i18n.slint:79 ui/i18n.slint:79 ui/i18n.slint:84
+msgid "Free-spin"
+msgstr "自由滚动"
+
+#: crates/dogi-ui/ui/i18n.slint:80 ui/i18n.slint:80 ui/i18n.slint:85
+msgid "SmartShift"
+msgstr "SmartShift"
+
+#: crates/dogi-ui/ui/i18n.slint:84 ui/i18n.slint:84 ui/i18n.slint:89
+msgid "Horizontal Scroll"
+msgstr "横向滚动"
+
+#: crates/dogi-ui/ui/i18n.slint:85 ui/i18n.slint:85 ui/i18n.slint:90
+msgid "Tab Switch"
+msgstr "切换标签页"
+
+#: crates/dogi-ui/ui/i18n.slint:86 ui/i18n.slint:86 ui/i18n.slint:91
+msgid "Zoom"
+msgstr "缩放"
+
+#: crates/dogi-ui/ui/i18n.slint:87 ui/i18n.slint:87 ui/i18n.slint:92
+msgid "Volume"
+msgstr "音量"
+
+#: crates/dogi-ui/ui/i18n.slint:88 crates/dogi-ui/ui/i18n.slint:109
+#: crates/dogi-ui/ui/i18n.slint:88 crates/dogi-ui/ui/i18n.slint:109 crates/dogi-ui/ui/i18n.slint:109
+#: crates/dogi-ui/ui/i18n.slint:88 crates/dogi-ui/ui/i18n.slint:109 crates/dogi-ui/ui/i18n.slint:109 crates/dogi-ui/ui/i18n.slint:88
+#: crates/dogi-ui/ui/i18n.slint:88 crates/dogi-ui/ui/i18n.slint:109 crates/dogi-ui/ui/i18n.slint:109 crates/dogi-ui/ui/i18n.slint:88 crates/dogi-ui/ui/i18n.slint:109
+#: crates/dogi-ui/ui/i18n.slint:88 crates/dogi-ui/ui/i18n.slint:109 crates/dogi-ui/ui/i18n.slint:109 crates/dogi-ui/ui/i18n.slint:88 crates/dogi-ui/ui/i18n.slint:109 ui/i18n.slint:93 ui/i18n.slint:114
+msgid "Disabled"
+msgstr "已禁用"
+
+#: crates/dogi-ui/ui/i18n.slint:92 ui/i18n.slint:92 ui/i18n.slint:97
+msgid "Back button"
+msgstr "后退键"
+
+#: crates/dogi-ui/ui/i18n.slint:93 ui/i18n.slint:93 ui/i18n.slint:98
+msgid "Forward button"
+msgstr "前进键"
+
+#: crates/dogi-ui/ui/i18n.slint:94 ui/i18n.slint:94 ui/i18n.slint:99
+msgid "Gesture button"
+msgstr "手势键"
+
+#: crates/dogi-ui/ui/i18n.slint:95 ui/i18n.slint:95 ui/i18n.slint:100
+msgid "Mode shift"
+msgstr "模式切换键"
+
+#: crates/dogi-ui/ui/i18n.slint:96 ui/i18n.slint:96 ui/i18n.slint:101
+msgid "Middle click"
+msgstr "中键"
+
+#: crates/dogi-ui/ui/i18n.slint:100 crates/dogi-ui/ui/i18n.slint:115
+#: crates/dogi-ui/ui/i18n.slint:100 crates/dogi-ui/ui/i18n.slint:115 crates/dogi-ui/ui/i18n.slint:115
+#: crates/dogi-ui/ui/i18n.slint:100 crates/dogi-ui/ui/i18n.slint:115 crates/dogi-ui/ui/i18n.slint:115 crates/dogi-ui/ui/i18n.slint:100
+#: crates/dogi-ui/ui/i18n.slint:100 crates/dogi-ui/ui/i18n.slint:115 crates/dogi-ui/ui/i18n.slint:115 crates/dogi-ui/ui/i18n.slint:100 crates/dogi-ui/ui/i18n.slint:115
+#: crates/dogi-ui/ui/i18n.slint:100 crates/dogi-ui/ui/i18n.slint:115 crates/dogi-ui/ui/i18n.slint:115 crates/dogi-ui/ui/i18n.slint:100 crates/dogi-ui/ui/i18n.slint:115 ui/i18n.slint:105 ui/i18n.slint:120
+msgid "Back"
+msgstr "后退"
+
+#: crates/dogi-ui/ui/i18n.slint:101 crates/dogi-ui/ui/i18n.slint:116
+#: crates/dogi-ui/ui/i18n.slint:101 crates/dogi-ui/ui/i18n.slint:116 crates/dogi-ui/ui/i18n.slint:116
+#: crates/dogi-ui/ui/i18n.slint:101 crates/dogi-ui/ui/i18n.slint:116 crates/dogi-ui/ui/i18n.slint:116 crates/dogi-ui/ui/i18n.slint:101
+#: crates/dogi-ui/ui/i18n.slint:101 crates/dogi-ui/ui/i18n.slint:116 crates/dogi-ui/ui/i18n.slint:116 crates/dogi-ui/ui/i18n.slint:101 crates/dogi-ui/ui/i18n.slint:116
+#: crates/dogi-ui/ui/i18n.slint:101 crates/dogi-ui/ui/i18n.slint:116 crates/dogi-ui/ui/i18n.slint:116 crates/dogi-ui/ui/i18n.slint:101 crates/dogi-ui/ui/i18n.slint:116 ui/i18n.slint:106 ui/i18n.slint:121
+msgid "Forward"
+msgstr "前进"
+
+#: crates/dogi-ui/ui/i18n.slint:102 ui/i18n.slint:102 ui/i18n.slint:107
+msgid "Activities Overview"
+msgstr "活动概览"
+
+#: crates/dogi-ui/ui/i18n.slint:103 ui/i18n.slint:103 ui/i18n.slint:108
+msgid "Switch Windows"
+msgstr "切换窗口"
+
+#: crates/dogi-ui/ui/i18n.slint:104 ui/i18n.slint:104 ui/i18n.slint:109
+msgid "Previous Workspace"
+msgstr "上一个工作区"
+
+#: crates/dogi-ui/ui/i18n.slint:105 ui/i18n.slint:105 ui/i18n.slint:110
+msgid "Next Workspace"
+msgstr "下一个工作区"
+
+#: crates/dogi-ui/ui/i18n.slint:106 crates/dogi-ui/ui/i18n.slint:118
+#: crates/dogi-ui/ui/i18n.slint:106 crates/dogi-ui/ui/i18n.slint:118 crates/dogi-ui/ui/i18n.slint:118
+#: crates/dogi-ui/ui/i18n.slint:106 crates/dogi-ui/ui/i18n.slint:118 crates/dogi-ui/ui/i18n.slint:118 crates/dogi-ui/ui/i18n.slint:106
+#: crates/dogi-ui/ui/i18n.slint:106 crates/dogi-ui/ui/i18n.slint:118 crates/dogi-ui/ui/i18n.slint:118 crates/dogi-ui/ui/i18n.slint:106 crates/dogi-ui/ui/i18n.slint:118
+#: crates/dogi-ui/ui/i18n.slint:106 crates/dogi-ui/ui/i18n.slint:118 crates/dogi-ui/ui/i18n.slint:118 crates/dogi-ui/ui/i18n.slint:106 crates/dogi-ui/ui/i18n.slint:118 ui/i18n.slint:111 ui/i18n.slint:123
+msgid "Middle Click"
+msgstr "中键单击"
+
+#: crates/dogi-ui/ui/i18n.slint:110 crates/dogi-ui/ui/i18n.slint:119
+#: crates/dogi-ui/ui/i18n.slint:110 crates/dogi-ui/ui/i18n.slint:119 crates/dogi-ui/ui/i18n.slint:119
+#: crates/dogi-ui/ui/i18n.slint:110 crates/dogi-ui/ui/i18n.slint:119 crates/dogi-ui/ui/i18n.slint:119 crates/dogi-ui/ui/i18n.slint:110
+#: crates/dogi-ui/ui/i18n.slint:110 crates/dogi-ui/ui/i18n.slint:119 crates/dogi-ui/ui/i18n.slint:119 crates/dogi-ui/ui/i18n.slint:110 crates/dogi-ui/ui/i18n.slint:119
+#: crates/dogi-ui/ui/i18n.slint:110 crates/dogi-ui/ui/i18n.slint:119 crates/dogi-ui/ui/i18n.slint:119 crates/dogi-ui/ui/i18n.slint:110 crates/dogi-ui/ui/i18n.slint:119 ui/i18n.slint:115 ui/i18n.slint:124
+msgid "Default Behavior"
+msgstr "默认行为"
+
+#: crates/dogi-ui/ui/i18n.slint:117 ui/i18n.slint:117 ui/i18n.slint:122
+msgid "Scroll Mode Switch"
+msgstr "滚轮模式切换"
+
+#: crates/dogi-ui/ui/i18n.slint:123 ui/i18n.slint:123 ui/i18n.slint:128
+msgid "{}% pointer, thumb wheel {}"
+msgstr "指针 {}%，拇指滚轮：{}"
+
+#: crates/dogi-ui/ui/i18n.slint:128 ui/i18n.slint:128 ui/i18n.slint:133
+msgid "Set pointer speed to {}%"
+msgstr "将指针速度设为 {}%"
+
+#: crates/dogi-ui/ui/i18n.slint:130 ui/i18n.slint:130 ui/i18n.slint:135
+msgid "Use SmartShift with sensitivity {}"
+msgstr "使用 SmartShift，灵敏度为 {}"
+
+#: crates/dogi-ui/ui/i18n.slint:132 ui/i18n.slint:132 ui/i18n.slint:137
+msgid "Use {} scrolling"
+msgstr "使用{}"
+
+#: crates/dogi-ui/ui/i18n.slint:134 ui/i18n.slint:134 ui/i18n.slint:139
+msgid "Smooth scrolling · Natural direction"
+msgstr "平滑滚动 · 自然方向"
+
+#: crates/dogi-ui/ui/i18n.slint:136 ui/i18n.slint:136 ui/i18n.slint:141
+msgid "Smooth scrolling · Standard direction"
+msgstr "平滑滚动 · 标准方向"
+
+#: crates/dogi-ui/ui/i18n.slint:138 ui/i18n.slint:138 ui/i18n.slint:143
+msgid "Smooth scrolling off · Natural direction"
+msgstr "平滑滚动关闭 · 自然方向"
+
+#: crates/dogi-ui/ui/i18n.slint:140 ui/i18n.slint:140 ui/i18n.slint:145
+msgid "Smooth scrolling off · Standard direction"
+msgstr "平滑滚动关闭 · 标准方向"
+
+#: crates/dogi-ui/ui/i18n.slint:142 ui/i18n.slint:142 ui/i18n.slint:147
+msgid "Enable smooth scrolling"
+msgstr "开启平滑滚动"
+
+#: crates/dogi-ui/ui/i18n.slint:144 ui/i18n.slint:144 ui/i18n.slint:149
+msgid "Disable smooth scrolling"
+msgstr "关闭平滑滚动"
+
+#: crates/dogi-ui/ui/i18n.slint:146 ui/i18n.slint:146 ui/i18n.slint:151
+msgid "Use natural scroll direction"
+msgstr "使用自然方向"
+
+#: crates/dogi-ui/ui/i18n.slint:148 ui/i18n.slint:148 ui/i18n.slint:153
+msgid "Use standard scroll direction"
+msgstr "使用标准方向"
+
+#: crates/dogi-ui/ui/i18n.slint:142 ui/i18n.slint:150 ui/i18n.slint:155
+msgid "Use native horizontal scrolling"
+msgstr "使用原生横向滚动"
+
+#: crates/dogi-ui/ui/i18n.slint:144 ui/i18n.slint:152 ui/i18n.slint:157
+msgid "Use horizontal scrolling at {}% through Dogi"
+msgstr "通过 Dogi 使用横向滚动，速度 {}%"
+
+#: crates/dogi-ui/ui/i18n.slint:146 ui/i18n.slint:154 ui/i18n.slint:159
+msgid "Route thumb wheel through Dogi for {}"
+msgstr "由 Dogi 接管拇指滚轮并用于{}"
+
+#: crates/dogi-ui/ui/i18n.slint:148 ui/i18n.slint:156 ui/i18n.slint:161
+msgid "Route {} through dogi for {}"
+msgstr "由 Dogi 接管{}并执行{}"
+
+#: crates/dogi-ui/ui/i18n.slint:150 ui/i18n.slint:158 ui/i18n.slint:163
+msgid "Use native behavior for {}"
+msgstr "{}使用鼠标默认行为"
+
+#: crates/dogi-ui/ui/i18n.slint:152 ui/i18n.slint:160 ui/i18n.slint:165
+msgid "Run the local runtime listener"
+msgstr "运行本地操作监听器"
+
+#: crates/dogi-ui/ui/i18n.slint:153 ui/i18n.slint:161 ui/i18n.slint:166
+msgid "Save local app profile {} at {}%, thumb wheel {}"
+msgstr "保存应用配置 {}：指针 {}%，拇指滚轮{}"
+
+#: crates/dogi-ui/ui/i18n.slint:160 ui/i18n.slint:168 ui/i18n.slint:173
+msgid "Applied with {} failed, {} successful, {} unsupported"
+msgstr "应用完成：{} 项失败，{} 项成功，{} 项不受支持"
+
+#: crates/dogi-ui/ui/i18n.slint:162 ui/i18n.slint:170 ui/i18n.slint:175
+msgid "Applied {} settings, {} unsupported"
+msgstr "已应用 {} 项设置，{} 项不受支持"
+
+#: crates/dogi-ui/ui/i18n.slint:163 ui/i18n.slint:171 ui/i18n.slint:176
+msgid "Applied {} settings"
+msgstr "已应用 {} 项设置"
+
+#: crates/dogi-ui/ui/i18n.slint:167 ui/i18n.slint:175 ui/i18n.slint:180
+msgid "Device scanner stopped unexpectedly"
+msgstr "设备扫描器意外停止"
+
+#: crates/dogi-ui/ui/i18n.slint:168 ui/i18n.slint:176 ui/i18n.slint:181
+msgid "Scan failed: {}"
+msgstr "扫描失败：{}"
+
+#: crates/dogi-ui/ui/i18n.slint:169 ui/i18n.slint:177 ui/i18n.slint:182
+msgid "No Logitech devices found"
+msgstr "未发现 Logitech 设备"
+
+#: crates/dogi-ui/ui/i18n.slint:170 ui/i18n.slint:178 ui/i18n.slint:183
+msgid "Scanning devices…"
+msgstr "正在扫描设备…"
+
+#: crates/dogi-ui/ui/i18n.slint:171 ui/i18n.slint:179 ui/i18n.slint:184
+msgid "Scan failed to start: {}"
+msgstr "无法启动扫描：{}"
+
+#: crates/dogi-ui/ui/i18n.slint:172 ui/i18n.slint:180 ui/i18n.slint:185
+msgid "Editing {}"
+msgstr "正在配置 {}"
+
+#: crates/dogi-ui/ui/i18n.slint:173 ui/i18n.slint:181 ui/i18n.slint:186
+msgid "Changes reverted"
+msgstr "已撤销更改"
+
+#: crates/dogi-ui/ui/i18n.slint:174 ui/i18n.slint:182 ui/i18n.slint:187
+msgid "Changes saved"
+msgstr "更改已保存"
+
+#: crates/dogi-ui/ui/i18n.slint:176 ui/i18n.slint:184 ui/i18n.slint:189
+msgid "Changes saved. Apply them when the mouse is available."
+msgstr "更改已保存，可在鼠标可用时应用。"
+
+#: crates/dogi-ui/ui/i18n.slint:177 ui/i18n.slint:185 ui/i18n.slint:190
+msgid "Save failed: {}"
+msgstr "保存失败：{}"
+
+#: crates/dogi-ui/ui/i18n.slint:178 ui/i18n.slint:186 ui/i18n.slint:191
+msgid "Enter an app name"
+msgstr "请输入应用名称"
+
+#: crates/dogi-ui/ui/i18n.slint:179 ui/i18n.slint:187 ui/i18n.slint:192
+msgid "App profile {} was not found"
+msgstr "未找到应用配置 {}"
+
+#: crates/dogi-ui/ui/i18n.slint:180 ui/i18n.slint:188 ui/i18n.slint:193
+msgid "Connect a supported mouse with full HID access to apply settings"
+msgstr "请连接受支持且具备完整 HID 访问权限的鼠标"
+
+#: crates/dogi-ui/ui/i18n.slint:181 ui/i18n.slint:189 ui/i18n.slint:194
+msgid "Connect the mouse to apply {n} setting"
+msgid_plural "Connect the mouse to apply {n} settings"
+msgstr[0] "连接鼠标后可应用这 {n} 项设置"
+
+#: crates/dogi-ui/ui/i18n.slint:182 ui/i18n.slint:190 ui/i18n.slint:195
+msgid "Applying {n} setting is unavailable"
+msgid_plural "Applying {n} settings is unavailable"
+msgstr[0] "暂时无法应用这 {n} 项设置"
+
+#: crates/dogi-ui/ui/i18n.slint:183 ui/i18n.slint:191 ui/i18n.slint:196
+msgid "Review {n} mouse setting"
+msgid_plural "Review {n} mouse settings"
+msgstr[0] "请检查 {n} 项鼠标设置"
+
+#: crates/dogi-ui/ui/i18n.slint:185 ui/i18n.slint:193 ui/i18n.slint:198
+msgid "{} · Settings saved"
+msgstr "{} · 设置已保存"
+
+#: crates/dogi-ui/ui/i18n.slint:188 ui/i18n.slint:196 ui/i18n.slint:201
+msgid "Could not apply settings: {}. Your changes were saved."
+msgstr "无法应用设置：{}。更改已保存。"
+
+#: crates/dogi-ui/ui/i18n.slint:190 ui/i18n.slint:198 ui/i18n.slint:203
+msgid "Apply failed: {}"
+msgstr "应用失败：{}"
+
+#: crates/dogi-ui/ui/i18n.slint:192 ui/i18n.slint:200 ui/i18n.slint:205
+msgid "Could not save application settings: {}"
+msgstr "无法保存应用设置：{}"
+
+#: crates/dogi-ui/ui/i18n.slint:194 ui/i18n.slint:202 ui/i18n.slint:207
+msgid "Could not load application settings: {}"
+msgstr "无法读取应用设置：{}"
+
+#: crates/dogi-ui/ui/i18n.slint:196 ui/i18n.slint:204 ui/i18n.slint:209
+msgid "Could not switch language: {}"
+msgstr "无法切换语言：{}"
+
+#: crates/dogi-ui/ui/i18n.slint:198 ui/i18n.slint:206 ui/i18n.slint:211
+msgid "System tray is unavailable: {}"
+msgstr "系统托盘不可用：{}"
+
+#: crates/dogi-ui/ui/i18n.slint:200 ui/i18n.slint:208 ui/i18n.slint:213
+msgid "System tray is unavailable"
+msgstr "系统托盘不可用"
+
+#: ui/app.slint:1606
+msgid "Running"
+msgstr "运行中"
+
+#: ui/app.slint:1607
+msgid "Off"
+msgstr "已关闭"
+
+#: ui/app.slint:1608
+msgid "Needs attention"
+msgstr "需要处理"
+
+#: ui/app.slint:1629 ui/app.slint:1681 ui/app.slint:1683
+msgid "Background operations"
+msgstr "后台操作"
+
+#: ui/app.slint:1667
+msgid "Restart"
+msgstr "重新启动"
+
+#: ui/app.slint:2199 ui/app.slint:2201 ui/app.slint:2204
+msgid "Background operations are off"
+msgstr "后台操作已关闭"
+
+#: ui/app.slint:2723 ui/app.slint:2725 ui/app.slint:2728
+msgid "Background"
+msgstr "后台"
+
+#: ui/app.slint:1667
+msgid "Retry"
+msgstr "重试"
+
+#: ui/i18n.slint:34
+msgid "Identifying…"
+msgstr "正在识别…"
+
+#: ui/app.slint:1163 ui/app.slint:1242
+msgid "Identifying device…"
+msgstr "正在识别设备…"
+
+#: ui/app.slint:2196 ui/app.slint:2271
+msgid "Logitech device"
+msgstr "罗技设备"
+
+#: ui/app.slint:2314
+msgid "{} · Identifying…"
+msgstr "{} · 正在识别…"

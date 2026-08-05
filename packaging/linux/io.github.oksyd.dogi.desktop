@@ -1,0 +1,17 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Dogi
+Name[zh_CN]=Dogi
+GenericName=Mouse Configuration
+GenericName[zh_CN]=鼠标配置
+Comment=Configure Logitech mice on Linux
+Comment[zh_CN]=在 Linux 上配置 Logitech 鼠标
+TryExec=dogi
+Exec=dogi gui
+Icon=io.github.oksyd.dogi
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=Logitech;mouse;HID;configuration;
+Keywords[zh_CN]=罗技;鼠标;配置;
+StartupNotify=true

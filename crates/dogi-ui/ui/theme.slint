@@ -1,0 +1,56 @@
+import { Palette } from "std-widgets.slint";
+
+export global Theme {
+    private property <color> system-background: Palette.background;
+    private property <color> brand-light: #4658b8;
+    private property <color> brand-dark: #aab4ff;
+    private property <color> brand-dark-ink: #12152a;
+    out property <bool> dark: system-background.to-oklch().lightness < 0.5;
+    in-out property <bool> high-contrast: false;
+
+    // Window and content surfaces follow Adwaita's neutral hierarchy.
+    out property <color> canvas: high-contrast ? (dark ? #000000 : #ffffff) : dark ? #222226 : #fafafb;
+    out property <color> panel: high-contrast ? (dark ? #000000 : #ffffff) : dark ? #2e2e32 : #ffffff;
+    out property <color> surface: high-contrast ? (dark ? #171717 : #f2f2f2) : dark ? #39393d : #f3f3f5;
+    out property <color> hover: high-contrast ? (dark ? #292929 : #e5e5e5) : dark ? #414146 : #ededf0;
+    out property <color> selected: high-contrast ? (dark ? #3d3d3d : #d6d6d6) : accent-soft;
+    out property <color> border: high-contrast ? (dark ? #ffffff : #000000) : dark ? #46464c : #dedee1;
+    out property <color> control-border: high-contrast ? (dark ? #ffffff : #000000) : dark ? #7b7a7f : #8f8f96;
+    out property <color> text: high-contrast ? (dark ? #ffffff : #000000) : dark ? #f6f5f4 : #303035;
+    out property <color> text-muted: high-contrast ? (dark ? #ffffff : #202020) : dark ? #c0bfc2 : #5e5e64;
+    out property <color> text-faint: high-contrast ? (dark ? #d9d9d9 : #444444) : dark ? #9a999d : #77767b;
+    out property <color> skeleton: high-contrast
+        ? (dark ? #6f6f6f : #b8b8b8)
+        : dark ? #414146 : #ececef;
+    out property <color> skeleton-strong: high-contrast
+        ? (dark ? #b8b8b8 : #707070)
+        : dark ? #505057 : #dddde2;
+
+    // Navigation selection stays neutral; accent is reserved for interaction.
+    out property <color> sidebar: high-contrast ? canvas : dark ? #2e2e32 : #ebebed;
+    out property <color> sidebar-hover: high-contrast ? hover : dark ? #39393d : #e2e2e5;
+    out property <color> sidebar-selected: high-contrast ? selected : dark ? #424247 : #d9d9dd;
+    out property <color> sidebar-text: high-contrast ? text : dark ? #ffffff : #303035;
+    out property <color> sidebar-muted: high-contrast ? text-muted : dark ? #c0bfc2 : #5e5e64;
+    out property <color> sidebar-icon: high-contrast ? text-muted : dark ? #9a999d : #77767b;
+    out property <color> sidebar-divider: high-contrast ? border : dark ? #1d1d20 : #d8d8db;
+
+    // Dogi owns its interaction color. System preferences choose the color
+    // scheme and contrast mode, but never replace the product accent.
+    out property <color> accent: high-contrast ? (dark ? #b8c2ff : #33479d) : dark ? brand-dark : brand-light;
+    out property <color> accent-bg: accent;
+    out property <color> accent-bg-hover: high-contrast ? accent : dark ? #bbc2ff : #3b4da7;
+    out property <color> accent-bg-active: high-contrast ? accent : dark ? #98a4f2 : #304192;
+    out property <color> accent-soft: high-contrast ? (dark ? #3d3d3d : #d6d6d6) : dark ? #30375f : #eceefe;
+    out property <color> accent-text: high-contrast ? (dark ? #000000 : #ffffff) : dark ? brand-dark-ink : #ffffff;
+
+    out property <color> success: dark ? #78e9ab : #007c3d;
+    out property <color> success-soft: dark ? #183c2a : #e1f5e9;
+    out property <color> warning: dark ? #ffc252 : #905400;
+    out property <color> warning-bg: dark ? #3d321a : #fff6df;
+    out property <color> warning-border: dark ? #9a741d : #c18b00;
+    out property <color> warning-text: dark ? #ffdc8a : #694000;
+    out property <color> danger: dark ? #ff938c : #c30000;
+    out property <color> danger-bg: dark ? #471f25 : #fae7e7;
+    out property <color> overlay: #00000099;
+}

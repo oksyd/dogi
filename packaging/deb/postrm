@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+    remove|purge)
+        if command -v udevadm >/dev/null 2>&1; then
+            udevadm control --reload-rules || true
+            udevadm trigger --subsystem-match=hidraw --action=change || true
+            udevadm trigger --subsystem-match=misc --action=change || true
+        fi
+        ;;
+esac
+
+exit 0

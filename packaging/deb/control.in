@@ -1,0 +1,13 @@
+Package: dogi
+Version: @VERSION@
+Architecture: @ARCHITECTURE@
+Maintainer: oksyd <oksyd@users.noreply.github.com>
+Installed-Size: @INSTALLED_SIZE@
+Depends: @SHLIB_DEPENDS@, systemd, udev
+Recommends: x11-utils
+Section: utils
+Priority: optional
+Homepage: https://github.com/oksyd/dogi
+Description: Logitech mouse configuration for Linux
+ Dogi provides a desktop interface, direct HID++ device access, and local
+ runtime actions for supported Logitech mice.

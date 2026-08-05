@@ -1,0 +1,138 @@
+export enum UiStatusKind {
+    neutral,
+    info,
+    success,
+    warning,
+    error,
+}
+
+export enum DeviceAccessState {
+    ready,
+    hid-device-missing,
+    hid-permission-denied,
+    read-only,
+    no-paired-response,
+    unsupported,
+    hidpp-unavailable,
+}
+
+export enum DeviceDiscoveryState {
+    idle,
+    enriching,
+}
+
+export enum DesktopRuntimeState {
+    starting,
+    running,
+    stopped,
+    degraded,
+}
+
+export enum UiMessage {
+    none,
+    scanner-stopped,
+    scan-failed,
+    no-devices,
+    scanning,
+    scan-start-failed,
+    editing-device,
+    changes-reverted,
+    changes-saved,
+    changes-saved-for-later,
+    save-failed,
+    app-name-required,
+    profile-not-found,
+    apply-unavailable,
+    no-device,
+    apply-backend-unavailable,
+    review-plan,
+    apply-summary,
+    apply-failed,
+    app-config-save-failed,
+    app-config-load-failed,
+    language-unavailable,
+    tray-unavailable,
+}
+
+export struct UiStatus {
+    kind: UiStatusKind,
+    message: UiMessage,
+    subject: string,
+    detail: string,
+    path: string,
+    count: int,
+    applied: int,
+    unsupported: int,
+    failed: int,
+}
+
+export enum DeviceConnection {
+    usb,
+    bluetooth,
+    unifying,
+    bolt,
+    lightspeed,
+    unknown,
+}
+
+export enum BatteryState {
+    charging,
+    discharging,
+    full,
+    low,
+    critical,
+    offline,
+    unknown,
+    unavailable,
+}
+
+export struct DeviceRow {
+    id: string,
+    name: string,
+    path: string,
+    protocol: string,
+    connection: DeviceConnection,
+    access-state: DeviceAccessState,
+    discovery-state: DeviceDiscoveryState,
+    battery-level: int,
+    battery-state: BatteryState,
+    interface-count: int,
+    is-mouse: bool,
+}
+
+export struct AppProfileRow {
+    app: string,
+    initial: string,
+    pointer-speed: int,
+    thumb-wheel-index: int,
+}
+
+export enum PlanScope {
+    device,
+    local,
+    unsupported,
+}
+
+export enum PlanKind {
+    pointer-speed,
+    wheel-behavior,
+    scroll-behavior,
+    thumb-wheel,
+    button-routing,
+    local-runtime,
+    app-profile,
+}
+
+export struct PlanRow {
+    kind: PlanKind,
+    scope: PlanScope,
+    name: string,
+    value: int,
+    secondary-value: int,
+    enabled: bool,
+    secondary-enabled: bool,
+    primary-changed: bool,
+    secondary-changed: bool,
+    primary-index: int,
+    secondary-index: int,
+}
