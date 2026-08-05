@@ -31,3 +31,19 @@ slint = { version = "1.17.1", default-features = false, features = ["accessibili
 slint-build = { version = "1.17.1", default-features = false, features = ["default"] }
 
 slint-snapshot = { version = "0.1.1", default-features = false }
+
+[workspace.metadata.release]
+shared-version = true
+consolidate-commits = true
+publish = false
+tag-prefix = ""
+tag-name = "{{prefix}}{{version}}"
+pre-release-commit-message = "chore: release {{version}}"
+tag-message = "chore: release {{version}}"
+pre-release-hook = [
+    "bash",
+    "-euc",
+    "root=\"$(git rev-parse --show-toplevel)\"; cd \"$root\"; if [[ -f CHANGELOG.md ]] && head -n 1 CHANGELOG.md | grep -Fq \"## [$1]\"; then exit 0; fi; git cliff -o CHANGELOG.md --tag \"$1\"",
+    "--",
+    "{{version}}",
+]
