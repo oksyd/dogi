@@ -1127,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "dogi"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "dogi-core",
@@ -1140,14 +1140,14 @@ dependencies = [
 
 [[package]]
 name = "dogi-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "dogi-hid"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "dogi-core",
  "libc",
@@ -1155,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "dogi-ui"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "dogi-core",
  "slint",
