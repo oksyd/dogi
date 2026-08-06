@@ -903,11 +903,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     window.set_close_behavior_index(close_behavior.index());
     let active_close_behavior = Rc::new(Cell::new(close_behavior));
     if let Some(tray) = &tray {
-        if close_behavior == CloseBehavior::MinimizeToTray {
-            let _ = tray.show();
-        } else {
-            let _ = tray.hide();
-        }
+        tray.set_enabled(close_behavior == CloseBehavior::MinimizeToTray);
 
         let open_window = window.as_weak();
         tray.on_open_window(move || {
@@ -994,7 +990,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let confirm_quit_tray = tray.as_ref().map(|tray| tray.as_weak());
     window.on_confirm_quit(move || {
         if let Some(tray) = confirm_quit_tray.as_ref().and_then(|tray| tray.upgrade()) {
-            let _ = tray.hide();
+            tray.set_enabled(false);
         }
         if let Some(window) = confirm_quit_window.upgrade() {
             if window.get_horizontal_scroll_test_open() {
@@ -1028,7 +1024,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                 return;
             }
             if let Some(tray) = tray_quit_icon.upgrade() {
-                let _ = tray.hide();
+                tray.set_enabled(false);
             }
             if window.get_horizontal_scroll_test_open() {
                 window.set_horizontal_scroll_test_open(false);
@@ -1569,7 +1565,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                 }
                 Ok(ApplicationUpdateResult::Restarting) => {
                     if let Some(tray) = update_poll_tray.as_ref().and_then(|tray| tray.upgrade()) {
-                        let _ = tray.hide();
+                        tray.set_enabled(false);
                     }
                     let _ = window.hide();
                     let _ = slint::quit_event_loop();
@@ -1825,11 +1821,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
             return;
         }
         if let Some(tray) = tray {
-            if close_behavior == CloseBehavior::MinimizeToTray {
-                let _ = tray.show();
-            } else {
-                let _ = tray.hide();
-            }
+            tray.set_enabled(close_behavior == CloseBehavior::MinimizeToTray);
         }
         selected_close_behavior.set(close_behavior);
         window.set_close_behavior_index(close_behavior.index());
@@ -4021,6 +4013,13 @@ mod tests {
 
         let window = MainWindow::new().unwrap();
         window.show().unwrap();
+        {
+            let tray = AppTray::new().unwrap();
+            tray.set_enabled(true);
+            assert!(tray.get_enabled());
+            tray.set_enabled(false);
+            assert!(!tray.get_enabled());
+        }
         runtime.set_size(window.window(), (1260, 780), 1.0).unwrap();
         let device = preview_device_row(
             "device-1",

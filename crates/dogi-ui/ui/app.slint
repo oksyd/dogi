@@ -3325,12 +3325,13 @@ export component MainWindow inherits Window {
 
 export component AppTray inherits SystemTrayIcon {
     in property <string> update-ready-version;
+    in-out property <bool> enabled: false;
     icon: @image-url("assets/tray-icon.svg");
     title: "dogi";
     tooltip: root.update-ready-version == ""
         ? "dogi"
         : @tr("Dogi {} is ready", root.update-ready-version);
-    visible: false;
+    visible: root.enabled;
 
     callback open-window();
     callback open-updates();
