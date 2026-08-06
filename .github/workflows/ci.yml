@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_INCREMENTAL: "0"
@@ -114,10 +114,13 @@ jobs:
       attestations: write
       contents: read
       id-token: write
+    outputs:
+      release-tag: ${{ steps.release-tag.outputs.tag }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Install packaging dependencies
@@ -152,7 +155,34 @@ jobs:
           restore-keys: |
             cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-release-
 
+      - name: Resolve signed release tag
+        id: release-tag
+        env:
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          git fetch --force --tags origin
+          mapfile -t release_tags < <(
+            git tag --points-at "$RELEASE_COMMIT" --list \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+              | LC_ALL=C sort -V \
+              || true
+          )
+          if (( ${#release_tags[@]} > 1 )); then
+            echo "multiple stable release tags point at $RELEASE_COMMIT" >&2
+            printf '%s\n' "${release_tags[@]}" >&2
+            exit 1
+          fi
+          release_tag=${release_tags[0]:-}
+          if [[ -n "$release_tag" ]]; then
+            git -c gpg.format=ssh \
+              -c gpg.ssh.allowedSignersFile="$GITHUB_WORKSPACE/packaging/release-signers" \
+              verify-tag "$release_tag"
+          fi
+          printf 'tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
+
       - name: Build release assets
+        env:
+          DOGI_RELEASE_TAG: ${{ steps.release-tag.outputs.tag }}
         run: ./packaging/build-release.sh
 
       - name: Inspect Debian package
@@ -190,3 +220,113 @@ jobs:
         with:
           path: target/release/
           key: ${{ steps.cargo-release.outputs.cache-primary-key }}
+
+  promote:
+    name: Promote verified CI assets
+    needs: package
+    if: needs.package.outputs.release-tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: release
+      deployment: false
+    permissions:
+      actions: read
+      attestations: read
+      contents: write
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify release tag
+        env:
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_TAG: ${{ needs.package.outputs.release-tag }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release tag must be an unprefixed stable version: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          git -c gpg.format=ssh \
+            -c gpg.ssh.allowedSignersFile="$GITHUB_WORKSPACE/packaging/release-signers" \
+            verify-tag "$RELEASE_TAG"
+          tag_commit=$(git rev-list -n 1 "$RELEASE_TAG")
+          if [[ "$tag_commit" != "$RELEASE_COMMIT" ]]; then
+            echo "release tag $RELEASE_TAG does not point at $RELEASE_COMMIT" >&2
+            exit 1
+          fi
+
+      - name: Download verified package artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dogi-release-${{ github.sha }}
+          path: dist
+          digest-mismatch: error
+
+      - name: Verify release assets
+        env:
+          RELEASE_TAG: ${{ needs.package.outputs.release-tag }}
+        run: |
+          expected_portable="dogi-$RELEASE_TAG-x86_64-unknown-linux-gnu.tar.zst"
+          expected_debian="dogi_${RELEASE_TAG}_amd64.deb"
+          mapfile -t assets < <(find dist -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
+          expected=(SHA256SUMS "$expected_portable" "$expected_debian")
+          if [[ "${assets[*]}" != "${expected[*]}" ]]; then
+            echo "unexpected release asset set" >&2
+            printf 'expected: %s\n' "${expected[*]}" >&2
+            printf 'actual:   %s\n' "${assets[*]}" >&2
+            exit 1
+          fi
+          (
+            cd dist
+            sha256sum --check --strict SHA256SUMS
+          )
+          package_version=$(dpkg-deb --field "dist/$expected_debian" Version)
+          package_architecture=$(dpkg-deb --field "dist/$expected_debian" Architecture)
+          if [[ "$package_version" != "$RELEASE_TAG" ]]; then
+            echo "Debian package version $package_version does not match tag $RELEASE_TAG" >&2
+            exit 1
+          fi
+          if [[ "$package_architecture" != amd64 ]]; then
+            echo "unexpected Debian package architecture: $package_architecture" >&2
+            exit 1
+          fi
+
+      - name: Verify build provenance
+        if: github.event.repository.visibility == 'public'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          for asset in dist/*.deb dist/*.tar.zst; do
+            gh attestation verify "$asset" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml" \
+              --source-digest "$RELEASE_COMMIT" \
+              --source-ref refs/heads/main \
+              --deny-self-hosted-runners
+          done
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.package.outputs.release-tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            is_draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')
+            if [[ "$is_draft" != true ]]; then
+              echo "refusing to replace assets on published release $RELEASE_TAG" >&2
+              exit 1
+            fi
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/* \
+              --draft \
+              --generate-notes \
+              --title "Dogi $RELEASE_TAG" \
+              --verify-tag
+          fi

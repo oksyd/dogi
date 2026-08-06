@@ -1,14 +1,17 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - '*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Signed stable release tag to recover
+        required: true
+        type: string
 
 permissions: {}
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -32,15 +35,18 @@ jobs:
 
       - name: Verify release tag
         id: tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "release tag must be an unprefixed stable version: $GITHUB_REF_NAME" >&2
+          if [[ ! "$RELEASE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release tag must be an unprefixed stable version: $RELEASE_TAG" >&2
             exit 1
           fi
           git -c gpg.format=ssh \
             -c gpg.ssh.allowedSignersFile="$GITHUB_WORKSPACE/packaging/release-signers" \
-            verify-tag "$GITHUB_REF_NAME"
-          tag_commit=$(git rev-list -n 1 "$GITHUB_REF_NAME")
+            verify-tag "$RELEASE_TAG"
+          tag_commit=$(git rev-list -n 1 "$RELEASE_TAG")
+          printf 'tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           printf 'commit=%s\n' "$tag_commit" >> "$GITHUB_OUTPUT"
 
       - name: Resolve successful main CI
@@ -76,9 +82,11 @@ jobs:
           digest-mismatch: error
 
       - name: Verify release assets
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          expected_portable="dogi-$GITHUB_REF_NAME-x86_64-unknown-linux-gnu.tar.zst"
-          expected_debian="dogi_${GITHUB_REF_NAME}_amd64.deb"
+          expected_portable="dogi-$RELEASE_TAG-x86_64-unknown-linux-gnu.tar.zst"
+          expected_debian="dogi_${RELEASE_TAG}_amd64.deb"
           mapfile -t assets < <(find dist -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
           expected=(SHA256SUMS "$expected_portable" "$expected_debian")
           if [[ "${assets[*]}" != "${expected[*]}" ]]; then
@@ -93,8 +101,8 @@ jobs:
           )
           package_version=$(dpkg-deb --field "dist/$expected_debian" Version)
           package_architecture=$(dpkg-deb --field "dist/$expected_debian" Architecture)
-          if [[ "$package_version" != "$GITHUB_REF_NAME" ]]; then
-            echo "Debian package version $package_version does not match tag $GITHUB_REF_NAME" >&2
+          if [[ "$package_version" != "$RELEASE_TAG" ]]; then
+            echo "Debian package version $package_version does not match tag $RELEASE_TAG" >&2
             exit 1
           fi
           if [[ "$package_architecture" != amd64 ]]; then
@@ -121,18 +129,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            is_draft=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq '.isDraft')
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            is_draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')
             if [[ "$is_draft" != true ]]; then
-              echo "refusing to replace assets on published release $GITHUB_REF_NAME" >&2
+              echo "refusing to replace assets on published release $RELEASE_TAG" >&2
               exit 1
             fi
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            gh release upload "$RELEASE_TAG" dist/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/* \
+            gh release create "$RELEASE_TAG" dist/* \
               --draft \
               --generate-notes \
-              --title "Dogi $GITHUB_REF_NAME" \
+              --title "Dogi $RELEASE_TAG" \
               --verify-tag
           fi
