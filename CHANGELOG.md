@@ -1,8 +1,17 @@
+## [0.1.5] - 2026-08-06
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* [**breaking**] Align Debian packages with release versions
 ## [0.1.4] - 2026-08-06
 
 ### 🚀 Features
 
 - *(update)* Add verified in-app updates
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.1.4
 ## [0.1.3] - 2026-08-05
 
 ### ⚙️ Miscellaneous Tasks
