@@ -1,8 +1,17 @@
+## [0.1.9] - 2026-08-06
+
+### 🚀 Features
+
+- *(network)* Add configurable proxy support
 ## [0.1.8] - 2026-08-06
 
 ### 🐛 Bug Fixes
 
 - *(ui)* Prevent crash when enabling tray mode
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.1.8
 ## [0.1.7] - 2026-08-06
 
 ### ⚙️ Miscellaneous Tasks
