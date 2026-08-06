@@ -210,7 +210,7 @@ fn validate_debian_package(
     }
     for (field, expected) in [
         ("Package", "dogi".to_owned()),
-        ("Version", format!("{version}-1")),
+        ("Version", version.to_string()),
         ("Architecture", architecture.to_owned()),
     ] {
         let output = Command::new(DPKG_DEB)
@@ -469,7 +469,7 @@ mod tests {
                 architecture: "amd64"
             }
             .expected_name(&version),
-            "dogi_1.2.3-1_amd64.deb"
+            "dogi_1.2.3_amd64.deb"
         );
         assert_eq!(
             ReleaseAssetKind::Portable {

@@ -43,9 +43,7 @@ pub(super) enum ReleaseAssetKind {
 impl ReleaseAssetKind {
     pub(super) fn expected_name(&self, version: &Version) -> String {
         match self {
-            Self::Debian { architecture } => {
-                format!("dogi_{version}-1_{architecture}.deb")
-            }
+            Self::Debian { architecture } => format!("dogi_{version}_{architecture}.deb"),
             Self::Portable { target } => format!("dogi-{version}-{target}.tar.zst"),
         }
     }
@@ -461,7 +459,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(candidate.version, Version::new(0, 1, 3));
-        assert_eq!(candidate.artifact.name, "dogi_0.1.3-1_amd64.deb");
+        assert_eq!(candidate.artifact.name, "dogi_0.1.3_amd64.deb");
         assert_eq!(candidate.artifact.sha256, "a".repeat(64));
     }
 
@@ -554,9 +552,9 @@ mod tests {
             prerelease: false,
             immutable,
             assets: vec![ApiReleaseAsset {
-                name: "dogi_0.1.3-1_amd64.deb".to_owned(),
+                name: "dogi_0.1.3_amd64.deb".to_owned(),
                 browser_download_url:
-                    "https://github.com/oksyd/dogi/releases/download/0.1.3/dogi_0.1.3-1_amd64.deb"
+                    "https://github.com/oksyd/dogi/releases/download/0.1.3/dogi_0.1.3_amd64.deb"
                         .to_owned(),
                 state: "uploaded".to_owned(),
                 size: 1024,

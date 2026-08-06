@@ -146,7 +146,9 @@ jobs:
       (needs.attest.result == 'success' || needs.attest.result == 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: release
+    environment:
+      name: release
+      deployment: false
     permissions:
       contents: write
     steps:

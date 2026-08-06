@@ -112,7 +112,7 @@ mkdir -p "$(dirname -- "$temporary_control")"
         'Standards-Version: 4.7.2' \
         ''
     sed \
-        -e "s|@VERSION@|$version-1|g" \
+        -e "s|@VERSION@|$version|g" \
         -e "s|@ARCHITECTURE@|$debian_architecture|g" \
         -e "s|@INSTALLED_SIZE@|$installed_size|g" \
         -e "s|@SHLIB_DEPENDS@|libc6|g" \
@@ -128,13 +128,13 @@ fi
 escaped_dependencies=$(printf '%s' "$shlib_dependencies" | sed 's/[&|\\]/\\&/g')
 
 sed \
-    -e "s|@VERSION@|$version-1|g" \
+    -e "s|@VERSION@|$version|g" \
     -e "s|@ARCHITECTURE@|$debian_architecture|g" \
     -e "s|@INSTALLED_SIZE@|$installed_size|g" \
     -e "s|@SHLIB_DEPENDS@|$escaped_dependencies|g" \
     "$project_root/packaging/deb/control.in" > "$package_root/DEBIAN/control"
 
-deb_name="dogi_${version}-1_${debian_architecture}.deb"
+deb_name="dogi_${version}_${debian_architecture}.deb"
 dpkg-deb --root-owner-group --build "$package_root" "$dist_dir/$deb_name"
 
 portable_name="dogi-${version}-${host_target}"
