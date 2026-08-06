@@ -14,6 +14,7 @@ import {
     UiMessage,
     UiStatus,
     UiStatusKind,
+    UpdateState,
 } from "view-models.slint";
 
 import {
@@ -1013,6 +1014,7 @@ component DeviceListItem inherits Rectangle {
 component SidebarSettingsItem inherits Rectangle {
     in property <string> title;
     in property <bool> selected;
+    in property <bool> attention;
     callback clicked();
 
     height: 42px;
@@ -1021,7 +1023,7 @@ component SidebarSettingsItem inherits Rectangle {
     border-color: Theme.accent;
     background: root.selected ? Theme.sidebar-selected : settings-area.has-hover ? Theme.sidebar-hover : transparent;
     accessible-role: button;
-    accessible-label: root.title;
+    accessible-label: root.attention ? @tr("Settings · Update available") : root.title;
     accessible-action-default => { root.clicked(); }
     vertical-stretch: 0;
 
@@ -1042,13 +1044,22 @@ component SidebarSettingsItem inherits Rectangle {
 
     Text {
         x: 42px;
-        width: parent.width - 54px;
+        width: parent.width - (root.attention ? 70px : 54px);
         height: parent.height;
         text: root.title;
         color: root.selected ? Theme.sidebar-text : Theme.sidebar-muted;
         font-size: 11px;
         font-weight: root.selected ? 650 : 500;
         vertical-alignment: center;
+    }
+
+    if root.attention : Rectangle {
+        x: parent.width - 20px;
+        y: (parent.height - 8px) / 2;
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        background: Theme.accent;
     }
 
     settings-area := FocusableArea {
@@ -1712,12 +1723,137 @@ component SettingsRuntimeRow inherits Rectangle {
     }
 }
 
+component SettingsUpdateRow inherits Rectangle {
+    in property <UpdateState> state;
+    in-out property <bool> automatic;
+    in property <bool> supported;
+    in property <string> current-version;
+    in property <string> available-version;
+    in property <string> detail;
+    callback automatic-changed(bool);
+    callback check();
+    callback install();
+
+    property <bool> busy: root.state == UpdateState.checking || root.state == UpdateState.installing;
+    property <string> state-label:
+        root.state == UpdateState.checking ? @tr("Checking…")
+        : root.state == UpdateState.current ? @tr("Up to date")
+        : root.state == UpdateState.ready ? @tr("Ready")
+        : root.state == UpdateState.installing ? @tr("Installing…")
+        : root.state == UpdateState.failed ? @tr("Needs attention")
+        : root.state == UpdateState.unavailable ? @tr("Unavailable")
+        : @tr("Automatic");
+    property <BadgeTone> state-tone:
+        root.state == UpdateState.current ? BadgeTone.success
+        : root.state == UpdateState.ready ? BadgeTone.accent
+        : root.state == UpdateState.failed ? BadgeTone.warning
+        : BadgeTone.neutral;
+    property <string> subtitle:
+        root.state == UpdateState.ready ? @tr("Version {} is ready to install", root.available-version)
+        : root.state == UpdateState.failed && root.detail != "" ? root.detail
+        : root.state == UpdateState.unavailable && root.detail != "" ? root.detail
+        : root.state == UpdateState.unavailable ? @tr("Version {}", root.current-version)
+        : @tr("Version {}", root.current-version);
+
+    height: root.state == UpdateState.failed || root.state == UpdateState.ready ? 76px : 64px;
+    background: transparent;
+    vertical-stretch: 0;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 12px;
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                height: 20px;
+                text: @tr("Dogi updates");
+                color: Theme.text;
+                font-size: 12px;
+                font-weight: 600;
+                vertical-alignment: center;
+                vertical-stretch: 0;
+            }
+            Text {
+                height: 18px;
+                text: root.subtitle;
+                color: root.state == UpdateState.failed ? Theme.warning : Theme.text-muted;
+                font-size: 10px;
+                overflow: elide;
+                vertical-alignment: center;
+                vertical-stretch: 0;
+            }
+        }
+
+        VerticalLayout {
+            width: 96px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            MetaBadge {
+                title: root.state-label;
+                tone: root.state-tone;
+            }
+        }
+
+        VerticalLayout {
+            width: 132px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            ActionButton {
+                width: 132px;
+                height: 32px;
+                title: root.state == UpdateState.ready
+                        || (root.state == UpdateState.failed && root.available-version != "") ? @tr("Install & Restart")
+                    : root.state == UpdateState.failed ? @tr("Retry")
+                    : root.state == UpdateState.checking ? @tr("Checking…")
+                    : root.state == UpdateState.installing ? @tr("Installing…")
+                    : @tr("Check now");
+                primary: root.state == UpdateState.ready
+                    || (root.state == UpdateState.failed && root.available-version != "");
+                enabled: root.supported && !root.busy;
+                clicked => {
+                    if (root.state == UpdateState.ready
+                        || (root.state == UpdateState.failed && root.available-version != "")) {
+                        root.install();
+                    } else {
+                        root.check();
+                    }
+                }
+                vertical-stretch: 0;
+            }
+        }
+
+        VerticalLayout {
+            width: 44px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            AccentSwitch {
+                width: 44px;
+                label: @tr("Check and download updates automatically");
+                checked <=> root.automatic;
+                enabled: root.supported && !root.busy;
+                toggled => { root.automatic-changed(self.checked); }
+                vertical-stretch: 0;
+            }
+        }
+    }
+}
+
 component ConfirmationOverlay inherits Rectangle {
     in property <string> title;
     in property <string> message;
     in property <string> confirm-title;
     in property <bool> destructive: false;
+    in property <string> secondary-title;
+    in property <bool> secondary-destructive: false;
     callback accepted();
+    callback secondary();
     callback cancelled();
 
     background: Theme.overlay;
@@ -1744,7 +1880,7 @@ component ConfirmationOverlay inherits Rectangle {
     Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        width: 430px;
+        width: root.secondary-title == "" ? 430px : 540px;
         height: 214px;
         background: Theme.panel;
         border-width: 1px;
@@ -1799,8 +1935,16 @@ component ConfirmationOverlay inherits Rectangle {
                     clicked => { root.cancelled(); }
                     horizontal-stretch: 0;
                 }
+                if root.secondary-title != "" : ActionButton {
+                    width: 172px;
+                    height: 36px;
+                    title: root.secondary-title;
+                    destructive: root.secondary-destructive;
+                    clicked => { root.secondary(); }
+                    horizontal-stretch: 0;
+                }
                 ActionButton {
-                    width: 132px;
+                    width: root.secondary-title == "" ? 132px : 140px;
                     height: 36px;
                     title: root.confirm-title;
                     destructive: root.destructive;
@@ -1823,6 +1967,7 @@ export component MainWindow inherits Window {
     in-out property <bool> confirm-visible: false;
     in-out property <bool> revert-confirm-visible: false;
     in-out property <bool> quit-confirm-visible: false;
+    in-out property <bool> update-install-confirm-visible: false;
     in-out property <int> confirm-change-count: 0;
     in-out property <UiStatus> status;
     in-out property <bool> draft-dirty: false;
@@ -1836,6 +1981,14 @@ export component MainWindow inherits Window {
     in property <bool> runtime-management-supported: false;
     in property <bool> app-profiles-supported: false;
     in property <string> runtime-detail;
+    in property <UpdateState> update-state: UpdateState.unavailable;
+    in-out property <bool> automatic-update-checks-enabled: true;
+    in property <bool> update-supported: false;
+    in property <string> current-version;
+    in property <string> available-version;
+    in property <string> update-detail;
+    out property <string> update-notification-title: @tr("Dogi {} is ready", root.available-version);
+    out property <string> update-notification-body: @tr("Install the update when you are ready to restart Dogi.");
     in-out property <bool> horizontal-scroll-test-open: false;
     in-out property <int> horizontal-scroll-test-mode-index: 1;
     in property <bool> horizontal-scroll-test-active: false;
@@ -1868,6 +2021,13 @@ export component MainWindow inherits Window {
     callback close-behavior-selected(int);
     callback runtime-enabled-changed(bool);
     callback restart-runtime();
+    callback automatic-update-checks-enabled-changed(bool);
+    callback check-for-updates();
+    callback automatic-update-check();
+    callback install-update-requested();
+    callback save-and-install-update();
+    callback install-update-without-saving();
+    callback cancel-update-install();
     callback confirm-quit();
     callback cancel-quit();
     callback settings-edited();
@@ -2070,6 +2230,7 @@ export component MainWindow inherits Window {
                 SidebarSettingsItem {
                     title: @tr("Settings");
                     selected: root.page-index == 3;
+                    attention: root.update-state == UpdateState.ready;
                     clicked => { root.confirm-visible = false; root.status = {}; root.page-index = 3; }
                 }
 
@@ -2810,6 +2971,35 @@ export component MainWindow inherits Window {
                                 }
                             }
 
+                            Rectangle { height: 6px; vertical-stretch: 0; }
+
+                            PageHeading { title: @tr("Updates"); }
+
+                            Rectangle {
+                                width: 720px;
+                                height: update-row.height + 1px;
+                                background: Theme.panel;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                border-radius: 8px;
+                                clip: true;
+                                horizontal-stretch: 0;
+                                vertical-stretch: 0;
+
+                                update-row := SettingsUpdateRow {
+                                    width: parent.width;
+                                    state: root.update-state;
+                                    automatic <=> root.automatic-update-checks-enabled;
+                                    supported: root.update-supported;
+                                    current-version: root.current-version;
+                                    available-version: root.available-version;
+                                    detail: root.update-detail;
+                                    automatic-changed(enabled) => { root.automatic-update-checks-enabled-changed(enabled); }
+                                    check => { root.check-for-updates(); }
+                                    install => { root.install-update-requested(); }
+                                }
+                            }
+
                             Rectangle { vertical-stretch: 1; }
                         }
                     }
@@ -3096,6 +3286,19 @@ export component MainWindow inherits Window {
         }
     }
 
+    if root.update-install-confirm-visible : ConfirmationOverlay {
+        width: parent.width;
+        height: parent.height;
+        title: @tr("Unsaved Changes");
+        message: @tr("Save your mouse changes before installing Dogi {}? Dogi will restart.", root.available-version);
+        confirm-title: @tr("Save & Restart");
+        secondary-title: @tr("Restart Without Saving");
+        secondary-destructive: true;
+        cancelled => { root.cancel-update-install(); }
+        secondary => { root.install-update-without-saving(); }
+        accepted => { root.save-and-install-update(); }
+    }
+
     if root.quit-confirm-visible : ConfirmationOverlay {
         width: parent.width;
         height: parent.height;
@@ -3110,12 +3313,16 @@ export component MainWindow inherits Window {
 }
 
 export component AppTray inherits SystemTrayIcon {
+    in property <string> update-ready-version;
     icon: @image-url("assets/tray-icon.svg");
     title: "dogi";
-    tooltip: "dogi";
+    tooltip: root.update-ready-version == ""
+        ? "dogi"
+        : @tr("Dogi {} is ready", root.update-ready-version);
     visible: false;
 
     callback open-window();
+    callback open-updates();
     callback quit-app();
 
     clicked => { root.open-window(); }
@@ -3124,6 +3331,10 @@ export component AppTray inherits SystemTrayIcon {
         MenuItem {
             title: @tr("Open dogi");
             activated => { root.open-window(); }
+        }
+        if root.update-ready-version != "" : MenuItem {
+            title: @tr("Update available · {}", root.update-ready-version);
+            activated => { root.open-updates(); }
         }
         MenuSeparator {}
         MenuItem {

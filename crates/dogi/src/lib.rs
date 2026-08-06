@@ -4,5 +4,6 @@ mod config;
 mod desktop;
 mod device;
 mod runtime;
+mod update;
 
 pub use cli::run;

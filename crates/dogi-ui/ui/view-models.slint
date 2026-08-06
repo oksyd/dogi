@@ -28,6 +28,16 @@ export enum DesktopRuntimeState {
     degraded,
 }
 
+export enum UpdateState {
+    unavailable,
+    idle,
+    checking,
+    current,
+    ready,
+    installing,
+    failed,
+}
+
 export enum UiMessage {
     none,
     scanner-stopped,

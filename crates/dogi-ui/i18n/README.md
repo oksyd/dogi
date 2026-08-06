@@ -6,10 +6,11 @@ language; each locale lives at `<locale>/LC_MESSAGES/dogi-ui.po`.
 Update the template after changing an `@tr(...)` string:
 
 ```sh
+package_version="$(cargo pkgid -p dogi-ui | sed 's/.*#//')"
 slint-tr-extractor \
   --no-default-translation-context \
   --package-name dogi-ui \
-  --package-version 0.1.0 \
+  --package-version "$package_version" \
   --default-domain dogi-ui \
   -o crates/dogi-ui/i18n/dogi-ui.pot \
   crates/dogi-ui/ui/app.slint \
@@ -18,5 +19,5 @@ slint-tr-extractor \
   crates/dogi-ui/ui/loading.slint
 ```
 
-Merge the template into a locale catalog with `msgmerge`, translate every non-header entry,
-then run `cargo check -p dogi-ui`. The Slint build validates and embeds the catalog.
+Merge the template into a locale catalog, translate every non-header entry, then run
+`cargo check -p dogi-ui`. The Slint build validates and embeds the catalog.

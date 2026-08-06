@@ -92,6 +92,7 @@ pub struct ApplicationPreferences {
     pub theme: ApplicationTheme,
     pub close_behavior: CloseBehavior,
     pub background_operations_enabled: bool,
+    pub automatic_update_checks_enabled: bool,
 }
 
 impl Default for ApplicationPreferences {
@@ -101,6 +102,7 @@ impl Default for ApplicationPreferences {
             theme: ApplicationTheme::System,
             close_behavior: CloseBehavior::Quit,
             background_operations_enabled: true,
+            automatic_update_checks_enabled: true,
         }
     }
 }
@@ -111,6 +113,7 @@ pub enum ApplicationPreferenceChange {
     Theme(ApplicationTheme),
     CloseBehavior(CloseBehavior),
     BackgroundOperationsEnabled(bool),
+    AutomaticUpdateChecksEnabled(bool),
 }
 
 pub type ApplicationPreferenceSaver = Rc<dyn Fn(ApplicationPreferenceChange) -> Result<()>>;

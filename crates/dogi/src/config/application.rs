@@ -5,6 +5,8 @@ use std::io::{self, BufWriter, Write};
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use dogi_ui::{
     ApplicationLanguage, ApplicationPreferenceChange, ApplicationPreferences, ApplicationTheme,
@@ -15,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::desktop;
 
-const APP_CONFIG_SCHEMA_VERSION: u16 = 1;
+const APP_CONFIG_SCHEMA_VERSION: u16 = 3;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -95,6 +97,24 @@ struct StoredBehavior {
     background_operations_enabled: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredUpdates {
+    #[serde(alias = "automatic_updates_enabled")]
+    automatic_update_checks_enabled: bool,
+    #[serde(default)]
+    last_successful_check_unix_seconds: Option<u64>,
+}
+
+impl Default for StoredUpdates {
+    fn default() -> Self {
+        Self {
+            automatic_update_checks_enabled: true,
+            last_successful_check_unix_seconds: None,
+        }
+    }
+}
+
 impl Default for StoredBehavior {
     fn default() -> Self {
         Self {
@@ -110,6 +130,8 @@ struct StoredApplicationConfig {
     schema_version: u16,
     appearance: StoredAppearance,
     behavior: StoredBehavior,
+    #[serde(default)]
+    updates: StoredUpdates,
 }
 
 impl Default for StoredApplicationConfig {
@@ -118,6 +140,7 @@ impl Default for StoredApplicationConfig {
             schema_version: APP_CONFIG_SCHEMA_VERSION,
             appearance: StoredAppearance::default(),
             behavior: StoredBehavior::default(),
+            updates: StoredUpdates::default(),
         }
     }
 }
@@ -126,6 +149,7 @@ impl Default for StoredApplicationConfig {
 pub(crate) struct ApplicationConfigStore {
     path: PathBuf,
     owner: Option<FileOwner>,
+    write_lock: Arc<Mutex<()>>,
 }
 
 impl ApplicationConfigStore {
@@ -134,12 +158,17 @@ impl ApplicationConfigStore {
         Ok(Self {
             path: root.join("config.json"),
             owner,
+            write_lock: Arc::new(Mutex::new(())),
         })
     }
 
     #[cfg(test)]
     pub(crate) fn at(path: PathBuf) -> Self {
-        Self { path, owner: None }
+        Self {
+            path,
+            owner: None,
+            write_lock: Arc::new(Mutex::new(())),
+        }
     }
 
     fn load(&self) -> Result<StoredApplicationConfig, ApplicationConfigError> {
@@ -156,6 +185,7 @@ impl ApplicationConfigStore {
             theme: config.appearance.theme.application_value(),
             close_behavior: config.behavior.close_behavior.application_value(),
             background_operations_enabled: config.behavior.background_operations_enabled,
+            automatic_update_checks_enabled: config.updates.automatic_update_checks_enabled,
         })
     }
 
@@ -171,6 +201,9 @@ impl ApplicationConfigStore {
             }
             ApplicationPreferenceChange::BackgroundOperationsEnabled(enabled) => {
                 self.save_background_operations_enabled(enabled)
+            }
+            ApplicationPreferenceChange::AutomaticUpdateChecksEnabled(enabled) => {
+                self.save_automatic_update_checks_enabled(enabled)
             }
         }
     }
@@ -197,10 +230,46 @@ impl ApplicationConfigStore {
         self.update(|config| config.behavior.background_operations_enabled = enabled)
     }
 
+    fn save_automatic_update_checks_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<(), ApplicationConfigError> {
+        self.update(|config| config.updates.automatic_update_checks_enabled = enabled)
+    }
+
+    pub(crate) fn automatic_update_check_due(
+        &self,
+        now: SystemTime,
+        interval: Duration,
+    ) -> Result<bool, ApplicationConfigError> {
+        let Some(last_check) = self.load()?.updates.last_successful_check_unix_seconds else {
+            return Ok(true);
+        };
+        let now = now.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        Ok(now.saturating_sub(last_check) >= interval.as_secs())
+    }
+
+    pub(crate) fn record_successful_update_check(
+        &self,
+        checked_at: SystemTime,
+    ) -> Result<(), ApplicationConfigError> {
+        let seconds = checked_at
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.update(|config| {
+            config.updates.last_successful_check_unix_seconds = Some(seconds);
+        })
+    }
+
     fn update(
         &self,
         mutate: impl FnOnce(&mut StoredApplicationConfig),
     ) -> Result<(), ApplicationConfigError> {
+        let _guard = self
+            .write_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut config = self.load()?;
         config.schema_version = APP_CONFIG_SCHEMA_VERSION;
         mutate(&mut config);
@@ -318,14 +387,15 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, ApplicationC
 }
 
 fn validate_schema(
-    config: StoredApplicationConfig,
+    mut config: StoredApplicationConfig,
 ) -> Result<StoredApplicationConfig, ApplicationConfigError> {
-    if config.schema_version != APP_CONFIG_SCHEMA_VERSION {
+    if !(1..=APP_CONFIG_SCHEMA_VERSION).contains(&config.schema_version) {
         return Err(ApplicationConfigError::UnsupportedSchemaVersion {
             found: config.schema_version,
             supported: APP_CONFIG_SCHEMA_VERSION,
         });
     }
+    config.schema_version = APP_CONFIG_SCHEMA_VERSION;
     Ok(config)
 }
 
@@ -530,10 +600,11 @@ mod tests {
                     theme: StoredTheme::System,
                 },
                 behavior: StoredBehavior::default(),
+                updates: StoredUpdates::default(),
             }
         );
         let json = fs::read_to_string(root.join("config.json")).unwrap();
-        assert!(json.contains("\"schema_version\": 1"));
+        assert!(json.contains("\"schema_version\": 3"));
         assert!(json.contains("\"appearance\""));
 
         let _ = fs::remove_dir_all(root);
@@ -601,6 +672,11 @@ mod tests {
                 false,
             ))
             .unwrap();
+        store
+            .save_preference(ApplicationPreferenceChange::AutomaticUpdateChecksEnabled(
+                false,
+            ))
+            .unwrap();
 
         assert_eq!(
             store.load_preferences().unwrap(),
@@ -609,7 +685,83 @@ mod tests {
                 theme: ApplicationTheme::Dark,
                 close_behavior: CloseBehavior::MinimizeToTray,
                 background_operations_enabled: false,
+                automatic_update_checks_enabled: false,
             }
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn schema_one_is_migrated_with_safe_update_defaults() {
+        let root = unique_test_root("schema-one");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("config.json"),
+            r#"{
+                "schema_version": 1,
+                "appearance": {"language": "english", "theme": "dark"},
+                "behavior": {"close_behavior": "quit", "background_operations_enabled": true}
+            }"#,
+        )
+        .unwrap();
+        let store = ApplicationConfigStore::at(root.join("config.json"));
+
+        let config = store.load().unwrap();
+        assert_eq!(config.schema_version, APP_CONFIG_SCHEMA_VERSION);
+        assert!(config.updates.automatic_update_checks_enabled);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn schema_two_update_preference_is_migrated_without_losing_its_value() {
+        let root = unique_test_root("schema-two");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("config.json"),
+            r#"{
+                "schema_version": 2,
+                "appearance": {"language": "system", "theme": "system"},
+                "behavior": {"close_behavior": "quit", "background_operations_enabled": true},
+                "updates": {"automatic_updates_enabled": false}
+            }"#,
+        )
+        .unwrap();
+        let store = ApplicationConfigStore::at(root.join("config.json"));
+
+        let config = store.load().unwrap();
+        assert!(!config.updates.automatic_update_checks_enabled);
+        assert_eq!(config.updates.last_successful_check_unix_seconds, None);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn successful_update_checks_are_throttled_for_the_configured_interval() {
+        let root = unique_test_root("update-check-throttle");
+        let store = ApplicationConfigStore::at(root.join("config.json"));
+        let checked_at = UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let interval = Duration::from_secs(24 * 60 * 60);
+
+        assert!(
+            store
+                .automatic_update_check_due(checked_at, interval)
+                .unwrap()
+        );
+        store.record_successful_update_check(checked_at).unwrap();
+        assert!(
+            !store
+                .automatic_update_check_due(
+                    checked_at + interval - Duration::from_secs(1),
+                    interval
+                )
+                .unwrap()
+        );
+        assert!(
+            store
+                .automatic_update_check_due(checked_at + interval, interval)
+                .unwrap()
         );
 
         let _ = fs::remove_dir_all(root);

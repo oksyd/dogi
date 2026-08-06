@@ -29,6 +29,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Verify signed release tag
+        run: >-
+          git -c gpg.format=ssh
+          -c gpg.ssh.allowedSignersFile="$GITHUB_WORKSPACE/packaging/release-signers"
+          verify-tag "$GITHUB_REF_NAME"
+
       - name: Install release dependencies
         run: |
           sudo apt-get update

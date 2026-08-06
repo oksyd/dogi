@@ -12,6 +12,7 @@ actions.
 - Explicit, diff-only device writes with confirmation before changes are applied.
 - Custom keyboard and mouse actions through Linux `uinput`.
 - System tray integration, background runtime management, and English/Chinese UI.
+- Verified updates from immutable GitHub Releases for Debian and portable installations.
 
 ## Build and run
 

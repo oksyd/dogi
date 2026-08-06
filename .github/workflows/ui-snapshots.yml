@@ -57,6 +57,8 @@ jobs:
           render multi-device DOGI_UI_SNAPSHOT_MULTI=1
           render permission-error DOGI_UI_SNAPSHOT_ACCESS=permission
           render settings DOGI_UI_SNAPSHOT_PAGE=3
+          render settings-update-ready DOGI_UI_SNAPSHOT_PAGE=3 DOGI_UI_SNAPSHOT_UPDATE_READY=0.2.0
+          render update-restart-confirmation DOGI_UI_SNAPSHOT_UPDATE_READY=0.2.0 DOGI_UI_SNAPSHOT_UPDATE_CONFIRM=1
           render settings-dark DOGI_UI_SNAPSHOT_PAGE=3 DOGI_UI_SNAPSHOT_THEME=2
           render settings-zh-cn DOGI_UI_SNAPSHOT_PAGE=3 DOGI_UI_SNAPSHOT_LOCALE=zh_CN
           render language-menu DOGI_UI_SNAPSHOT_LANGUAGE_MENU=1

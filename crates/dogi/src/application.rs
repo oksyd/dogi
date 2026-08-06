@@ -10,7 +10,9 @@ use crate::runtime::{control::RuntimeControlClient, service};
 
 pub(crate) fn launch_gui() -> Result<()> {
     let devices = device_service_for_desktop_user();
-    let preferences = application_preferences();
+    let application_store = ApplicationConfigStore::from_environment();
+    let update_store = application_store.as_ref().ok().cloned();
+    let preferences = application_preferences(application_store);
     let settings = devices.load_master3s_settings()?;
     let inventory_devices = devices.clone();
     let scan_devices = devices.clone();
@@ -62,12 +64,18 @@ pub(crate) fn launch_gui() -> Result<()> {
                 }),
             },
             preferences,
+            updates: crate::update::application_update_manager(update_store),
         },
     )
 }
 
-fn application_preferences() -> dogi_ui::ApplicationPreferencesIntegration {
-    let store = match ApplicationConfigStore::from_environment() {
+fn application_preferences(
+    store: std::result::Result<
+        ApplicationConfigStore,
+        crate::config::application::ApplicationConfigError,
+    >,
+) -> dogi_ui::ApplicationPreferencesIntegration {
+    let store = match store {
         Ok(store) => store,
         Err(error) => {
             let detail = error.to_string();

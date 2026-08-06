@@ -20,12 +20,12 @@ export global DeviceTranslations {
 
     public pure function battery(level: int, state: BatteryState) -> string {
         return level < 0 ? @tr("Battery unavailable")
-            : state == BatteryState.charging ? @tr("{}% charging", level)
-            : state == BatteryState.discharging ? @tr("{}% discharging", level)
-            : state == BatteryState.full ? @tr("{}% full", level)
-            : state == BatteryState.low ? @tr("{}% low", level)
-            : state == BatteryState.critical ? @tr("{}% critical", level)
-            : state == BatteryState.offline ? @tr("{}% offline", level)
+            : state == BatteryState.charging ? @tr("{}% · Charging", level)
+            : state == BatteryState.discharging ? @tr("{}% · In use", level)
+            : state == BatteryState.full ? @tr("{}% · Full", level)
+            : state == BatteryState.low ? @tr("{}% · Low", level)
+            : state == BatteryState.critical ? @tr("{}% · Critical", level)
+            : state == BatteryState.offline ? @tr("{}% · Offline", level)
             : @tr("{}%", level);
     }
 

@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
@@ -108,17 +108,91 @@ pub struct DesktopRuntimeManager {
         Arc<dyn Fn(HorizontalScrollPreviewCommand) -> Result<()> + Send + Sync>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApplicationUpdateCheckIntent {
+    Automatic,
+    UserInitiated,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApplicationUpdateOperation {
+    Prepare(ApplicationUpdateCheckIntent),
+    Install,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ApplicationUpdateResult {
+    Deferred,
+    UpToDate,
+    Ready { version: String },
+    Cancelled,
+    Restarting,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ApplicationUpdateNotification {
+    pub title: String,
+    pub body: String,
+}
+
+#[derive(Clone)]
+pub struct ApplicationUpdateManager {
+    pub supported: bool,
+    pub current_version: String,
+    pub detail: String,
+    pub manage:
+        Arc<dyn Fn(ApplicationUpdateOperation) -> Result<ApplicationUpdateResult> + Send + Sync>,
+    pub notify_ready: Arc<dyn Fn(ApplicationUpdateNotification) -> Result<()> + Send + Sync>,
+}
+
+impl ApplicationUpdateManager {
+    pub fn unavailable(detail: impl Into<String>) -> Self {
+        let detail = detail.into();
+        let operation_detail = detail.clone();
+        Self {
+            supported: false,
+            current_version: env!("CARGO_PKG_VERSION").to_owned(),
+            detail,
+            manage: Arc::new(move |_| Err(DogiError::BackendUnavailable(operation_detail.clone()))),
+            notify_ready: Arc::new(|_| Ok(())),
+        }
+    }
+}
+
+impl Default for ApplicationUpdateManager {
+    fn default() -> Self {
+        Self::unavailable("Automatic updates are not configured")
+    }
+}
+
 #[derive(Clone)]
 pub struct UiIntegrations {
     pub discovery: DeviceDiscovery,
     pub settings: DeviceSettingsIntegration,
     pub runtime: DesktopRuntimeManager,
     pub preferences: ApplicationPreferencesIntegration,
+    pub updates: ApplicationUpdateManager,
+}
+
+#[derive(Default)]
+struct LaunchIntegrations {
+    discovery: Option<DeviceDiscovery>,
+    loader: Option<SettingsLoader>,
+    saver: Option<SettingsSaver>,
+    applier: Option<SettingsApplier>,
+    runtime: Option<DesktopRuntimeManager>,
+    preferences: ApplicationPreferencesIntegration,
+    updates: ApplicationUpdateManager,
 }
 
 #[derive(Debug)]
 struct DesktopRuntimeCompletion {
     result: Result<DesktopRuntimeStatus>,
+}
+
+#[derive(Debug)]
+struct ApplicationUpdateCompletion {
+    result: Result<ApplicationUpdateResult>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -299,6 +373,36 @@ fn dispatch_desktop_runtime_operation(
     sender.send(operation).is_ok()
 }
 
+fn dispatch_application_update(
+    window: &MainWindow,
+    sender: Option<&mpsc::Sender<ApplicationUpdateOperation>>,
+    in_flight: &Cell<bool>,
+    operation: ApplicationUpdateOperation,
+) -> bool {
+    if in_flight.get() {
+        return true;
+    }
+    let Some(sender) = sender else {
+        return false;
+    };
+    window.set_update_detail("".into());
+    match operation {
+        ApplicationUpdateOperation::Prepare(ApplicationUpdateCheckIntent::UserInitiated) => {
+            window.set_available_version("".into());
+            window.set_update_state(UpdateState::Checking);
+        }
+        ApplicationUpdateOperation::Prepare(ApplicationUpdateCheckIntent::Automatic) => {}
+        ApplicationUpdateOperation::Install => {
+            window.set_update_state(UpdateState::Installing);
+        }
+    }
+    if sender.send(operation).is_err() {
+        return false;
+    }
+    in_flight.set(true);
+    true
+}
+
 fn run_device_discovery(
     discovery: DeviceDiscovery,
     intent: DeviceScanIntent,
@@ -469,7 +573,39 @@ impl DeviceUiSession {
     }
 
     fn any_dirty(&self) -> bool {
-        self.fallback_dirty || self.drafts.iter().any(|draft| draft.dirty)
+        self.fallback_dirty
+            || self.drafts.iter().any(|draft| draft.dirty)
+            || self.detached_drafts.values().any(|draft| draft.dirty)
+    }
+
+    fn dirty_settings(&self, devices: &[LogicalDevice]) -> Vec<(Option<String>, Master3sSettings)> {
+        let mut settings = Vec::new();
+        if self.fallback_dirty {
+            settings.push((None, self.fallback.clone()));
+        }
+
+        let mut connected_keys = HashSet::new();
+        for (index, draft) in self.drafts.iter().enumerate() {
+            let settings_id = draft.strong_key.clone().or_else(|| {
+                devices
+                    .get(index)
+                    .map(|device| device_settings_id(&device.primary))
+            });
+            if let Some(key) = &settings_id {
+                connected_keys.insert(key.clone());
+            }
+            if draft.dirty {
+                settings.push((settings_id, draft.settings.clone()));
+            }
+        }
+
+        settings.extend(
+            self.detached_drafts
+                .iter()
+                .filter(|(key, draft)| draft.dirty && !connected_keys.contains(*key))
+                .map(|(key, draft)| (Some(key.clone()), draft.settings.clone())),
+        );
+        settings
     }
 
     fn replace_current(&mut self, settings: Master3sSettings) {
@@ -496,6 +632,26 @@ impl DeviceUiSession {
         } else {
             self.fallback_saved = self.fallback.clone();
             self.fallback_dirty = false;
+        }
+    }
+
+    fn mark_all_saved(&mut self) {
+        self.fallback_saved = self.fallback.clone();
+        self.fallback_dirty = false;
+        for draft in &mut self.drafts {
+            draft.saved_settings = draft.settings.clone();
+            draft.dirty = false;
+            if let Some(strong_key) = &draft.strong_key
+                && let Some(detached) = self.detached_drafts.get_mut(strong_key)
+            {
+                detached.settings = draft.settings.clone();
+                detached.saved_settings = draft.settings.clone();
+                detached.dirty = false;
+            }
+        }
+        for draft in self.detached_drafts.values_mut() {
+            draft.saved_settings = draft.settings.clone();
+            draft.dirty = false;
         }
     }
 
@@ -602,26 +758,16 @@ impl DeviceUiSession {
 }
 
 pub fn launch(state: UiState) -> Result<()> {
-    launch_internal(
-        state,
-        None,
-        None,
-        None,
-        None,
-        None,
-        ApplicationPreferencesIntegration::default(),
-    )
+    launch_internal(state, LaunchIntegrations::default())
 }
 
 pub fn launch_with_settings_saver(state: UiState, saver: SettingsSaver) -> Result<()> {
     launch_internal(
         state,
-        None,
-        None,
-        Some(saver),
-        None,
-        None,
-        ApplicationPreferencesIntegration::default(),
+        LaunchIntegrations {
+            saver: Some(saver),
+            ..LaunchIntegrations::default()
+        },
     )
 }
 
@@ -633,12 +779,12 @@ pub fn launch_with_settings_io(
 ) -> Result<()> {
     launch_internal(
         state,
-        None,
-        Some(loader),
-        Some(saver),
-        Some(applier),
-        None,
-        ApplicationPreferencesIntegration::default(),
+        LaunchIntegrations {
+            loader: Some(loader),
+            saver: Some(saver),
+            applier: Some(applier),
+            ..LaunchIntegrations::default()
+        },
     )
 }
 
@@ -651,36 +797,48 @@ pub fn launch_with_device_io(
 ) -> Result<()> {
     launch_internal(
         state,
-        Some(DeviceDiscovery::single(scanner)),
-        Some(loader),
-        Some(saver),
-        Some(applier),
-        None,
-        ApplicationPreferencesIntegration::default(),
+        LaunchIntegrations {
+            discovery: Some(DeviceDiscovery::single(scanner)),
+            loader: Some(loader),
+            saver: Some(saver),
+            applier: Some(applier),
+            ..LaunchIntegrations::default()
+        },
     )
 }
 
 pub fn launch_with_integrations(state: UiState, integrations: UiIntegrations) -> Result<()> {
+    let UiIntegrations {
+        discovery,
+        settings,
+        runtime,
+        preferences,
+        updates,
+    } = integrations;
     launch_internal(
         state,
-        Some(integrations.discovery),
-        Some(integrations.settings.load),
-        Some(integrations.settings.save),
-        Some(integrations.settings.apply),
-        Some(integrations.runtime),
-        integrations.preferences,
+        LaunchIntegrations {
+            discovery: Some(discovery),
+            loader: Some(settings.load),
+            saver: Some(settings.save),
+            applier: Some(settings.apply),
+            runtime: Some(runtime),
+            preferences,
+            updates,
+        },
     )
 }
 
-fn launch_internal(
-    state: UiState,
-    discovery: Option<DeviceDiscovery>,
-    loader: Option<SettingsLoader>,
-    saver: Option<SettingsSaver>,
-    applier: Option<SettingsApplier>,
-    runtime: Option<DesktopRuntimeManager>,
-    preferences: ApplicationPreferencesIntegration,
-) -> Result<()> {
+fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<()> {
+    let LaunchIntegrations {
+        discovery,
+        loader,
+        saver,
+        applier,
+        runtime,
+        preferences,
+        updates,
+    } = integrations;
     let window = MainWindow::new().map_err(|error| DogiError::Ui(error.to_string()))?;
     slint::set_xdg_app_id(APPLICATION_ID).map_err(|error| DogiError::Ui(error.to_string()))?;
     let app_preferences = preferences.initial;
@@ -694,6 +852,7 @@ fn launch_internal(
     let theme = app_preferences.theme;
     let mut close_behavior = app_preferences.close_behavior;
     let background_operations_enabled = app_preferences.background_operations_enabled;
+    let automatic_update_checks_enabled = app_preferences.automatic_update_checks_enabled;
     if let Err(error) = slint::select_bundled_translation(language.locale()) {
         startup_status =
             UiStatus::presentation(UiStatusKind::Warning, UiMessage::LanguageUnavailable)
@@ -727,6 +886,15 @@ fn launch_internal(
         let open_window = window.as_weak();
         tray.on_open_window(move || {
             if let Some(window) = open_window.upgrade() {
+                let _ = window.show();
+            }
+        });
+
+        let open_updates_window = window.as_weak();
+        tray.on_open_updates(move || {
+            if let Some(window) = open_updates_window.upgrade() {
+                window.set_confirm_visible(false);
+                window.set_page_index(3);
                 let _ = window.show();
             }
         });
@@ -1238,6 +1406,336 @@ fn launch_internal(
             window.set_runtime_detail("Dogi runtime manager is unavailable".into());
         }
     });
+
+    window.set_current_version(updates.current_version.clone().into());
+    window.set_available_version("".into());
+    window.set_automatic_update_checks_enabled(automatic_update_checks_enabled);
+
+    let (update_work_sender, update_work_receiver) = mpsc::channel::<ApplicationUpdateOperation>();
+    let (update_completion_sender, update_completion_receiver) =
+        mpsc::channel::<ApplicationUpdateCompletion>();
+    let update_handler = updates.supported.then(|| updates.manage.clone());
+    let update_worker_available = update_handler.is_some_and(|handler| {
+        std::thread::Builder::new()
+            .name("dogi-update-manager".to_owned())
+            .spawn(move || {
+                while let Ok(operation) = update_work_receiver.recv() {
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        handler(operation)
+                    }))
+                    .unwrap_or_else(|_| {
+                        Err(DogiError::Ui(
+                            "Dogi update manager panicked unexpectedly".to_owned(),
+                        ))
+                    });
+                    let _ = update_completion_sender.send(ApplicationUpdateCompletion { result });
+                }
+            })
+            .is_ok()
+    });
+    let update_work_sender = update_worker_available.then_some(update_work_sender);
+    window.set_update_supported(update_worker_available);
+    window.set_update_state(if update_worker_available {
+        UpdateState::Idle
+    } else {
+        UpdateState::Unavailable
+    });
+    window.set_update_detail(if update_worker_available {
+        "".into()
+    } else if updates.detail.is_empty() {
+        "Automatic update worker is unavailable".into()
+    } else {
+        updates.detail.clone().into()
+    });
+
+    let update_in_flight = Rc::new(Cell::new(false));
+    let update_poll_timer = Rc::new(slint::Timer::default());
+    let update_poll_control = Rc::downgrade(&update_poll_timer);
+    let update_poll_window = window.as_weak();
+    let update_poll_in_flight = update_in_flight.clone();
+    let update_poll_tray = tray.as_ref().map(|tray| tray.as_weak());
+    let update_notifier = updates.notify_ready.clone();
+    let notified_update_version = Rc::new(RefCell::new(None::<String>));
+    let update_poll_notified_version = notified_update_version.clone();
+    update_poll_timer.start(
+        slint::TimerMode::Repeated,
+        Duration::from_millis(40),
+        move || {
+            let completion = match update_completion_receiver.try_recv() {
+                Ok(completion) => completion,
+                Err(mpsc::TryRecvError::Empty) => return,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    update_poll_in_flight.set(false);
+                    if let Some(timer) = update_poll_control.upgrade() {
+                        timer.stop();
+                    }
+                    if let Some(window) = update_poll_window.upgrade() {
+                        window.set_update_state(UpdateState::Failed);
+                        window.set_update_detail("Dogi update manager stopped unexpectedly".into());
+                    }
+                    return;
+                }
+            };
+            update_poll_in_flight.set(false);
+            if let Some(timer) = update_poll_control.upgrade() {
+                timer.stop();
+            }
+            let Some(window) = update_poll_window.upgrade() else {
+                return;
+            };
+            match completion.result {
+                Ok(ApplicationUpdateResult::Deferred) => {
+                    if window.get_update_state() == UpdateState::Checking {
+                        window.set_update_state(UpdateState::Idle);
+                    }
+                }
+                Ok(ApplicationUpdateResult::UpToDate) => {
+                    window.set_available_version("".into());
+                    window.set_update_detail("".into());
+                    window.set_update_state(UpdateState::Current);
+                    if let Some(tray) = update_poll_tray.as_ref().and_then(|tray| tray.upgrade()) {
+                        tray.set_update_ready_version("".into());
+                    }
+                }
+                Ok(ApplicationUpdateResult::Ready { version }) => {
+                    let is_new = update_poll_notified_version
+                        .borrow()
+                        .as_deref()
+                        .is_none_or(|notified| notified != version);
+                    window.set_available_version(version.clone().into());
+                    window.set_update_detail("".into());
+                    window.set_update_state(UpdateState::Ready);
+                    if let Some(tray) = update_poll_tray.as_ref().and_then(|tray| tray.upgrade()) {
+                        tray.set_update_ready_version(version.clone().into());
+                    }
+                    if is_new && !window.window().is_visible() {
+                        let notifier = update_notifier.clone();
+                        let notification = ApplicationUpdateNotification {
+                            title: window.get_update_notification_title().to_string(),
+                            body: window.get_update_notification_body().to_string(),
+                        };
+                        let _ = std::thread::Builder::new()
+                            .name("dogi-update-notification".to_owned())
+                            .spawn(move || {
+                                let _ = notifier(notification);
+                            });
+                    }
+                    update_poll_notified_version.borrow_mut().replace(version);
+                }
+                Ok(ApplicationUpdateResult::Cancelled) => {
+                    window.set_update_detail("".into());
+                    window.set_update_state(UpdateState::Ready);
+                }
+                Ok(ApplicationUpdateResult::Restarting) => {
+                    if let Some(tray) = update_poll_tray.as_ref().and_then(|tray| tray.upgrade()) {
+                        let _ = tray.hide();
+                    }
+                    let _ = window.hide();
+                    let _ = slint::quit_event_loop();
+                }
+                Err(error) => {
+                    window.set_update_detail(error.to_string().into());
+                    window.set_update_state(UpdateState::Failed);
+                }
+            }
+        },
+    );
+    update_poll_timer.stop();
+
+    let check_update_window = window.as_weak();
+    let check_update_sender = update_work_sender.clone();
+    let check_update_in_flight = update_in_flight.clone();
+    let check_update_timer = update_poll_timer.clone();
+    window.on_check_for_updates(move || {
+        let Some(window) = check_update_window.upgrade() else {
+            return;
+        };
+        if !window.get_update_supported() || check_update_in_flight.get() {
+            return;
+        }
+        if dispatch_application_update(
+            &window,
+            check_update_sender.as_ref(),
+            &check_update_in_flight,
+            ApplicationUpdateOperation::Prepare(ApplicationUpdateCheckIntent::UserInitiated),
+        ) {
+            check_update_timer.restart();
+        } else {
+            window.set_update_state(UpdateState::Failed);
+            window.set_update_detail("Dogi update manager is unavailable".into());
+        }
+    });
+
+    let automatic_check_window = window.as_weak();
+    let automatic_check_sender = update_work_sender.clone();
+    let automatic_check_in_flight = update_in_flight.clone();
+    let automatic_check_timer = update_poll_timer.clone();
+    window.on_automatic_update_check(move || {
+        let Some(window) = automatic_check_window.upgrade() else {
+            return;
+        };
+        if !window.get_update_supported()
+            || automatic_check_in_flight.get()
+            || !window.get_available_version().is_empty()
+        {
+            return;
+        }
+        if dispatch_application_update(
+            &window,
+            automatic_check_sender.as_ref(),
+            &automatic_check_in_flight,
+            ApplicationUpdateOperation::Prepare(ApplicationUpdateCheckIntent::Automatic),
+        ) {
+            automatic_check_timer.restart();
+        }
+    });
+
+    let install_update_window = window.as_weak();
+    let install_update_sender = update_work_sender.clone();
+    let install_update_in_flight = update_in_flight.clone();
+    let install_update_timer = update_poll_timer.clone();
+    let install_update = Rc::new(move || {
+        let Some(window) = install_update_window.upgrade() else {
+            return;
+        };
+        if !window.get_update_supported()
+            || install_update_in_flight.get()
+            || window.get_available_version().is_empty()
+        {
+            return;
+        }
+        if dispatch_application_update(
+            &window,
+            install_update_sender.as_ref(),
+            &install_update_in_flight,
+            ApplicationUpdateOperation::Install,
+        ) {
+            install_update_timer.restart();
+        } else {
+            window.set_update_state(UpdateState::Failed);
+            window.set_update_detail("Dogi update manager is unavailable".into());
+        }
+    });
+
+    let install_request_window = window.as_weak();
+    let install_request_session = session.clone();
+    let install_request_action = install_update.clone();
+    window.on_install_update_requested(move || {
+        let Some(window) = install_request_window.upgrade() else {
+            return;
+        };
+        {
+            let mut session = install_request_session.borrow_mut();
+            session.capture_window(&window);
+            window.set_draft_dirty(session.current_dirty());
+            if session.any_dirty() {
+                window.set_update_install_confirm_visible(true);
+                return;
+            }
+        }
+        install_request_action();
+    });
+
+    let cancel_install_window = window.as_weak();
+    window.on_cancel_update_install(move || {
+        if let Some(window) = cancel_install_window.upgrade() {
+            window.set_update_install_confirm_visible(false);
+        }
+    });
+
+    let discard_install_window = window.as_weak();
+    let discard_install_action = install_update.clone();
+    window.on_install_update_without_saving(move || {
+        if let Some(window) = discard_install_window.upgrade() {
+            window.set_update_install_confirm_visible(false);
+            discard_install_action();
+        }
+    });
+
+    let save_install_window = window.as_weak();
+    let save_install_session = session.clone();
+    let save_install_devices = logical_devices.clone();
+    let save_install_saver = saver.clone();
+    let save_install_action = install_update;
+    window.on_save_and_install_update(move || {
+        let Some(window) = save_install_window.upgrade() else {
+            return;
+        };
+        let dirty_settings = save_install_session
+            .borrow()
+            .dirty_settings(&save_install_devices.borrow());
+        let result = match &save_install_saver {
+            Some(saver) => dirty_settings
+                .iter()
+                .try_for_each(|(settings_id, settings)| {
+                    saver(settings_id.as_deref(), settings).map(|_| ())
+                }),
+            None => Err(DogiError::BackendUnavailable(
+                "mouse settings storage is unavailable".to_owned(),
+            )),
+        };
+        if let Err(error) = result {
+            window.set_update_install_confirm_visible(false);
+            set_window_status(
+                &window,
+                UiStatus::presentation(UiStatusKind::Error, UiMessage::SaveFailed)
+                    .with_detail(error.to_string()),
+            );
+            return;
+        }
+        save_install_session.borrow_mut().mark_all_saved();
+        window.set_draft_dirty(false);
+        window.set_update_install_confirm_visible(false);
+        save_install_action();
+    });
+
+    let active_automatic_update_checks = Rc::new(Cell::new(automatic_update_checks_enabled));
+    let automatic_update_save = preferences.save.clone();
+    let automatic_update_window = window.as_weak();
+    let selected_automatic_update_checks = active_automatic_update_checks.clone();
+    window.on_automatic_update_checks_enabled_changed(move |enabled| {
+        let Some(window) = automatic_update_window.upgrade() else {
+            return;
+        };
+        if !persist_application_setting(
+            &window,
+            &automatic_update_save,
+            ApplicationPreferenceChange::AutomaticUpdateChecksEnabled(enabled),
+        ) {
+            window.set_automatic_update_checks_enabled(selected_automatic_update_checks.get());
+            return;
+        }
+        selected_automatic_update_checks.set(enabled);
+        window.set_automatic_update_checks_enabled(enabled);
+        if enabled && window.get_update_supported() {
+            window.invoke_automatic_update_check();
+        }
+    });
+
+    let update_schedule_timer = Rc::new(slint::Timer::default());
+    let scheduled_update_window = window.as_weak();
+    update_schedule_timer.start(
+        slint::TimerMode::Repeated,
+        Duration::from_secs(60 * 60),
+        move || {
+            let Some(window) = scheduled_update_window.upgrade() else {
+                return;
+            };
+            if window.get_automatic_update_checks_enabled() && window.get_update_supported() {
+                window.invoke_automatic_update_check();
+            }
+        },
+    );
+    if update_worker_available && automatic_update_checks_enabled {
+        let startup_update_window = window.as_weak();
+        slint::Timer::single_shot(Duration::from_secs(2), move || {
+            if let Some(window) = startup_update_window.upgrade()
+                && window.get_automatic_update_checks_enabled()
+            {
+                window.invoke_automatic_update_check();
+            }
+        });
+    }
 
     let active_language = Rc::new(Cell::new(language));
     let language_save = preferences.save.clone();
@@ -1926,6 +2424,8 @@ fn launch_internal(
         HorizontalScrollPreviewCommand::Clear,
     );
     runtime_timer.stop();
+    update_poll_timer.stop();
+    update_schedule_timer.stop();
     preview_poll_timer.stop();
     preview_speed_timer.stop();
     preview_heartbeat_timer.stop();
@@ -3064,6 +3564,31 @@ mod tests {
     }
 
     #[test]
+    fn device_session_can_save_all_dirty_drafts_before_restart() {
+        let devices = logical_devices(&[
+            make_paired_device("/dev/hidraw2", "usb-0000:06:00.0-3/input2", "AABBCCDD"),
+            make_paired_device("/dev/hidraw3", "usb-0000:06:00.0-4/input2", "EEFF0011"),
+        ]);
+        let saved = Master3sSettings::default();
+        let mut session = DeviceUiSession::new(&devices, vec![saved.clone(), saved.clone()], saved);
+
+        let mut first = session.current().clone();
+        first.pointer_speed_percent = 110;
+        session.replace_current(first);
+        assert!(session.select(1));
+        let mut second = session.current().clone();
+        second.pointer_speed_percent = 140;
+        session.replace_current(second);
+
+        let dirty = session.dirty_settings(&devices);
+        assert_eq!(dirty.len(), 2);
+        assert!(dirty.iter().all(|(settings_id, _)| settings_id.is_some()));
+        session.mark_all_saved();
+        assert!(!session.any_dirty());
+        assert!(session.dirty_settings(&devices).is_empty());
+    }
+
+    #[test]
     fn device_session_preserves_drafts_and_selection_after_reorder() {
         let device_a = make_paired_device("/dev/hidraw2", "usb-0000:06:00.0-3/input2", "AABBCCDD");
         let device_b = make_paired_device("/dev/hidraw3", "usb-0000:06:00.0-4/input2", "11223344");
@@ -3828,6 +4353,14 @@ mod tests {
             window.set_runtime_enabled(true);
             window.set_runtime_state(DesktopRuntimeState::Running);
         }
+        window.set_update_supported(true);
+        window.set_current_version(env!("CARGO_PKG_VERSION").into());
+        if let Some(version) = std::env::var_os("DOGI_UI_SNAPSHOT_UPDATE_READY") {
+            window.set_available_version(version.to_string_lossy().into_owned().into());
+            window.set_update_state(UpdateState::Ready);
+        } else {
+            window.set_update_state(UpdateState::Current);
+        }
         window.set_horizontal_scroll_test_supported(true);
         window.set_app_profiles_supported(std::env::var_os("DOGI_UI_SNAPSHOT_WAYLAND").is_none());
         window.set_rescan_enabled(true);
@@ -4002,6 +4535,10 @@ mod tests {
         if std::env::var_os("DOGI_UI_SNAPSHOT_CONFIRM").is_some() {
             window.set_confirm_visible(true);
             window.set_confirm_change_count(i32::try_from(plan_row_count).unwrap_or(i32::MAX));
+        }
+        if std::env::var_os("DOGI_UI_SNAPSHOT_UPDATE_CONFIRM").is_some() {
+            window.set_page_index(3);
+            window.set_update_install_confirm_visible(true);
         }
         if let Ok(focus_steps) = std::env::var("DOGI_UI_SNAPSHOT_FOCUS_STEPS")
             && let Ok(focus_steps) = focus_steps.parse::<usize>()
