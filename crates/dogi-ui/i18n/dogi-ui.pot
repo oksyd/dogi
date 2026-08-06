@@ -33,6 +33,12 @@ msgstr ""
 msgid "Unavailable"
 msgstr ""
 
+msgid "Development builds do not manage the installed background service"
+msgstr ""
+
+msgid "This binary has no persistent background integration"
+msgstr ""
+
 #: crates/dogi-ui/ui/app.slint:620 crates/dogi-ui/ui/app.slint:1638
 msgid "Starting…"
 msgstr ""

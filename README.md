@@ -58,8 +58,8 @@ behavior are implemented locally through the background runtime and `uinput`.
 
 ## Configuration files
 
-Configuration is stored under `$XDG_CONFIG_HOME/dogi`, or `$HOME/.config/dogi` when
-`XDG_CONFIG_HOME` is unset:
+Installed and portable releases store configuration under `$XDG_CONFIG_HOME/dogi`, or
+`$HOME/.config/dogi` when `XDG_CONFIG_HOME` is unset:
 
 - `config.json` — application appearance and lifecycle preferences.
 - `master3s.json` — default and per-device mouse profiles.
@@ -67,8 +67,24 @@ Configuration is stored under `$XDG_CONFIG_HOME/dogi`, or `$HOME/.config/dogi` w
 Configuration writes use atomic replacement. Unsupported or malformed schemas are reported and
 left unchanged.
 
+Local Cargo builds, including `--release` builds, use an isolated `dogi-development` namespace for
+configuration, cache, runtime sockets, and the GUI instance lock. They never install or rewrite the
+release background service, and automatic updates are disabled. To exercise runtime actions during
+development, start the foreground runtime explicitly in another terminal:
+
+```bash
+cargo run -- runtime run --execute-actions --allow-device-write
+```
+
+Only one action runtime can own `uinput` at a time. Stop the installed Dogi runtime before starting
+the development runtime; Dogi reports the conflict instead of taking it over.
+
 ## Desktop integration
 
-The GUI manages a systemd user service for custom actions and application profiles. X11
-application matching uses `xprop`. Wayland does not expose an equivalent global active-window API,
-so application profiles remain visible but unavailable there.
+The Debian package ships a fixed systemd user unit that runs `/usr/bin/dogi`; the GUI only enables,
+disables, or restarts it. Portable installations create their user unit only after background
+operations are explicitly enabled. Unmanaged and development binaries do not create persistent
+services.
+
+X11 application matching uses `xprop`. Wayland does not expose an equivalent global active-window
+API, so application profiles remain visible but unavailable there.

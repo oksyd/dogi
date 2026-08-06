@@ -5,6 +5,7 @@ import {
 
 import {
     AppProfileRow,
+    DesktopRuntimeAvailability,
     DesktopRuntimeState,
     DeviceAccessState,
     DeviceDiscoveryState,
@@ -1626,6 +1627,7 @@ component SettingsSelectRow inherits Rectangle {
 }
 
 component SettingsRuntimeRow inherits Rectangle {
+    in property <DesktopRuntimeAvailability> availability;
     in property <DesktopRuntimeState> state;
     in-out property <bool> desired-enabled;
     in property <bool> busy;
@@ -1635,7 +1637,8 @@ component SettingsRuntimeRow inherits Rectangle {
     callback restart();
 
     property <string> state-label:
-        root.busy || root.state == DesktopRuntimeState.starting ? @tr("Starting…")
+        !root.supported ? @tr("Unavailable")
+        : root.busy || root.state == DesktopRuntimeState.starting ? @tr("Starting…")
         : root.state == DesktopRuntimeState.running ? @tr("Running")
         : root.state == DesktopRuntimeState.stopped ? @tr("Off")
         : @tr("Needs attention");
@@ -1643,8 +1646,14 @@ component SettingsRuntimeRow inherits Rectangle {
         root.state == DesktopRuntimeState.running ? BadgeTone.success
         : root.state == DesktopRuntimeState.degraded ? BadgeTone.warning
         : BadgeTone.neutral;
+    property <string> availability-detail:
+        root.availability == DesktopRuntimeAvailability.development
+            ? @tr("Development builds do not manage the installed background service")
+        : root.availability == DesktopRuntimeAvailability.unmanaged
+            ? @tr("This binary has no persistent background integration")
+        : root.detail;
 
-    height: root.state == DesktopRuntimeState.degraded && root.detail != "" ? 76px : 64px;
+    height: (!root.supported || root.state == DesktopRuntimeState.degraded) && root.availability-detail != "" ? 76px : 64px;
     background: transparent;
     vertical-stretch: 0;
 
@@ -1667,10 +1676,10 @@ component SettingsRuntimeRow inherits Rectangle {
                 vertical-stretch: 0;
             }
 
-            if root.state == DesktopRuntimeState.degraded && root.detail != "" : Text {
+            if (!root.supported || root.state == DesktopRuntimeState.degraded) && root.availability-detail != "" : Text {
                 height: 18px;
-                text: root.detail;
-                color: Theme.warning;
+                text: root.availability-detail;
+                color: root.state == DesktopRuntimeState.degraded ? Theme.warning : Theme.text-muted;
                 font-size: 10px;
                 overflow: elide;
                 vertical-alignment: center;
@@ -1976,6 +1985,7 @@ export component MainWindow inherits Window {
     in-out property <int> close-behavior-index: 0;
     in-out property <bool> high-contrast: false;
     in property <DesktopRuntimeState> runtime-state: DesktopRuntimeState.running;
+    in property <DesktopRuntimeAvailability> runtime-availability: DesktopRuntimeAvailability.available;
     in-out property <bool> runtime-enabled: true;
     in property <bool> runtime-busy: false;
     in property <bool> runtime-management-supported: false;
@@ -2962,6 +2972,7 @@ export component MainWindow inherits Window {
                                 runtime-row := SettingsRuntimeRow {
                                     width: parent.width;
                                     state: root.runtime-state;
+                                    availability: root.runtime-availability;
                                     desired-enabled <=> root.runtime-enabled;
                                     busy: root.runtime-busy;
                                     supported: root.runtime-management-supported;

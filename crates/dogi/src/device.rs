@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -18,6 +17,7 @@ use dogi_core::Master3sRuntimeEvent;
 use dogi_hid::Master3sRuntimeEventListener;
 
 use crate::desktop::focus;
+use crate::environment::AppEnvironment;
 use crate::runtime::{self, RuntimeActionExecution};
 
 #[derive(Clone, Debug, Default)]
@@ -88,18 +88,23 @@ impl DeviceService {
         Self::default()
     }
 
+    pub(crate) fn for_environment(environment: &AppEnvironment) -> Self {
+        let owner = environment
+            .user
+            .uid
+            .zip(environment.user.gid)
+            .map(|(uid, gid)| ConfigFileOwner::new(uid, gid));
+        Self {
+            config_path: Some(environment.paths.device_settings()),
+            config_owner: owner,
+        }
+    }
+
     #[cfg(test)]
     pub fn with_config_path(path: impl Into<PathBuf>) -> Self {
         Self {
             config_path: Some(path.into()),
             config_owner: None,
-        }
-    }
-
-    pub(crate) fn with_owned_config_path(path: impl Into<PathBuf>, owner: ConfigFileOwner) -> Self {
-        Self {
-            config_path: Some(path.into()),
-            config_owner: Some(owner),
         }
     }
 
@@ -180,9 +185,11 @@ impl DeviceService {
     }
 
     pub fn master3s_settings_path(&self) -> Result<PathBuf> {
-        self.config_path
-            .clone()
-            .map_or_else(default_settings_path, Ok)
+        self.config_path.clone().ok_or_else(|| {
+            DogiError::Config(
+                "device settings are unavailable without an application environment".to_owned(),
+            )
+        })
     }
 
     pub fn load_master3s_settings(&self) -> Result<Master3sSettings> {
@@ -252,27 +259,6 @@ impl DeviceService {
             })?;
         persisted.validated()
     }
-}
-
-fn default_settings_path() -> Result<PathBuf> {
-    Ok(config_dir()?.join("dogi").join("master3s.json"))
-}
-
-fn config_dir() -> Result<PathBuf> {
-    if let Some(value) = non_empty_env_path("XDG_CONFIG_HOME") {
-        return Ok(value);
-    }
-
-    let home = non_empty_env_path("HOME").ok_or_else(|| {
-        DogiError::Config("HOME or XDG_CONFIG_HOME must be set to locate config".to_owned())
-    })?;
-    Ok(home.join(".config"))
-}
-
-fn non_empty_env_path(key: &str) -> Option<PathBuf> {
-    env::var_os(key)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
 }
 
 fn write_settings_file(

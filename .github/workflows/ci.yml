@@ -14,6 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  CARGO_INCREMENTAL: "0"
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
 
@@ -41,11 +42,29 @@ jobs:
       - name: Prepare Rust toolchain
         run: rustup show active-toolchain
 
+      - name: Restore Cargo sources
+        id: cargo-sources
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-sources-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-sources-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Restore debug build cache
+        id: cargo-debug
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target/debug/
+          key: cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: |
+            cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-
+
       - name: Check formatting
         run: cargo fmt --all -- --check
-
-      - name: Check workspace
-        run: cargo check --workspace --all-targets --all-features --locked
 
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
@@ -68,11 +87,33 @@ jobs:
           grep -Fxq assets/linux/70-dogi-logitech.rules <<<"$package_files"
           grep -Fxq assets/linux/dogi-runtime.service.in <<<"$package_files"
 
+      - name: Save Cargo sources
+        if: github.ref == 'refs/heads/main' && steps.cargo-sources.outputs.cache-hit != 'true'
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ steps.cargo-sources.outputs.cache-primary-key }}
+
+      - name: Save debug build cache
+        if: github.ref == 'refs/heads/main' && steps.cargo-debug.outputs.cache-hit != 'true'
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target/debug/
+          key: ${{ steps.cargo-debug.outputs.cache-primary-key }}
+
   package:
     name: Package
     needs: quality
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -91,6 +132,26 @@ jobs:
       - name: Prepare Rust toolchain
         run: rustup show active-toolchain
 
+      - name: Restore Cargo sources
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-sources-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-sources-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Restore release build cache
+        id: cargo-release
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target/release/
+          key: cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-release-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: |
+            cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-release-
+
       - name: Build release assets
         run: ./packaging/build-release.sh
 
@@ -99,10 +160,33 @@ jobs:
           dpkg-deb --info dist/*.deb
           dpkg-deb --contents dist/*.deb
 
+      - name: Generate checksums
+        run: |
+          cd dist
+          LC_ALL=C find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' \
+            | sort \
+            | xargs sha256sum > SHA256SUMS
+
+      - name: Attest release assets
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.deb
+            dist/*.tar.zst
+
       - name: Upload package artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: dogi-linux-packages-${{ github.run_attempt }}
+          name: dogi-release-${{ github.sha }}
           path: dist/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
+          compression-level: 0
+
+      - name: Save release build cache
+        if: github.ref == 'refs/heads/main' && steps.cargo-release.outputs.cache-hit != 'true'
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target/release/
+          key: ${{ steps.cargo-release.outputs.cache-primary-key }}

@@ -65,7 +65,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cargo build --release --locked --package dogi
+DOGI_DISTRIBUTION_BUILD=1 cargo build --release --locked --package dogi
 mkdir -p "$dist_dir"
 
 package_root="$work_dir/package-root"
@@ -152,6 +152,9 @@ install -D -m 0644 \
 install -D -m 0644 \
     "$project_root/packaging/linux/io.github.oksyd.dogi.svg" \
     "$portable_root/share/icons/hicolor/scalable/apps/io.github.oksyd.dogi.svg"
+install -D -m 0644 \
+    "$project_root/packaging/portable/distribution" \
+    "$portable_root/share/dogi/distribution"
 install -D -m 0644 \
     "$project_root/crates/dogi/assets/linux/70-dogi-logitech.rules" \
     "$portable_root/lib/udev/rules.d/70-dogi-logitech.rules"

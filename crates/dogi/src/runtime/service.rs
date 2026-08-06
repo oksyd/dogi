@@ -2,89 +2,106 @@ use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
 #[cfg(unix)]
-use std::os::unix::fs::{FileTypeExt, chown};
+use std::os::unix::fs::FileTypeExt;
 
 use dogi_core::{DogiError, Result};
 use dogi_ui::{DesktopRuntimeOperation, DesktopRuntimeStatus};
 
-use crate::desktop::{UserContext, context as desktop};
+use crate::desktop::UserContext;
+use crate::environment::{AppEnvironment, RuntimeIntegration};
 
 use super::UINPUT_PATH;
 
 const SERVICE_NAME: &str = "dogi-runtime.service";
-const SERVICE_RELATIVE_PATH: &str = ".config/systemd/user/dogi-runtime.service";
-const SERVICE_TEMPLATE: &str = include_str!("../../assets/linux/dogi-runtime.service.in");
+const VENDOR_UNIT_PATH: &str = "/usr/lib/systemd/user/dogi-runtime.service";
+const USER_UNIT_RELATIVE_PATH: &str = ".config/systemd/user/dogi-runtime.service";
+const STATIC_DEBIAN_UNIT: &str = include_str!("../../assets/linux/dogi-runtime.service");
+const PORTABLE_UNIT_TEMPLATE: &str = include_str!("../../assets/linux/dogi-runtime.service.in");
 const EXECUTABLE_PLACEHOLDER: &str = "@DOGI_EXECUTABLE@";
-const REVISION_PLACEHOLDER: &str = "@DOGI_EXECUTABLE_REVISION@";
 
-pub(crate) fn ensure_running() -> Result<DesktopRuntimeStatus> {
-    let context = desktop::current_user()?;
-    ensure_user_manager(&context)?;
-    let uinput_error = uinput_access(&context).err().map(|error| error.to_string());
+pub(crate) fn manage(
+    environment: &AppEnvironment,
+    operation: DesktopRuntimeOperation,
+) -> Result<DesktopRuntimeStatus> {
+    ensure_persistent_integration(environment)?;
+    match operation {
+        DesktopRuntimeOperation::Reconcile { enabled: true } => ensure_running(environment),
+        DesktopRuntimeOperation::Restart => restart(environment),
+        DesktopRuntimeOperation::Reconcile { enabled: false } => stop(environment),
+    }
+}
 
-    let binary = env::current_exe().map_err(|error| {
-        DogiError::Config(format!("failed to locate the Dogi executable: {error}"))
-    })?;
-    let contents = unit_for_binary(&binary)?;
-    let unit_changed = install_unit(&context, &contents)?;
-
-    if unit_changed {
-        systemctl(&context, &["daemon-reload"], "reload the Dogi runtime")?;
+fn ensure_running(environment: &AppEnvironment) -> Result<DesktopRuntimeStatus> {
+    let context = &environment.user;
+    ensure_user_manager(environment)?;
+    validate_integration(environment)?;
+    let unit_changed = if matches!(
+        environment.runtime.integration,
+        RuntimeIntegration::PortableSystemd
+    ) {
+        install_portable_unit(context, &portable_unit(&environment.executable))?
+    } else {
+        false
+    };
+    if unit_changed
+        || matches!(
+            environment.runtime.integration,
+            RuntimeIntegration::DebianSystemd
+        )
+    {
+        systemctl(context, &["daemon-reload"], "reload the Dogi runtime")?;
     }
     systemctl(
-        &context,
+        context,
         &["enable", SERVICE_NAME],
         "enable the Dogi runtime",
     )?;
     systemctl(
-        &context,
+        context,
         &[if unit_changed { "restart" } else { "start" }, SERVICE_NAME],
         "start the Dogi runtime",
     )?;
 
-    let status = service_status(&context);
+    let status = service_status(environment);
     if !status.active {
         return Err(DogiError::BackendUnavailable(service_failure_detail(
-            &context,
+            context,
         )));
     }
+    Ok(status)
+}
 
+fn restart(environment: &AppEnvironment) -> Result<DesktopRuntimeStatus> {
+    let status = ensure_running(environment)?;
+    systemctl(
+        &environment.user,
+        &["restart", SERVICE_NAME],
+        "restart the Dogi runtime",
+    )?;
     Ok(DesktopRuntimeStatus {
-        ready: uinput_error.is_none(),
-        detail: uinput_error.unwrap_or_default(),
+        active: true,
         ..status
     })
 }
 
-pub(crate) fn manage(operation: DesktopRuntimeOperation) -> Result<DesktopRuntimeStatus> {
-    match operation {
-        DesktopRuntimeOperation::Reconcile { enabled: true } | DesktopRuntimeOperation::Restart => {
-            ensure_running()
-        }
-        DesktopRuntimeOperation::Reconcile { enabled: false } => stop(),
-    }
-}
-
-fn stop() -> Result<DesktopRuntimeStatus> {
-    let context = desktop::current_user()?;
-    ensure_user_manager(&context)?;
-
-    let status = service_status(&context);
+fn stop(environment: &AppEnvironment) -> Result<DesktopRuntimeStatus> {
+    let context = &environment.user;
+    ensure_user_manager(environment)?;
+    let status = service_status(environment);
     if status.enabled || status.active {
         systemctl(
-            &context,
+            context,
             &["disable", "--now", SERVICE_NAME],
             "stop the Dogi runtime",
         )?;
     }
-
-    Ok(service_status(&context))
+    Ok(service_status(environment))
 }
 
-fn service_status(context: &UserContext) -> DesktopRuntimeStatus {
+fn service_status(environment: &AppEnvironment) -> DesktopRuntimeStatus {
+    let context = &environment.user;
     let enabled = systemctl_succeeds(context, &["is-enabled", "--quiet", SERVICE_NAME]);
     let active = systemctl_succeeds(context, &["is-active", "--quiet", SERVICE_NAME]);
     let uinput_error = active
@@ -100,40 +117,63 @@ fn service_status(context: &UserContext) -> DesktopRuntimeStatus {
     }
 }
 
-pub(crate) fn print_unit() -> Result<()> {
-    let binary = env::current_exe().map_err(|error| {
-        DogiError::Config(format!("failed to locate the Dogi executable: {error}"))
-    })?;
-    print!("{}", unit_for_binary(&binary)?);
+pub(crate) fn print_unit(environment: &AppEnvironment) -> Result<()> {
+    ensure_persistent_integration(environment)?;
+    match environment.runtime.integration {
+        RuntimeIntegration::DebianSystemd => print!("{STATIC_DEBIAN_UNIT}"),
+        RuntimeIntegration::PortableSystemd => {
+            print!("{}", portable_unit(&environment.executable));
+        }
+        RuntimeIntegration::ForegroundOnly => {
+            return Err(DogiError::BackendUnavailable(
+                environment.runtime.management_detail.clone(),
+            ));
+        }
+    }
     Ok(())
 }
 
-pub(crate) fn install() -> Result<()> {
-    let status = ensure_running()?;
-    println!("Dogi desktop runtime is installed and running.");
+pub(crate) fn install(environment: &AppEnvironment) -> Result<()> {
+    let status = ensure_running(environment)?;
+    println!("Dogi desktop runtime is enabled and running.");
     if !status.ready {
         eprintln!("Custom actions need attention: {}", status.detail);
     }
     Ok(())
 }
 
-pub(crate) fn uninstall() -> Result<()> {
-    let context = desktop::current_user()?;
-    let unit_path = path_for(&context);
-
-    if unit_path.exists() && manager_socket(&context).is_ok() {
-        systemctl(
-            &context,
-            &["disable", "--now", SERVICE_NAME],
-            "stop the Dogi runtime",
-        )?;
+pub(crate) fn uninstall(environment: &AppEnvironment) -> Result<()> {
+    ensure_persistent_integration(environment)?;
+    let context = &environment.user;
+    if manager_socket(environment).is_ok() {
+        let status = service_status(environment);
+        if status.enabled || status.active {
+            systemctl(
+                context,
+                &["disable", "--now", SERVICE_NAME],
+                "stop the Dogi runtime",
+            )?;
+        }
     }
 
-    match fs::remove_file(&unit_path) {
-        Ok(()) => {
-            if manager_socket(&context).is_ok() {
+    if matches!(
+        environment.runtime.integration,
+        RuntimeIntegration::DebianSystemd
+    ) {
+        remove_known_user_override(environment)?;
+        println!("Dogi desktop runtime is disabled. The package-owned unit was preserved.");
+        return Ok(());
+    }
+
+    let unit_path = user_unit_path(context);
+    match fs::read_to_string(&unit_path) {
+        Ok(contents) if contents.starts_with("# Generated by Dogi portable integration.") => {
+            fs::remove_file(&unit_path).map_err(|error| {
+                DogiError::Config(format!("failed to remove {}: {error}", unit_path.display()))
+            })?;
+            if manager_socket(environment).is_ok() {
                 systemctl(
-                    &context,
+                    context,
                     &["daemon-reload"],
                     "reload the user service manager",
                 )?;
@@ -141,38 +181,160 @@ pub(crate) fn uninstall() -> Result<()> {
             println!("Removed {}.", unit_path.display());
             Ok(())
         }
+        Ok(_) => Err(DogiError::Config(format!(
+            "refusing to remove an unmanaged service unit at {}",
+            unit_path.display()
+        ))),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            println!("Dogi desktop runtime is not installed.");
+            println!("Dogi portable runtime integration is not installed.");
             Ok(())
         }
         Err(error) => Err(DogiError::Config(format!(
-            "failed to remove {}: {error}",
+            "failed to read {}: {error}",
             unit_path.display()
         ))),
     }
 }
 
-pub(crate) fn path() -> Result<PathBuf> {
-    Ok(path_for(&desktop::current_user()?))
+fn remove_known_user_override(environment: &AppEnvironment) -> Result<()> {
+    let context = &environment.user;
+    let path = user_unit_path(context);
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(DogiError::Config(format!(
+                "failed to read {}: {error}",
+                path.display()
+            )));
+        }
+    };
+    if !contents.starts_with("# Generated by Dogi portable integration.")
+        && !contents.starts_with("# Generated by Dogi. Manual changes will be replaced.")
+    {
+        return Err(DogiError::Config(format!(
+            "refusing to remove an unmanaged service unit at {}",
+            path.display()
+        )));
+    }
+    fs::remove_file(&path).map_err(|error| {
+        DogiError::Config(format!("failed to remove {}: {error}", path.display()))
+    })?;
+    if manager_socket(environment).is_ok() {
+        systemctl(
+            context,
+            &["daemon-reload"],
+            "reload the user service manager",
+        )?;
+    }
+    println!("Removed obsolete user override {}.", path.display());
+    Ok(())
 }
 
-fn path_for(context: &UserContext) -> PathBuf {
-    context.home.join(SERVICE_RELATIVE_PATH)
+pub(crate) fn path(environment: &AppEnvironment) -> Result<PathBuf> {
+    ensure_persistent_integration(environment)?;
+    Ok(match environment.runtime.integration {
+        RuntimeIntegration::DebianSystemd => PathBuf::from(VENDOR_UNIT_PATH),
+        RuntimeIntegration::PortableSystemd => user_unit_path(&environment.user),
+        RuntimeIntegration::ForegroundOnly => {
+            return Err(DogiError::BackendUnavailable(
+                environment.runtime.management_detail.clone(),
+            ));
+        }
+    })
 }
 
-fn ensure_user_manager(context: &UserContext) -> Result<()> {
-    manager_socket(context).map(|_| ())
+fn ensure_persistent_integration(environment: &AppEnvironment) -> Result<()> {
+    if environment.user.uid.is_some() {
+        return Err(DogiError::InvalidArgument(
+            "manage the Dogi user service as the desktop user, without sudo".to_owned(),
+        ));
+    }
+    if environment.runtime.persistent_management_supported() {
+        Ok(())
+    } else {
+        Err(DogiError::BackendUnavailable(
+            environment.runtime.management_detail.clone(),
+        ))
+    }
+}
+
+fn validate_integration(environment: &AppEnvironment) -> Result<()> {
+    let user_unit = user_unit_path(&environment.user);
+    match environment.runtime.integration {
+        RuntimeIntegration::DebianSystemd => {
+            if !Path::new(VENDOR_UNIT_PATH).is_file() {
+                return Err(DogiError::Config(
+                    "the Debian package-owned Dogi runtime unit is missing".to_owned(),
+                ));
+            }
+            if user_unit.exists() {
+                return Err(DogiError::Config(format!(
+                    "{} overrides the package-owned Dogi runtime; remove that user unit before enabling the packaged service",
+                    user_unit.display()
+                )));
+            }
+        }
+        RuntimeIntegration::PortableSystemd => {
+            if Path::new(VENDOR_UNIT_PATH).exists() {
+                return Err(DogiError::Config(
+                    "portable runtime integration cannot override an installed Dogi Debian service"
+                        .to_owned(),
+                ));
+            }
+            if let Ok(contents) = fs::read_to_string(&user_unit)
+                && !contents.starts_with("# Generated by Dogi portable integration.")
+            {
+                return Err(DogiError::Config(format!(
+                    "refusing to overwrite an unmanaged service unit at {}",
+                    user_unit.display()
+                )));
+            }
+        }
+        RuntimeIntegration::ForegroundOnly => ensure_persistent_integration(environment)?,
+    }
+    Ok(())
+}
+
+fn user_unit_path(context: &UserContext) -> PathBuf {
+    context.home.join(USER_UNIT_RELATIVE_PATH)
+}
+
+fn install_portable_unit(context: &UserContext, contents: &str) -> Result<bool> {
+    let path = user_unit_path(context);
+    if fs::read_to_string(&path).is_ok_and(|installed| installed == contents) {
+        return Ok(false);
+    }
+    let parent = path.parent().ok_or_else(|| {
+        DogiError::Config(format!("service path has no parent: {}", path.display()))
+    })?;
+    fs::create_dir_all(parent).map_err(|error| {
+        DogiError::Config(format!("failed to create {}: {error}", parent.display()))
+    })?;
+    let temporary = path.with_extension(format!("service.tmp-{}", std::process::id()));
+    fs::write(&temporary, contents).map_err(|error| {
+        DogiError::Config(format!("failed to write {}: {error}", temporary.display()))
+    })?;
+    fs::rename(&temporary, &path).map_err(|error| {
+        DogiError::Config(format!("failed to replace {}: {error}", path.display()))
+    })?;
+    Ok(true)
+}
+
+fn portable_unit(binary: &Path) -> String {
+    PORTABLE_UNIT_TEMPLATE.replace(
+        EXECUTABLE_PLACEHOLDER,
+        &systemd_quote(&binary.display().to_string()),
+    )
+}
+
+fn ensure_user_manager(environment: &AppEnvironment) -> Result<()> {
+    manager_socket(environment).map(|_| ())
 }
 
 #[cfg(unix)]
-fn manager_socket(context: &UserContext) -> Result<PathBuf> {
-    let runtime_dir = context
-        .uid
-        .map(|uid| PathBuf::from(format!("/run/user/{uid}")))
-        .or_else(|| desktop::env_path("XDG_RUNTIME_DIR"))
-        .unwrap_or_else(|| PathBuf::from(format!("/run/user/{}", unsafe { libc::geteuid() })));
-    let socket = runtime_dir.join("systemd/private");
-
+fn manager_socket(environment: &AppEnvironment) -> Result<PathBuf> {
+    let socket = environment.paths.session_runtime.join("systemd/private");
     match fs::metadata(&socket) {
         Ok(metadata) if metadata.file_type().is_socket() => Ok(socket),
         Ok(_) => Err(DogiError::BackendUnavailable(format!(
@@ -187,7 +349,7 @@ fn manager_socket(context: &UserContext) -> Result<PathBuf> {
 }
 
 #[cfg(not(unix))]
-fn manager_socket(_context: &UserContext) -> Result<PathBuf> {
+fn manager_socket(_environment: &AppEnvironment) -> Result<PathBuf> {
     Err(DogiError::BackendUnavailable(
         "Dogi desktop runtime requires a systemd user manager".to_owned(),
     ))
@@ -199,7 +361,6 @@ fn uinput_access(context: &UserContext) -> Result<()> {
             "run the Dogi GUI as the desktop user, without sudo".to_owned(),
         ));
     }
-
     fs::OpenOptions::new()
         .write(true)
         .open(UINPUT_PATH)
@@ -216,57 +377,6 @@ fn app_profiles_supported(context: &UserContext) -> bool {
         && context
             .run("xprop", &["-version"])
             .is_ok_and(|output| output.status.success())
-}
-
-fn install_unit(context: &UserContext, contents: &str) -> Result<bool> {
-    let path = path_for(context);
-    if fs::read_to_string(&path).is_ok_and(|installed| installed == contents) {
-        return Ok(false);
-    }
-
-    let parent = path.parent().ok_or_else(|| {
-        DogiError::Config(format!("service path has no parent: {}", path.display()))
-    })?;
-    let parent_arg = parent.to_string_lossy().into_owned();
-    let output = context
-        .run("mkdir", &["-p", &parent_arg])
-        .map_err(|error| {
-            DogiError::Config(format!(
-                "failed to create service directory {}: {error}",
-                parent.display()
-            ))
-        })?;
-    if !output.status.success() {
-        return Err(DogiError::Config(format!(
-            "failed to create service directory {}: {}",
-            parent.display(),
-            command_detail(&output)
-        )));
-    }
-
-    let temporary = path.with_extension(format!("service.tmp-{}", std::process::id()));
-    fs::write(&temporary, contents).map_err(|error| {
-        DogiError::Config(format!("failed to write {}: {error}", temporary.display()))
-    })?;
-
-    #[cfg(unix)]
-    if let (Some(uid), Some(gid)) = (context.uid, context.gid) {
-        chown(&temporary, Some(uid), Some(gid)).map_err(|error| {
-            DogiError::Config(format!(
-                "failed to preserve ownership of {}: {error}",
-                temporary.display()
-            ))
-        })?;
-    }
-
-    fs::rename(&temporary, &path).map_err(|error| {
-        DogiError::Config(format!(
-            "failed to replace {} with {}: {error}",
-            path.display(),
-            temporary.display()
-        ))
-    })?;
-    Ok(true)
 }
 
 fn systemctl(context: &UserContext, args: &[&str], operation: &str) -> Result<()> {
@@ -321,32 +431,6 @@ fn command_detail(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_owned()
 }
 
-fn unit_for_binary(binary: &Path) -> Result<String> {
-    let metadata = fs::metadata(binary).map_err(|error| {
-        DogiError::Config(format!(
-            "failed to inspect Dogi executable {}: {error}",
-            binary.display()
-        ))
-    })?;
-    let modified = metadata
-        .modified()
-        .ok()
-        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    let revision = format!("{}-{modified}", metadata.len());
-    Ok(build_unit(binary, &revision))
-}
-
-fn build_unit(binary: &Path, revision: &str) -> String {
-    SERVICE_TEMPLATE
-        .replace(
-            EXECUTABLE_PLACEHOLDER,
-            &systemd_quote(&binary.display().to_string()),
-        )
-        .replace(REVISION_PLACEHOLDER, revision)
-}
-
 fn systemd_quote(value: &str) -> String {
     if value
         .chars()
@@ -354,7 +438,6 @@ fn systemd_quote(value: &str) -> String {
     {
         return value.to_owned();
     }
-
     let escaped = value
         .chars()
         .flat_map(|character| match character {
@@ -372,29 +455,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn generated_unit_is_canonical_and_hardened() {
-        let service = build_unit(Path::new("/usr/bin/dogi"), "test-revision");
-
-        assert!(!service.contains(EXECUTABLE_PLACEHOLDER));
-        assert!(!service.contains(REVISION_PLACEHOLDER));
-        assert!(service.contains("# Executable-Revision: test-revision"));
-        assert!(service.contains(
+    fn package_unit_is_fixed_and_hardened() {
+        assert!(STATIC_DEBIAN_UNIT.contains(
             "ExecStart=/usr/bin/dogi runtime run --idle-timeout-ms 1000 --execute-actions --allow-device-write"
         ));
-        assert!(service.contains("Restart=on-failure"));
-        assert!(service.contains("RuntimeDirectory=dogi"));
-        assert!(service.contains("RuntimeDirectoryMode=0700"));
-        assert!(service.contains("NoNewPrivileges=true"));
-        assert!(service.contains("ProtectSystem=strict"));
-        assert!(service.contains("WantedBy=default.target"));
+        assert!(STATIC_DEBIAN_UNIT.contains("Restart=on-failure"));
+        assert!(STATIC_DEBIAN_UNIT.contains("RuntimeDirectory=dogi"));
+        assert!(STATIC_DEBIAN_UNIT.contains("ProtectSystem=strict"));
     }
 
     #[test]
-    fn generated_unit_quotes_executable_paths() {
-        let service = build_unit(Path::new("/opt/dogi bin/dogi"), "revision");
-
+    fn portable_unit_quotes_its_fixed_executable() {
+        let service = portable_unit(Path::new("/opt/dogi bin/bin/dogi"));
+        assert!(service.starts_with("# Generated by Dogi portable integration."));
         assert!(service.contains(
-            "ExecStart=\"/opt/dogi bin/dogi\" runtime run --idle-timeout-ms 1000 --execute-actions"
+            "ExecStart=\"/opt/dogi bin/bin/dogi\" runtime run --idle-timeout-ms 1000 --execute-actions"
         ));
     }
 

@@ -1,4 +1,3 @@
-use std::env;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufWriter, Write};
@@ -15,7 +14,7 @@ use dogi_ui::{
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::desktop;
+use crate::environment::AppEnvironment;
 
 const APP_CONFIG_SCHEMA_VERSION: u16 = 3;
 
@@ -149,17 +148,27 @@ impl Default for StoredApplicationConfig {
 pub(crate) struct ApplicationConfigStore {
     path: PathBuf,
     owner: Option<FileOwner>,
+    defaults: StoredApplicationConfig,
     write_lock: Arc<Mutex<()>>,
 }
 
 impl ApplicationConfigStore {
-    pub(crate) fn from_environment() -> Result<Self, ApplicationConfigError> {
-        let (root, owner) = app_config_location()?;
-        Ok(Self {
-            path: root.join("config.json"),
+    pub(crate) fn for_environment(environment: &AppEnvironment) -> Self {
+        let owner = environment
+            .user
+            .uid
+            .zip(environment.user.gid)
+            .map(|(uid, gid)| FileOwner { uid, gid });
+        let mut defaults = StoredApplicationConfig::default();
+        defaults.behavior.background_operations_enabled =
+            environment.default_background_operations_enabled();
+        defaults.updates.automatic_update_checks_enabled = environment.updates.enabled;
+        Self {
+            path: environment.paths.application_config(),
             owner,
+            defaults,
             write_lock: Arc::new(Mutex::new(())),
-        })
+        }
     }
 
     #[cfg(test)]
@@ -167,13 +176,14 @@ impl ApplicationConfigStore {
         Self {
             path,
             owner: None,
+            defaults: StoredApplicationConfig::default(),
             write_lock: Arc::new(Mutex::new(())),
         }
     }
 
     fn load(&self) -> Result<StoredApplicationConfig, ApplicationConfigError> {
         read_json::<StoredApplicationConfig>(&self.path)?
-            .map_or_else(|| Ok(StoredApplicationConfig::default()), validate_schema)
+            .map_or_else(|| Ok(self.defaults.clone()), validate_schema)
     }
 
     pub(crate) fn load_preferences(
@@ -187,6 +197,16 @@ impl ApplicationConfigStore {
             background_operations_enabled: config.behavior.background_operations_enabled,
             automatic_update_checks_enabled: config.updates.automatic_update_checks_enabled,
         })
+    }
+
+    pub(crate) fn default_preferences(&self) -> ApplicationPreferences {
+        ApplicationPreferences {
+            language: self.defaults.appearance.language.application_value(),
+            theme: self.defaults.appearance.theme.application_value(),
+            close_behavior: self.defaults.behavior.close_behavior.application_value(),
+            background_operations_enabled: self.defaults.behavior.background_operations_enabled,
+            automatic_update_checks_enabled: self.defaults.updates.automatic_update_checks_enabled,
+        }
     }
 
     pub(crate) fn save_preference(
@@ -399,30 +419,6 @@ fn validate_schema(
     Ok(config)
 }
 
-fn app_config_location() -> Result<(PathBuf, Option<FileOwner>), ApplicationConfigError> {
-    if let Some(context) = desktop::elevated_user()
-        && let (Some(uid), Some(gid)) = (context.uid, context.gid)
-    {
-        return Ok((
-            context.home.join(".config").join("dogi"),
-            Some(FileOwner { uid, gid }),
-        ));
-    }
-    if let Some(path) = non_empty_env_path("XDG_CONFIG_HOME") {
-        return Ok((path.join("dogi"), None));
-    }
-    non_empty_env_path("HOME")
-        .map(|home| home.join(".config").join("dogi"))
-        .map(|path| (path, None))
-        .ok_or(ApplicationConfigError::ConfigDirectoryUnavailable)
-}
-
-fn non_empty_env_path(name: &str) -> Option<PathBuf> {
-    env::var_os(name)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-}
-
 fn temporary_path(path: &Path) -> PathBuf {
     let file_name = path
         .file_name()
@@ -501,7 +497,6 @@ fn sync_directory(path: &Path) {
 
 #[derive(Debug)]
 pub(crate) enum ApplicationConfigError {
-    ConfigDirectoryUnavailable,
     InvalidPath {
         path: PathBuf,
     },
@@ -534,9 +529,6 @@ pub(crate) enum ApplicationConfigError {
 impl fmt::Display for ApplicationConfigError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ConfigDirectoryUnavailable => {
-                formatter.write_str("HOME or XDG_CONFIG_HOME is not set")
-            }
             Self::InvalidPath { path } => write!(formatter, "invalid path {}", path.display()),
             Self::Read { path, source } => {
                 write!(formatter, "could not read {}: {source}", path.display())
@@ -572,9 +564,7 @@ impl std::error::Error for ApplicationConfigError {
             | Self::Write { source, .. }
             | Self::Ownership { source, .. } => Some(source),
             Self::Decode { source, .. } | Self::Encode { source, .. } => Some(source),
-            Self::ConfigDirectoryUnavailable
-            | Self::InvalidPath { .. }
-            | Self::UnsupportedSchemaVersion { .. } => None,
+            Self::InvalidPath { .. } | Self::UnsupportedSchemaVersion { .. } => None,
         }
     }
 }

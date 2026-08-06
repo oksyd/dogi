@@ -3,3 +3,5 @@ packaging/linux/io.github.oksyd.dogi.desktop usr/share/applications
 packaging/linux/io.github.oksyd.dogi.metainfo.xml usr/share/metainfo
 packaging/linux/io.github.oksyd.dogi.svg usr/share/icons/hicolor/scalable/apps
 crates/dogi/assets/linux/70-dogi-logitech.rules usr/lib/udev/rules.d
+crates/dogi/assets/linux/dogi-runtime.service usr/lib/systemd/user
+packaging/deb/distribution usr/lib/dogi

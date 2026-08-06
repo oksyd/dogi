@@ -4,10 +4,8 @@ use std::time::Duration;
 use dogi_core::{DogiError, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::desktop::{UserContext, context as desktop};
+use crate::environment::{AppEnvironment, AppPaths};
 
-const CONTROL_DIRECTORY: &str = "dogi";
-const CONTROL_SOCKET: &str = "runtime-control.sock";
 const PREVIEW_LEASE_TTL: Duration = Duration::from_secs(8);
 const CONTROL_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
 
@@ -31,10 +29,9 @@ pub(crate) struct RuntimeControlClient {
 }
 
 impl RuntimeControlClient {
-    pub(crate) fn for_desktop_user() -> Result<Self> {
-        let context = desktop::current_user()?;
+    pub(crate) fn for_environment(environment: &AppEnvironment) -> Result<Self> {
         Ok(Self {
-            socket_path: control_socket_path(&context)?,
+            socket_path: environment.paths.runtime_control_socket(),
             lease_id: format!("gui-{}-{}", std::process::id(), monotonic_nonce()),
         })
     }
@@ -82,10 +79,10 @@ pub(crate) struct RuntimePreviewState {
 }
 
 impl RuntimePreviewState {
-    pub(crate) fn start() -> Result<Self> {
+    pub(crate) fn start(paths: &AppPaths) -> Result<Self> {
         #[cfg(unix)]
         {
-            unix::start_server()
+            unix::start_server(paths)
         }
         #[cfg(not(unix))]
         {
@@ -371,33 +368,6 @@ fn send_request(
     ))
 }
 
-fn control_socket_path(context: &UserContext) -> Result<PathBuf> {
-    Ok(runtime_directory(context)?
-        .join(CONTROL_DIRECTORY)
-        .join(CONTROL_SOCKET))
-}
-
-fn runtime_directory(context: &UserContext) -> Result<PathBuf> {
-    if let Some(uid) = context.uid {
-        return Ok(PathBuf::from(format!("/run/user/{uid}")));
-    }
-    if let Some(path) = desktop::env_path("XDG_RUNTIME_DIR") {
-        return Ok(path);
-    }
-    #[cfg(unix)]
-    {
-        Ok(PathBuf::from(format!("/run/user/{}", unsafe {
-            libc::geteuid()
-        })))
-    }
-    #[cfg(not(unix))]
-    {
-        Err(DogiError::BackendUnavailable(
-            "XDG_RUNTIME_DIR is not set for the desktop session".to_owned(),
-        ))
-    }
-}
-
 fn monotonic_nonce() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -415,9 +385,8 @@ mod unix {
 
     use super::*;
 
-    pub(super) fn start_server() -> Result<RuntimePreviewState> {
-        let context = desktop::current_user()?;
-        let path = control_socket_path(&context)?;
+    pub(super) fn start_server(paths: &AppPaths) -> Result<RuntimePreviewState> {
+        let path = paths.runtime_control_socket();
         let directory = path.parent().ok_or_else(|| {
             DogiError::Config(format!(
                 "runtime control path has no parent: {}",

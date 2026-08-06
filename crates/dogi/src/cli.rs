@@ -17,7 +17,9 @@ use dogi_core::{
 
 use crate::application;
 use crate::device::DeviceService;
+use crate::environment::AppEnvironment;
 use crate::runtime::UINPUT_PATH;
+use crate::runtime::lock::ProcessLock;
 use crate::runtime::{
     RuntimeActionExecution, SystemRuntimeActionExecutor, execute_runtime_actions_with,
 };
@@ -375,15 +377,16 @@ pub fn run() -> ExitCode {
 }
 
 fn execute(cli: Cli) -> Result<()> {
+    let environment = AppEnvironment::detect()?;
     match command_or_default(cli) {
         Command::List(args) => list_devices(args),
         Command::Inspect(args) => inspect_device(args),
-        Command::Doctor(args) => doctor(args),
-        Command::Config(args) => config(args),
-        Command::Runtime(args) => runtime(args),
-        Command::Service(args) => service(args),
+        Command::Doctor(args) => doctor(args, &environment),
+        Command::Config(args) => config(args, &environment),
+        Command::Runtime(args) => runtime(args, &environment),
+        Command::Service(args) => service(args, &environment),
         Command::Udev(args) => udev(args),
-        Command::Gui => application::launch_gui(),
+        Command::Gui => application::launch_gui(&environment),
     }
 }
 
@@ -419,10 +422,10 @@ fn inspect_device(args: InspectArgs) -> Result<()> {
     }
 }
 
-fn doctor(args: DoctorArgs) -> Result<()> {
+fn doctor(args: DoctorArgs, environment: &AppEnvironment) -> Result<()> {
     let daemon = DeviceService::new();
     let all_devices = daemon.scan_all_devices()?;
-    let report = doctor_report_from_devices(&all_devices);
+    let report = doctor_report_from_devices(&all_devices, environment);
 
     if args.json {
         print_json(&report)
@@ -432,13 +435,24 @@ fn doctor(args: DoctorArgs) -> Result<()> {
     }
 }
 
-fn doctor_report_from_devices(all_devices: &[DeviceInfo]) -> DoctorReport {
-    doctor_report_from_devices_with_environment(
+fn doctor_report_from_devices(
+    all_devices: &[DeviceInfo],
+    environment: &AppEnvironment,
+) -> DoctorReport {
+    let mut report = doctor_report_from_devices_with_environment(
         all_devices,
         runtime_uinput_status(),
         active_window_status(),
-        systemd_user_service_status(),
-    )
+        systemd_user_service_status(environment),
+    );
+    report.build_channel = environment.channel.label().to_owned();
+    report.distribution = environment.distribution.label().to_owned();
+    report.runtime_integration = environment.runtime.integration.label().to_owned();
+    report.config_directory = environment.paths.config.display().to_string();
+    report.cache_directory = environment.paths.cache.display().to_string();
+    report.runtime_directory = environment.paths.runtime.display().to_string();
+    report.updates_supported = environment.updates.enabled;
+    report
 }
 
 fn doctor_report_from_devices_with_environment(
@@ -465,6 +479,13 @@ fn doctor_report_from_devices_with_environment(
         .count();
 
     DoctorReport {
+        build_channel: "unknown".to_owned(),
+        distribution: "unknown".to_owned(),
+        runtime_integration: "unknown".to_owned(),
+        config_directory: String::new(),
+        cache_directory: String::new(),
+        runtime_directory: String::new(),
+        updates_supported: false,
         hid_backend: "linux-sysfs-hidraw",
         device_writer_status: "explicit apply and configured app-profile transitions",
         total_hid_devices: all_devices.len(),
@@ -492,6 +513,16 @@ fn doctor_report_from_devices_with_environment(
 
 fn print_doctor_report(report: &DoctorReport) {
     println!("dogi doctor");
+    println!("  Build channel: {}", report.build_channel);
+    println!("  Distribution: {}", report.distribution);
+    println!("  Runtime integration: {}", report.runtime_integration);
+    println!("  Config directory: {}", report.config_directory);
+    println!("  Cache directory: {}", report.cache_directory);
+    println!("  Runtime directory: {}", report.runtime_directory);
+    println!(
+        "  Automatic updates: {}",
+        enabled_text(report.updates_supported)
+    );
     println!("  HID backend: {}", report.hid_backend);
     println!("  Device writer: {}", report.device_writer_status);
     println!("  HID devices: {}", report.total_hid_devices);
@@ -553,33 +584,35 @@ fn print_doctor_report(report: &DoctorReport) {
     }
 }
 
-fn config(args: ConfigArgs) -> Result<()> {
+fn config(args: ConfigArgs, environment: &AppEnvironment) -> Result<()> {
+    let daemon = DeviceService::for_environment(environment);
     match args.command {
-        ConfigCommand::Show(args) => config_show(args),
-        ConfigCommand::Path => config_path(),
-        ConfigCommand::Set(args) => config_set(args),
-        ConfigCommand::AppProfile(args) => config_app_profile(args),
-        ConfigCommand::Reset(args) => config_reset(args),
-        ConfigCommand::Plan(args) => config_plan(args),
-        ConfigCommand::Apply(args) => config_apply(args),
+        ConfigCommand::Show(args) => config_show(args, &daemon),
+        ConfigCommand::Path => config_path(&daemon),
+        ConfigCommand::Set(args) => config_set(args, &daemon),
+        ConfigCommand::AppProfile(args) => config_app_profile(args, &daemon),
+        ConfigCommand::Reset(args) => config_reset(args, &daemon),
+        ConfigCommand::Plan(args) => config_plan(args, &daemon),
+        ConfigCommand::Apply(args) => config_apply(args, &daemon),
     }
 }
 
-fn runtime(args: RuntimeArgs) -> Result<()> {
+fn runtime(args: RuntimeArgs, environment: &AppEnvironment) -> Result<()> {
+    let daemon = DeviceService::for_environment(environment);
     match args.command {
-        RuntimeCommand::Plan(args) => runtime_plan(args),
-        RuntimeCommand::Listen(args) => runtime_listen(args),
-        RuntimeCommand::Run(args) => runtime_run(args),
+        RuntimeCommand::Plan(args) => runtime_plan(args, &daemon),
+        RuntimeCommand::Listen(args) => runtime_listen(args, &daemon, environment),
+        RuntimeCommand::Run(args) => runtime_run(args, &daemon, environment),
     }
 }
 
-fn service(args: ServiceArgs) -> Result<()> {
+fn service(args: ServiceArgs, environment: &AppEnvironment) -> Result<()> {
     match args.command {
-        ServiceCommand::Print => runtime_service::print_unit(),
-        ServiceCommand::Install => runtime_service::install(),
-        ServiceCommand::Uninstall => runtime_service::uninstall(),
+        ServiceCommand::Print => runtime_service::print_unit(environment),
+        ServiceCommand::Install => runtime_service::install(environment),
+        ServiceCommand::Uninstall => runtime_service::uninstall(environment),
         ServiceCommand::Path => {
-            println!("{}", runtime_service::path()?.display());
+            println!("{}", runtime_service::path(environment)?.display());
             Ok(())
         }
     }
@@ -594,8 +627,7 @@ fn udev(args: UdevArgs) -> Result<()> {
     }
 }
 
-fn config_show(args: ConfigOutputArgs) -> Result<()> {
-    let daemon = DeviceService::new();
+fn config_show(args: ConfigOutputArgs, daemon: &DeviceService) -> Result<()> {
     let settings = daemon.load_master3s_settings()?;
     let report = ConfigReport::new(daemon.master3s_settings_path()?, settings);
 
@@ -607,8 +639,7 @@ fn config_show(args: ConfigOutputArgs) -> Result<()> {
     }
 }
 
-fn runtime_plan(args: RuntimePlanArgs) -> Result<()> {
-    let daemon = DeviceService::new();
+fn runtime_plan(args: RuntimePlanArgs, daemon: &DeviceService) -> Result<()> {
     let settings = daemon.load_master3s_settings()?;
     let plan = daemon.plan_master3s_runtime(&settings);
 
@@ -620,10 +651,17 @@ fn runtime_plan(args: RuntimePlanArgs) -> Result<()> {
     }
 }
 
-fn runtime_listen(args: RuntimeListenArgs) -> Result<()> {
-    let daemon = DeviceService::new();
-    let device_id = resolve_runtime_device_id(&daemon, args.device_id.as_deref())?;
-    let settings_id = resolve_device_settings_id(&daemon, &device_id);
+fn runtime_listen(
+    args: RuntimeListenArgs,
+    daemon: &DeviceService,
+    environment: &AppEnvironment,
+) -> Result<()> {
+    let _runtime_lock = args
+        .execute_actions
+        .then(|| ProcessLock::acquire(&environment.paths.global_runtime_lock, "action runtime"))
+        .transpose()?;
+    let device_id = resolve_runtime_device_id(daemon, args.device_id.as_deref())?;
+    let settings_id = resolve_device_settings_id(daemon, &device_id);
     let settings = daemon.load_master3s_settings_for_device(&settings_id)?;
     let runtime_plan = daemon.plan_master3s_runtime(&settings);
     let events = daemon.listen_master3s_runtime_events(
@@ -657,11 +695,17 @@ fn runtime_listen(args: RuntimeListenArgs) -> Result<()> {
     }
 }
 
-fn runtime_run(args: RuntimeRunArgs) -> Result<()> {
-    let preview_state = runtime_control::RuntimePreviewState::start()?;
+fn runtime_run(
+    args: RuntimeRunArgs,
+    daemon: &DeviceService,
+    environment: &AppEnvironment,
+) -> Result<()> {
+    let _runtime_lock =
+        ProcessLock::acquire(&environment.paths.global_runtime_lock, "action runtime")?;
+    let preview_state = runtime_control::RuntimePreviewState::start(&environment.paths)?;
     if args.max_events.is_some() {
         loop {
-            match runtime_run_session(&args, &preview_state)? {
+            match runtime_run_session(&args, &preview_state, daemon)? {
                 RuntimeSessionOutcome::Completed => return Ok(()),
                 RuntimeSessionOutcome::SwitchDevice => continue,
             }
@@ -671,7 +715,7 @@ fn runtime_run(args: RuntimeRunArgs) -> Result<()> {
     let mut previous_error = String::new();
     let mut repeated_failures = 0_u32;
     loop {
-        match runtime_run_session(&args, &preview_state) {
+        match runtime_run_session(&args, &preview_state, daemon) {
             Ok(RuntimeSessionOutcome::Completed) => return Ok(()),
             Ok(RuntimeSessionOutcome::SwitchDevice) => continue,
             Err(error) => {
@@ -704,15 +748,15 @@ enum RuntimeSessionOutcome {
 fn runtime_run_session(
     args: &RuntimeRunArgs,
     preview_state: &runtime_control::RuntimePreviewState,
+    daemon: &DeviceService,
 ) -> Result<RuntimeSessionOutcome> {
-    let daemon = DeviceService::new();
     let preview_device_id = preview_state
         .snapshot()
         .preview
         .map(|preview| preview.device_id);
     let requested_device_id = args.device_id.as_deref().or(preview_device_id.as_deref());
-    let device_id = resolve_runtime_device_id(&daemon, requested_device_id)?;
-    let settings_id = resolve_device_settings_id(&daemon, &device_id);
+    let device_id = resolve_runtime_device_id(daemon, requested_device_id)?;
+    let settings_id = resolve_device_settings_id(daemon, &device_id);
     let mut base_settings = daemon.load_master3s_settings_for_device(&settings_id)?;
     let idle_timeout = Duration::from_millis(args.idle_timeout_ms);
     let mut processed_events = 0_usize;
@@ -744,7 +788,7 @@ fn runtime_run_session(
 
     loop {
         if reload_runtime_base_settings(
-            &daemon,
+            daemon,
             &settings_id,
             &mut base_settings,
             &mut settings_warning_printed,
@@ -752,7 +796,7 @@ fn runtime_run_session(
             println!("  settings reloaded");
         }
 
-        let active_application = runtime_active_application(&daemon, &mut focus_warning_printed);
+        let active_application = runtime_active_application(daemon, &mut focus_warning_printed);
         let effective =
             effective_master3s_settings_for_app(&base_settings, active_application.as_ref());
         let matched_profile_name = effective
@@ -1101,8 +1145,8 @@ fn runtime_device_candidates(devices: &[DeviceInfo]) -> Vec<&DeviceInfo> {
         .collect()
 }
 
-fn systemd_user_service_path() -> Result<PathBuf> {
-    runtime_service::path()
+fn systemd_user_service_path(environment: &AppEnvironment) -> Result<PathBuf> {
+    runtime_service::path(environment)
 }
 
 fn write_udev_rule_file(path: &Path, contents: &str) -> Result<()> {
@@ -1193,8 +1237,8 @@ fn active_window_status() -> RuntimeEnvironmentStatus {
     }
 }
 
-fn systemd_user_service_status() -> SystemdUserServiceStatus {
-    match systemd_user_service_path() {
+fn systemd_user_service_status(environment: &AppEnvironment) -> SystemdUserServiceStatus {
+    match systemd_user_service_path(environment) {
         Ok(path) => SystemdUserServiceStatus {
             installed: path.exists(),
             path: Some(path.display().to_string()),
@@ -1206,14 +1250,12 @@ fn systemd_user_service_status() -> SystemdUserServiceStatus {
     }
 }
 
-fn config_path() -> Result<()> {
-    let daemon = DeviceService::new();
+fn config_path(daemon: &DeviceService) -> Result<()> {
     println!("{}", daemon.master3s_settings_path()?.display());
     Ok(())
 }
 
-fn config_set(args: ConfigSetArgs) -> Result<()> {
-    let daemon = DeviceService::new();
+fn config_set(args: ConfigSetArgs, daemon: &DeviceService) -> Result<()> {
     let mut settings = daemon.load_master3s_settings()?;
     apply_config_set_args(&mut settings, &args);
     let path = daemon.save_master3s_settings(&settings)?;
@@ -1227,16 +1269,15 @@ fn config_set(args: ConfigSetArgs) -> Result<()> {
     }
 }
 
-fn config_app_profile(args: ConfigAppProfileArgs) -> Result<()> {
+fn config_app_profile(args: ConfigAppProfileArgs, daemon: &DeviceService) -> Result<()> {
     match args.command {
-        ConfigAppProfileCommand::List(args) => config_app_profile_list(args),
-        ConfigAppProfileCommand::Set(args) => config_app_profile_set(args),
-        ConfigAppProfileCommand::Remove(args) => config_app_profile_remove(args),
+        ConfigAppProfileCommand::List(args) => config_app_profile_list(args, daemon),
+        ConfigAppProfileCommand::Set(args) => config_app_profile_set(args, daemon),
+        ConfigAppProfileCommand::Remove(args) => config_app_profile_remove(args, daemon),
     }
 }
 
-fn config_app_profile_list(args: ConfigOutputArgs) -> Result<()> {
-    let daemon = DeviceService::new();
+fn config_app_profile_list(args: ConfigOutputArgs, daemon: &DeviceService) -> Result<()> {
     let settings = daemon.load_master3s_settings()?;
     let report = ConfigReport::new(daemon.master3s_settings_path()?, settings);
 
@@ -1248,8 +1289,7 @@ fn config_app_profile_list(args: ConfigOutputArgs) -> Result<()> {
     }
 }
 
-fn config_app_profile_set(args: ConfigAppProfileSetArgs) -> Result<()> {
-    let daemon = DeviceService::new();
+fn config_app_profile_set(args: ConfigAppProfileSetArgs, daemon: &DeviceService) -> Result<()> {
     let mut settings = daemon.load_master3s_settings()?;
     upsert_app_profile(&mut settings, &args)?;
     let path = daemon.save_master3s_settings(&settings)?;
@@ -1263,8 +1303,10 @@ fn config_app_profile_set(args: ConfigAppProfileSetArgs) -> Result<()> {
     }
 }
 
-fn config_app_profile_remove(args: ConfigAppProfileRemoveArgs) -> Result<()> {
-    let daemon = DeviceService::new();
+fn config_app_profile_remove(
+    args: ConfigAppProfileRemoveArgs,
+    daemon: &DeviceService,
+) -> Result<()> {
     let mut settings = daemon.load_master3s_settings()?;
     remove_app_profile(&mut settings, &args.app)?;
     let path = daemon.save_master3s_settings(&settings)?;
@@ -1278,8 +1320,7 @@ fn config_app_profile_remove(args: ConfigAppProfileRemoveArgs) -> Result<()> {
     }
 }
 
-fn config_reset(args: ConfigOutputArgs) -> Result<()> {
-    let daemon = DeviceService::new();
+fn config_reset(args: ConfigOutputArgs, daemon: &DeviceService) -> Result<()> {
     let path = daemon.reset_master3s_settings()?;
     let settings = daemon.load_master3s_settings()?;
     let report = ConfigReport::new(path, settings);
@@ -1292,9 +1333,8 @@ fn config_reset(args: ConfigOutputArgs) -> Result<()> {
     }
 }
 
-fn config_plan(args: ConfigPlanArgs) -> Result<()> {
-    let daemon = DeviceService::new();
-    let settings_id = resolve_device_settings_id(&daemon, &args.device_id);
+fn config_plan(args: ConfigPlanArgs, daemon: &DeviceService) -> Result<()> {
+    let settings_id = resolve_device_settings_id(daemon, &args.device_id);
     let settings = daemon.load_master3s_settings_for_device(&settings_id)?;
     let plan = daemon.plan_master3s_settings(&args.device_id, &settings);
 
@@ -1306,15 +1346,14 @@ fn config_plan(args: ConfigPlanArgs) -> Result<()> {
     }
 }
 
-fn config_apply(args: ConfigApplyArgs) -> Result<()> {
+fn config_apply(args: ConfigApplyArgs, daemon: &DeviceService) -> Result<()> {
     if !args.allow_device_write {
         return Err(DogiError::InvalidArgument(
             "config apply requires --allow-device-write".to_owned(),
         ));
     }
 
-    let daemon = DeviceService::new();
-    let settings_id = resolve_device_settings_id(&daemon, &args.device_id);
+    let settings_id = resolve_device_settings_id(daemon, &args.device_id);
     let settings = daemon.load_master3s_settings_for_device(&settings_id)?;
     let report = daemon.apply_master3s_settings(&args.device_id, &settings)?;
 
@@ -2042,6 +2081,13 @@ struct RuntimeListenReport {
 
 #[derive(serde::Serialize)]
 struct DoctorReport {
+    build_channel: String,
+    distribution: String,
+    runtime_integration: String,
+    config_directory: String,
+    cache_directory: String,
+    runtime_directory: String,
+    updates_supported: bool,
     hid_backend: &'static str,
     device_writer_status: &'static str,
     total_hid_devices: usize,

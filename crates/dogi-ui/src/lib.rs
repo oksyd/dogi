@@ -21,6 +21,7 @@ mod desktop_preferences;
 mod preferences;
 
 pub const APPLICATION_ID: &str = "io.github.oksyd.dogi";
+pub const DEVELOPMENT_APPLICATION_ID: &str = "io.github.oksyd.dogi.Development";
 
 pub use preferences::{
     ApplicationLanguage, ApplicationPreferenceChange, ApplicationPreferenceSaver,
@@ -103,9 +104,28 @@ pub enum DesktopRuntimeOperation {
 
 #[derive(Clone)]
 pub struct DesktopRuntimeManager {
+    pub supported: bool,
+    pub availability: DesktopRuntimeAvailability,
+    pub detail: String,
     pub manage: Arc<dyn Fn(DesktopRuntimeOperation) -> Result<DesktopRuntimeStatus> + Send + Sync>,
     pub horizontal_scroll_preview:
         Arc<dyn Fn(HorizontalScrollPreviewCommand) -> Result<()> + Send + Sync>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ApplicationIdentity {
+    #[default]
+    Stable,
+    Development,
+}
+
+impl ApplicationIdentity {
+    fn xdg_app_id(self) -> &'static str {
+        match self {
+            Self::Stable => APPLICATION_ID,
+            Self::Development => DEVELOPMENT_APPLICATION_ID,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -167,6 +187,7 @@ impl Default for ApplicationUpdateManager {
 
 #[derive(Clone)]
 pub struct UiIntegrations {
+    pub identity: ApplicationIdentity,
     pub discovery: DeviceDiscovery,
     pub settings: DeviceSettingsIntegration,
     pub runtime: DesktopRuntimeManager,
@@ -176,6 +197,7 @@ pub struct UiIntegrations {
 
 #[derive(Default)]
 struct LaunchIntegrations {
+    identity: ApplicationIdentity,
     discovery: Option<DeviceDiscovery>,
     loader: Option<SettingsLoader>,
     saver: Option<SettingsSaver>,
@@ -809,6 +831,7 @@ pub fn launch_with_device_io(
 
 pub fn launch_with_integrations(state: UiState, integrations: UiIntegrations) -> Result<()> {
     let UiIntegrations {
+        identity,
         discovery,
         settings,
         runtime,
@@ -818,6 +841,7 @@ pub fn launch_with_integrations(state: UiState, integrations: UiIntegrations) ->
     launch_internal(
         state,
         LaunchIntegrations {
+            identity,
             discovery: Some(discovery),
             loader: Some(settings.load),
             saver: Some(settings.save),
@@ -831,6 +855,7 @@ pub fn launch_with_integrations(state: UiState, integrations: UiIntegrations) ->
 
 fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<()> {
     let LaunchIntegrations {
+        identity,
         discovery,
         loader,
         saver,
@@ -840,7 +865,8 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         updates,
     } = integrations;
     let window = MainWindow::new().map_err(|error| DogiError::Ui(error.to_string()))?;
-    slint::set_xdg_app_id(APPLICATION_ID).map_err(|error| DogiError::Ui(error.to_string()))?;
+    slint::set_xdg_app_id(identity.xdg_app_id())
+        .map_err(|error| DogiError::Ui(error.to_string()))?;
     let app_preferences = preferences.initial;
     let mut startup_status = preferences
         .load_error
@@ -922,10 +948,18 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         drafts,
         fallback_settings,
     )));
+    let runtime_supported = runtime.as_ref().is_some_and(|runtime| runtime.supported);
+    let runtime_detail = runtime
+        .as_ref()
+        .map(|runtime| runtime.detail.clone())
+        .unwrap_or_default();
     let preview_handler = runtime
         .as_ref()
         .map(|runtime| runtime.horizontal_scroll_preview.clone());
-    let runtime_handler = runtime.as_ref().map(|runtime| runtime.manage.clone());
+    let runtime_handler = runtime
+        .as_ref()
+        .filter(|runtime| runtime.supported)
+        .map(|runtime| runtime.manage.clone());
     let (preview_work_sender, preview_work_receiver) =
         mpsc::channel::<HorizontalScrollPreviewWork>();
     let (preview_completion_sender, preview_completion_receiver) =
@@ -1039,15 +1073,22 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     window.set_selected_button_index(2);
     set_window_status(&window, startup_status);
 
-    window.set_runtime_enabled(background_operations_enabled && runtime.is_some());
+    window.set_runtime_enabled(background_operations_enabled && runtime_supported);
     window.set_runtime_busy(false);
-    window.set_runtime_management_supported(runtime.is_some());
-    window.set_runtime_state(if runtime.is_some() {
+    window.set_runtime_management_supported(runtime_supported);
+    window.set_runtime_state(if runtime_supported {
         DesktopRuntimeState::Starting
     } else {
         DesktopRuntimeState::Stopped
     });
-    window.set_app_profiles_supported(runtime.is_none());
+    window.set_runtime_detail(runtime_detail.into());
+    window.set_runtime_availability(
+        runtime
+            .as_ref()
+            .map(|runtime| runtime.availability)
+            .unwrap_or(DesktopRuntimeAvailability::Unmanaged),
+    );
+    window.set_app_profiles_supported(!runtime_supported);
 
     let (runtime_work_sender, runtime_work_receiver) = mpsc::channel::<DesktopRuntimeOperation>();
     let (runtime_completion_sender, runtime_completion_receiver) =

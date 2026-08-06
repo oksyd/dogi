@@ -1,7 +1,6 @@
 mod github;
 mod install;
 
-use std::env;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -16,6 +15,7 @@ use semver::Version;
 use self::github::{GitHubReleaseClient, ReleaseCandidate};
 use self::install::{Installation, InstallationError};
 use crate::config::application::ApplicationConfigStore;
+use crate::environment::AppEnvironment;
 
 const AUTOMATIC_CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -36,21 +36,20 @@ struct UpdateService {
 
 impl UpdateService {
     fn from_environment(
+        environment: &AppEnvironment,
         config_store: Option<ApplicationConfigStore>,
     ) -> std::result::Result<Self, String> {
-        if cfg!(debug_assertions) {
-            return Err("Automatic updates are disabled for development builds".to_owned());
+        if !environment.updates.enabled {
+            return Err(environment.updates.detail.clone());
         }
         if running_as_root() {
             return Err("Automatic updates are disabled when Dogi runs as root".to_owned());
         }
         let current_version = Version::parse(env!("CARGO_PKG_VERSION"))
             .map_err(|_| "the Dogi build version is invalid".to_owned())?;
-        let current_exe = env::current_exe()
-            .and_then(std::fs::canonicalize)
-            .map_err(|error| format!("could not identify the Dogi executable: {error}"))?;
-        let installation = Installation::detect(&current_exe)?;
-        let cache_directory = update_cache_directory()?.join("updates");
+        let current_exe = environment.executable.clone();
+        let installation = Installation::for_environment(environment)?;
+        let cache_directory = environment.paths.update_cache();
         Ok(Self {
             current_version,
             current_exe,
@@ -126,10 +125,11 @@ impl UpdateService {
 }
 
 pub(crate) fn application_update_manager(
+    environment: &AppEnvironment,
     config_store: Option<ApplicationConfigStore>,
 ) -> ApplicationUpdateManager {
     let current_version = env!("CARGO_PKG_VERSION").to_owned();
-    let service = match UpdateService::from_environment(config_store) {
+    let service = match UpdateService::from_environment(environment, config_store) {
         Ok(service) => service,
         Err(detail) => return ApplicationUpdateManager::unavailable(detail),
     };
@@ -150,15 +150,6 @@ pub(crate) fn application_update_manager(
     }
 }
 
-fn update_cache_directory() -> std::result::Result<PathBuf, String> {
-    if let Some(path) = env::var_os("XDG_CACHE_HOME").filter(|value| !value.is_empty()) {
-        return Ok(PathBuf::from(path).join("dogi"));
-    }
-    crate::desktop::context::current_user()
-        .map(|context| context.home.join(".cache/dogi"))
-        .map_err(|error| error.to_string())
-}
-
 #[cfg(unix)]
 fn running_as_root() -> bool {
     unsafe { libc::geteuid() == 0 }
@@ -174,7 +165,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn development_builds_cannot_construct_an_update_service() {
-        assert!(UpdateService::from_environment(None).is_err());
+    fn development_policy_is_enforced_before_network_setup() {
+        let environment = AppEnvironment::detect().unwrap();
+        assert!(UpdateService::from_environment(&environment, None).is_err());
     }
 }

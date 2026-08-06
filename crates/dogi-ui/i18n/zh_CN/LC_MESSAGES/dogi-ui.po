@@ -31,6 +31,12 @@ msgstr "当前 · {}%"
 msgid "Unavailable"
 msgstr "不可用"
 
+msgid "Development builds do not manage the installed background service"
+msgstr "开发版本不会管理已安装版本的后台服务"
+
+msgid "This binary has no persistent background integration"
+msgstr "当前程序不包含持久后台集成"
+
 #: crates/dogi-ui/ui/app.slint:620 crates/dogi-ui/ui/app.slint:1628
 msgid "Starting…"
 msgstr "正在启动…"

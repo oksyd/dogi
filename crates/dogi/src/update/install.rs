@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+#[cfg(test)]
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::path::{Component, Path, PathBuf};
@@ -10,8 +11,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use semver::Version;
 
 use super::github::ReleaseAssetKind;
+use crate::environment::{AppEnvironment, Distribution};
 
-const DEBIAN_EXECUTABLE: &str = "/usr/bin/dogi";
 const DPKG_DEB: &str = "/usr/bin/dpkg-deb";
 const PKEXEC: &str = "/usr/bin/pkexec";
 const APT_GET: &str = "/usr/bin/apt-get";
@@ -38,16 +39,19 @@ pub(super) enum Installation {
 }
 
 impl Installation {
-    pub(super) fn detect(current_exe: &Path) -> Result<Self, String> {
+    pub(super) fn for_environment(environment: &AppEnvironment) -> Result<Self, String> {
         let (architecture, target) = platform_architecture()?;
-        if current_exe == Path::new(DEBIAN_EXECUTABLE) {
-            return Ok(Self::Debian { architecture });
+        match &environment.distribution {
+            Distribution::Debian => Ok(Self::Debian { architecture }),
+            Distribution::Portable { root } => Ok(Self::Portable {
+                root: root.clone(),
+                target,
+            }),
+            Distribution::Unmanaged => Err(
+                "automatic installation is available only for Dogi Debian and portable packages"
+                    .to_owned(),
+            ),
         }
-        let root = portable_root(current_exe).ok_or_else(|| {
-            "automatic installation is available only for Dogi Debian and portable packages"
-                .to_owned()
-        })?;
-        Ok(Self::Portable { root, target })
     }
 
     pub(super) fn asset_kind(&self) -> ReleaseAssetKind {
@@ -134,6 +138,7 @@ fn platform_architecture() -> Result<(&'static str, &'static str), String> {
     }
 }
 
+#[cfg(test)]
 fn portable_root(current_exe: &Path) -> Option<PathBuf> {
     let bin = current_exe.parent()?;
     if bin.file_name()? != OsStr::new("bin") || current_exe.file_name()? != OsStr::new("dogi") {

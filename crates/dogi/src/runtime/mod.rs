@@ -1,5 +1,6 @@
 pub(crate) mod actions;
 pub(crate) mod control;
+pub(crate) mod lock;
 pub(crate) mod service;
 
 pub(crate) const UINPUT_PATH: &str = "/dev/uinput";

@@ -4,14 +4,20 @@ use std::sync::Arc;
 use dogi_core::{DogiError, Result};
 
 use crate::config::application::ApplicationConfigStore;
-use crate::desktop;
-use crate::device::{ConfigFileOwner, DeviceService};
-use crate::runtime::{control::RuntimeControlClient, service};
+use crate::device::DeviceService;
+use crate::environment::AppEnvironment;
+use crate::runtime::{control::RuntimeControlClient, lock::ProcessLock, service};
 
-pub(crate) fn launch_gui() -> Result<()> {
-    let devices = device_service_for_desktop_user();
-    let application_store = ApplicationConfigStore::from_environment();
-    let update_store = application_store.as_ref().ok().cloned();
+pub(crate) fn launch_gui(environment: &AppEnvironment) -> Result<()> {
+    if environment.user.uid.is_some() {
+        return Err(DogiError::InvalidArgument(
+            "run the Dogi GUI as the desktop user, without sudo".to_owned(),
+        ));
+    }
+    let _instance_lock = ProcessLock::acquire(&environment.paths.gui_instance_lock(), "window")?;
+    let devices = DeviceService::for_environment(environment);
+    let application_store = ApplicationConfigStore::for_environment(environment);
+    let update_store = Some(application_store.clone());
     let preferences = application_preferences(application_store);
     let settings = devices.load_master3s_settings()?;
     let inventory_devices = devices.clone();
@@ -20,11 +26,19 @@ pub(crate) fn launch_gui() -> Result<()> {
     let save_settings = devices.clone();
     let apply_settings = devices;
     let preview_client =
-        RuntimeControlClient::for_desktop_user().map_err(|error| error.to_string());
+        RuntimeControlClient::for_environment(environment).map_err(|error| error.to_string());
+    let runtime_environment = environment.clone();
+    let runtime_supported = environment.runtime.persistent_management_supported();
+    let runtime_detail = environment.runtime.management_detail.clone();
 
     dogi_ui::launch_with_integrations(
         dogi_ui::UiState::with_settings(Vec::new(), settings),
         dogi_ui::UiIntegrations {
+            identity: if environment.is_development() {
+                dogi_ui::ApplicationIdentity::Development
+            } else {
+                dogi_ui::ApplicationIdentity::Stable
+            },
             discovery: dogi_ui::DeviceDiscovery::new(
                 Arc::new(move || inventory_devices.scan_device_inventory()),
                 Arc::new(move || scan_devices.scan_devices_for_ui()),
@@ -47,7 +61,16 @@ pub(crate) fn launch_gui() -> Result<()> {
                 }),
             },
             runtime: dogi_ui::DesktopRuntimeManager {
-                manage: Arc::new(service::manage),
+                supported: runtime_supported,
+                availability: if runtime_supported {
+                    dogi_ui::DesktopRuntimeAvailability::Available
+                } else if environment.is_development() {
+                    dogi_ui::DesktopRuntimeAvailability::Development
+                } else {
+                    dogi_ui::DesktopRuntimeAvailability::Unmanaged
+                },
+                detail: runtime_detail,
+                manage: Arc::new(move |operation| service::manage(&runtime_environment, operation)),
                 horizontal_scroll_preview: Arc::new(move |command| {
                     let client = preview_client
                         .as_ref()
@@ -64,36 +87,18 @@ pub(crate) fn launch_gui() -> Result<()> {
                 }),
             },
             preferences,
-            updates: crate::update::application_update_manager(update_store),
+            updates: crate::update::application_update_manager(environment, update_store),
         },
     )
 }
 
 fn application_preferences(
-    store: std::result::Result<
-        ApplicationConfigStore,
-        crate::config::application::ApplicationConfigError,
-    >,
+    store: ApplicationConfigStore,
 ) -> dogi_ui::ApplicationPreferencesIntegration {
-    let store = match store {
-        Ok(store) => store,
-        Err(error) => {
-            let detail = error.to_string();
-            let save_error = detail.clone();
-            return dogi_ui::ApplicationPreferencesIntegration::new(
-                dogi_ui::ApplicationPreferences::default(),
-                move |_| Err(DogiError::Config(save_error.clone())),
-            )
-            .with_load_error(detail);
-        }
-    };
-
+    let fallback = store.default_preferences();
     let (initial, load_error) = match store.load_preferences() {
         Ok(preferences) => (preferences, None),
-        Err(error) => (
-            dogi_ui::ApplicationPreferences::default(),
-            Some(error.to_string()),
-        ),
+        Err(error) => (fallback, Some(error.to_string())),
     };
     let integration = dogi_ui::ApplicationPreferencesIntegration::new(initial, move |change| {
         store
@@ -104,17 +109,4 @@ fn application_preferences(
         Some(error) => integration.with_load_error(error),
         None => integration,
     }
-}
-
-fn device_service_for_desktop_user() -> DeviceService {
-    let Some(context) = desktop::elevated_user() else {
-        return DeviceService::new();
-    };
-    let (Some(uid), Some(gid)) = (context.uid, context.gid) else {
-        return DeviceService::new();
-    };
-    DeviceService::with_owned_config_path(
-        context.home.join(".config/dogi/master3s.json"),
-        ConfigFileOwner::new(uid, gid),
-    )
 }
