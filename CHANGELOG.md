@@ -1,8 +1,17 @@
+## [0.1.7] - 2026-08-06
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Update
 ## [0.1.6] - 2026-08-06
 
 ### 🚀 Features
 
 - [**breaking**] Isolate runtimes and promote verified release artifacts
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.1.6
 ## [0.1.5] - 2026-08-06
 
 ### ⚙️ Miscellaneous Tasks
