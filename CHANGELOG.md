@@ -1,8 +1,14 @@
+## [0.1.6] - 2026-08-06
+
+### 🚀 Features
+
+- [**breaking**] Isolate runtimes and promote verified release artifacts
 ## [0.1.5] - 2026-08-06
 
 ### ⚙️ Miscellaneous Tasks
 
 - *(ci)* [**breaking**] Align Debian packages with release versions
+- Release 0.1.5
 ## [0.1.4] - 2026-08-06
 
 ### 🚀 Features
