@@ -26,6 +26,8 @@ pub const DEVELOPMENT_APPLICATION_ID: &str = "io.github.oksyd.dogi.Development";
 pub use preferences::{
     ApplicationLanguage, ApplicationPreferenceChange, ApplicationPreferenceSaver,
     ApplicationPreferences, ApplicationPreferencesIntegration, ApplicationTheme, CloseBehavior,
+    NetworkConnectionTestResult, NetworkPreferencesIntegration, NetworkProxyDraft,
+    NetworkProxyMode, NetworkProxyPreferences, NetworkProxyProtocol,
 };
 
 pub type SettingsLoader = Rc<dyn Fn(&str) -> Result<Master3sSettings>>;
@@ -192,6 +194,7 @@ pub struct UiIntegrations {
     pub settings: DeviceSettingsIntegration,
     pub runtime: DesktopRuntimeManager,
     pub preferences: ApplicationPreferencesIntegration,
+    pub network: NetworkPreferencesIntegration,
     pub updates: ApplicationUpdateManager,
 }
 
@@ -204,6 +207,7 @@ struct LaunchIntegrations {
     applier: Option<SettingsApplier>,
     runtime: Option<DesktopRuntimeManager>,
     preferences: ApplicationPreferencesIntegration,
+    network: NetworkPreferencesIntegration,
     updates: ApplicationUpdateManager,
 }
 
@@ -215,6 +219,16 @@ struct DesktopRuntimeCompletion {
 #[derive(Debug)]
 struct ApplicationUpdateCompletion {
     result: Result<ApplicationUpdateResult>,
+}
+
+enum NetworkPreferencesWork {
+    Test(NetworkProxyDraft),
+    Save(NetworkProxyDraft),
+}
+
+enum NetworkPreferencesCompletion {
+    Tested(Result<NetworkConnectionTestResult>),
+    Saved(Result<NetworkProxyPreferences>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -349,6 +363,39 @@ fn persist_application_setting(
             false
         }
     }
+}
+
+fn set_network_proxy_preferences(window: &MainWindow, preferences: &NetworkProxyPreferences) {
+    window.set_network_proxy_mode_index(preferences.mode.index());
+    window.set_network_proxy_protocol_index(preferences.protocol.index());
+    window.set_network_proxy_host(preferences.host.clone().into());
+    window.set_network_proxy_port(preferences.port.to_string().into());
+    window.set_network_proxy_authentication_enabled(preferences.authentication_enabled);
+    window.set_network_proxy_username(preferences.username.clone().into());
+    window.set_network_proxy_password("".into());
+    window.set_network_proxy_password_saved(preferences.password_saved);
+}
+
+fn network_proxy_draft_from_window(window: &MainWindow) -> Result<NetworkProxyDraft> {
+    let port = window
+        .get_network_proxy_port()
+        .trim()
+        .parse::<u16>()
+        .map_err(|_| {
+            DogiError::InvalidArgument("enter a proxy port between 1 and 65535".to_owned())
+        })?;
+    Ok(NetworkProxyDraft {
+        preferences: NetworkProxyPreferences {
+            mode: NetworkProxyMode::from_index(window.get_network_proxy_mode_index()),
+            protocol: NetworkProxyProtocol::from_index(window.get_network_proxy_protocol_index()),
+            host: window.get_network_proxy_host().trim().to_owned(),
+            port,
+            authentication_enabled: window.get_network_proxy_authentication_enabled(),
+            username: window.get_network_proxy_username().trim().to_owned(),
+            password_saved: window.get_network_proxy_password_saved(),
+        },
+        password: window.get_network_proxy_password().to_string(),
+    })
 }
 
 fn request_language_change(
@@ -836,6 +883,7 @@ pub fn launch_with_integrations(state: UiState, integrations: UiIntegrations) ->
         settings,
         runtime,
         preferences,
+        network,
         updates,
     } = integrations;
     launch_internal(
@@ -848,6 +896,7 @@ pub fn launch_with_integrations(state: UiState, integrations: UiIntegrations) ->
             applier: Some(settings.apply),
             runtime: Some(runtime),
             preferences,
+            network,
             updates,
         },
     )
@@ -862,6 +911,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         applier,
         runtime,
         preferences,
+        network,
         updates,
     } = integrations;
     let window = MainWindow::new().map_err(|error| DogiError::Ui(error.to_string()))?;
@@ -879,6 +929,12 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let mut close_behavior = app_preferences.close_behavior;
     let background_operations_enabled = app_preferences.background_operations_enabled;
     let automatic_update_checks_enabled = app_preferences.automatic_update_checks_enabled;
+    let initial_network_preferences = network.initial.clone();
+    if let Some(error) = network.load_error.clone() {
+        startup_status =
+            UiStatus::presentation(UiStatusKind::Warning, UiMessage::AppConfigLoadFailed)
+                .with_detail(error);
+    }
     if let Err(error) = slint::select_bundled_translation(language.locale()) {
         startup_status =
             UiStatus::presentation(UiStatusKind::Warning, UiMessage::LanguageUnavailable)
@@ -886,6 +942,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     }
     window.set_language_index(language.index());
     window.set_theme_index(theme.index());
+    set_network_proxy_preferences(&window, &initial_network_preferences);
     desktop_preferences::watch_high_contrast(window.as_weak());
 
     let tray = match AppTray::new() {
@@ -1441,6 +1498,196 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
             window.set_runtime_busy(false);
             window.set_runtime_state(DesktopRuntimeState::Degraded);
             window.set_runtime_detail("Dogi runtime manager is unavailable".into());
+        }
+    });
+
+    let active_network_preferences = Rc::new(RefCell::new(initial_network_preferences));
+    let (network_work_sender, network_work_receiver) = mpsc::channel::<NetworkPreferencesWork>();
+    let (network_completion_sender, network_completion_receiver) =
+        mpsc::channel::<NetworkPreferencesCompletion>();
+    let network_save = network.save.clone();
+    let network_test = network.test.clone();
+    let network_worker_available = std::thread::Builder::new()
+        .name("dogi-network-preferences".to_owned())
+        .spawn(move || {
+            while let Ok(work) = network_work_receiver.recv() {
+                let completion =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match work {
+                        NetworkPreferencesWork::Test(draft) => {
+                            NetworkPreferencesCompletion::Tested(network_test(draft))
+                        }
+                        NetworkPreferencesWork::Save(draft) => {
+                            NetworkPreferencesCompletion::Saved(network_save(draft))
+                        }
+                    }))
+                    .unwrap_or_else(|_| {
+                        NetworkPreferencesCompletion::Tested(Err(DogiError::Ui(
+                            "network settings worker panicked unexpectedly".to_owned(),
+                        )))
+                    });
+                let _ = network_completion_sender.send(completion);
+            }
+        })
+        .is_ok();
+    let network_work_sender = network_worker_available.then_some(network_work_sender);
+    let network_in_flight = Rc::new(Cell::new(false));
+    let network_poll_timer = Rc::new(slint::Timer::default());
+    let network_poll_control = Rc::downgrade(&network_poll_timer);
+    let network_poll_window = window.as_weak();
+    let network_poll_active = active_network_preferences.clone();
+    let network_poll_in_flight = network_in_flight.clone();
+    network_poll_timer.start(
+        slint::TimerMode::Repeated,
+        Duration::from_millis(40),
+        move || {
+            let completion = match network_completion_receiver.try_recv() {
+                Ok(completion) => completion,
+                Err(mpsc::TryRecvError::Empty) => return,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    network_poll_in_flight.set(false);
+                    if let Some(timer) = network_poll_control.upgrade() {
+                        timer.stop();
+                    }
+                    if let Some(window) = network_poll_window.upgrade() {
+                        window.set_network_test_state(NetworkTestState::Failed);
+                        window.set_network_test_detail(
+                            "Network settings worker stopped unexpectedly".into(),
+                        );
+                    }
+                    return;
+                }
+            };
+            network_poll_in_flight.set(false);
+            if let Some(timer) = network_poll_control.upgrade() {
+                timer.stop();
+            }
+            let Some(window) = network_poll_window.upgrade() else {
+                return;
+            };
+            match completion {
+                NetworkPreferencesCompletion::Tested(Ok(result)) => {
+                    window.set_network_test_detail(result.route.into());
+                    window.set_network_test_state(NetworkTestState::Success);
+                }
+                NetworkPreferencesCompletion::Tested(Err(error)) => {
+                    window.set_network_test_detail(error.to_string().into());
+                    window.set_network_test_state(NetworkTestState::Failed);
+                }
+                NetworkPreferencesCompletion::Saved(Ok(preferences)) => {
+                    *network_poll_active.borrow_mut() = preferences.clone();
+                    set_network_proxy_preferences(&window, &preferences);
+                    window.set_network_test_state(NetworkTestState::Idle);
+                    window.set_network_test_detail("".into());
+                    window.set_network_proxy_dialog_visible(false);
+                }
+                NetworkPreferencesCompletion::Saved(Err(error)) => {
+                    window.set_network_test_detail(error.to_string().into());
+                    window.set_network_test_state(NetworkTestState::Failed);
+                }
+            }
+        },
+    );
+    network_poll_timer.stop();
+
+    let open_network_window = window.as_weak();
+    let open_network_active = active_network_preferences.clone();
+    window.on_open_network_proxy(move || {
+        if let Some(window) = open_network_window.upgrade() {
+            set_network_proxy_preferences(&window, &open_network_active.borrow());
+            window.set_network_test_state(NetworkTestState::Idle);
+            window.set_network_test_detail("".into());
+            window.set_network_proxy_dialog_visible(true);
+        }
+    });
+
+    let edit_network_window = window.as_weak();
+    window.on_network_proxy_edited(move || {
+        if let Some(window) = edit_network_window.upgrade() {
+            window.set_network_test_state(NetworkTestState::Idle);
+            window.set_network_test_detail("".into());
+        }
+    });
+
+    let cancel_network_window = window.as_weak();
+    let cancel_network_active = active_network_preferences.clone();
+    window.on_cancel_network_proxy(move || {
+        if let Some(window) = cancel_network_window.upgrade() {
+            set_network_proxy_preferences(&window, &cancel_network_active.borrow());
+            window.set_network_test_state(NetworkTestState::Idle);
+            window.set_network_test_detail("".into());
+            window.set_network_proxy_dialog_visible(false);
+        }
+    });
+
+    let test_network_window = window.as_weak();
+    let test_network_sender = network_work_sender.clone();
+    let test_network_timer = network_poll_timer.clone();
+    let test_network_in_flight = network_in_flight.clone();
+    window.on_test_network_proxy(move || {
+        let Some(window) = test_network_window.upgrade() else {
+            return;
+        };
+        if test_network_in_flight.get() {
+            return;
+        }
+        let draft = match network_proxy_draft_from_window(&window) {
+            Ok(draft) => draft,
+            Err(error) => {
+                window.set_network_test_state(NetworkTestState::Failed);
+                window.set_network_test_detail(error.to_string().into());
+                return;
+            }
+        };
+        let Some(sender) = &test_network_sender else {
+            window.set_network_test_state(NetworkTestState::Failed);
+            window.set_network_test_detail("Network connection testing is unavailable".into());
+            return;
+        };
+        window.set_network_test_state(NetworkTestState::Testing);
+        window.set_network_test_detail("".into());
+        test_network_in_flight.set(true);
+        if sender.send(NetworkPreferencesWork::Test(draft)).is_ok() {
+            test_network_timer.restart();
+        } else {
+            test_network_in_flight.set(false);
+            window.set_network_test_state(NetworkTestState::Failed);
+            window.set_network_test_detail("Network connection testing is unavailable".into());
+        }
+    });
+
+    let save_network_window = window.as_weak();
+    let save_network_sender = network_work_sender;
+    let save_network_timer = network_poll_timer.clone();
+    let save_network_in_flight = network_in_flight;
+    window.on_save_network_proxy(move || {
+        let Some(window) = save_network_window.upgrade() else {
+            return;
+        };
+        if save_network_in_flight.get() {
+            return;
+        }
+        let draft = match network_proxy_draft_from_window(&window) {
+            Ok(draft) => draft,
+            Err(error) => {
+                window.set_network_test_state(NetworkTestState::Failed);
+                window.set_network_test_detail(error.to_string().into());
+                return;
+            }
+        };
+        let Some(sender) = &save_network_sender else {
+            window.set_network_test_state(NetworkTestState::Failed);
+            window.set_network_test_detail("Network settings storage is unavailable".into());
+            return;
+        };
+        window.set_network_test_state(NetworkTestState::Saving);
+        window.set_network_test_detail("".into());
+        save_network_in_flight.set(true);
+        if sender.send(NetworkPreferencesWork::Save(draft)).is_ok() {
+            save_network_timer.restart();
+        } else {
+            save_network_in_flight.set(false);
+            window.set_network_test_state(NetworkTestState::Failed);
+            window.set_network_test_detail("Network settings storage is unavailable".into());
         }
     });
 
@@ -4579,6 +4826,21 @@ mod tests {
         if std::env::var_os("DOGI_UI_SNAPSHOT_UPDATE_CONFIRM").is_some() {
             window.set_page_index(3);
             window.set_update_install_confirm_visible(true);
+        }
+        if let Ok(proxy_preview) = std::env::var("DOGI_UI_SNAPSHOT_PROXY") {
+            window.set_page_index(3);
+            window.set_network_proxy_dialog_visible(true);
+            if proxy_preview == "manual" || proxy_preview == "authenticated" {
+                window.set_network_proxy_mode_index(2);
+                window.set_network_proxy_protocol_index(0);
+                window.set_network_proxy_host("192.168.88.90".into());
+                window.set_network_proxy_port("7890".into());
+            }
+            if proxy_preview == "authenticated" {
+                window.set_network_proxy_authentication_enabled(true);
+                window.set_network_proxy_username("proxy-user".into());
+                window.set_network_proxy_password_saved(true);
+            }
         }
         if let Ok(focus_steps) = std::env::var("DOGI_UI_SNAPSHOT_FOCUS_STEPS")
             && let Ok(focus_steps) = focus_steps.parse::<usize>()

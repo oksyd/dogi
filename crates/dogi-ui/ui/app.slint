@@ -1,6 +1,7 @@
 import {
     ListView,
     Palette,
+    ScrollView,
 } from "std-widgets.slint";
 
 import {
@@ -10,6 +11,7 @@ import {
     DeviceAccessState,
     DeviceDiscoveryState,
     DeviceRow,
+    NetworkTestState,
     PlanRow,
     PlanScope,
     UiMessage,
@@ -1854,6 +1856,287 @@ component SettingsUpdateRow inherits Rectangle {
     }
 }
 
+component SettingsNetworkRow inherits Rectangle {
+    in property <int> mode-index;
+    in property <int> protocol-index;
+    in property <string> host;
+    in property <string> port;
+    callback configure();
+
+    property <string> protocol-label: root.protocol-index == 1 ? "HTTPS"
+        : root.protocol-index == 2 ? "SOCKS5"
+        : "HTTP";
+    property <string> summary: root.mode-index == 0 ? @tr("Follow system settings")
+        : root.mode-index == 1 ? @tr("Direct connection")
+        : root.host == "" ? @tr("Manual proxy")
+        : root.protocol-label + " · " + root.host + ":" + root.port;
+
+    height: 64px;
+    background: transparent;
+    vertical-stretch: 0;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 12px;
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text { height: 20px; text: @tr("Network proxy"); color: Theme.text; font-size: 12px; font-weight: 600; vertical-stretch: 0; }
+            Text { height: 18px; text: root.summary; color: Theme.text-muted; font-size: 10px; overflow: elide; vertical-stretch: 0; }
+        }
+
+        VerticalLayout {
+            width: 100px;
+            horizontal-stretch: 0;
+            alignment: center;
+            ActionButton {
+                width: 100px;
+                height: 32px;
+                title: @tr("Configure");
+                clicked => { root.configure(); }
+                vertical-stretch: 0;
+            }
+        }
+    }
+}
+
+component NetworkProxyOverlay inherits Rectangle {
+    in-out property <int> mode-index;
+    in-out property <int> protocol-index;
+    in-out property <string> host;
+    in-out property <string> port;
+    in-out property <bool> authentication-enabled;
+    in-out property <string> username;
+    in-out property <string> password;
+    in property <bool> password-saved;
+    in property <NetworkTestState> test-state;
+    in property <string> test-detail;
+    callback edited();
+    callback test();
+    callback save();
+    callback cancel();
+
+    property <bool> manual: root.mode-index == 2;
+    property <bool> busy: root.test-state == NetworkTestState.testing
+        || root.test-state == NetworkTestState.saving;
+    property <bool> valid: !root.manual || (
+        root.host != ""
+        && root.port != ""
+        && (
+            !root.authentication-enabled
+            || (
+                root.username != ""
+                && (root.password != "" || root.password-saved)
+            )
+        )
+    );
+    property <[string]> mode-options: [
+        @tr("Follow system settings"),
+        @tr("Direct connection"),
+        @tr("Manual proxy"),
+    ];
+    property <[string]> protocol-options: ["HTTP", "HTTPS", "SOCKS5"];
+
+    background: Theme.overlay;
+    forward-focus: modal-focus;
+    init => { modal-focus.focus(); }
+
+    TouchArea { width: parent.width; height: parent.height; }
+
+    modal-focus := FocusScope {
+        width: 0px;
+        height: 0px;
+        key-pressed(event) => {
+            if (event.text == Key.Escape && !root.busy) {
+                root.cancel();
+                return accept;
+            }
+            return reject;
+        }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 620px;
+        height: root.manual ? (root.authentication-enabled ? 570px : 492px) : 326px;
+        background: Theme.panel;
+        border-width: 1px;
+        border-color: Theme.control-border;
+        border-radius: 10px;
+        clip: true;
+        accessible-role: groupbox;
+        accessible-label: @tr("Network proxy");
+
+        VerticalLayout {
+            padding: 0px;
+            spacing: 0px;
+
+            VerticalLayout {
+                height: 82px;
+                padding-left: 24px;
+                padding-right: 24px;
+                padding-top: 20px;
+                padding-bottom: 14px;
+                spacing: 4px;
+                vertical-stretch: 0;
+                Text { height: 26px; text: @tr("Network proxy"); color: Theme.text; font-size: 18px; font-weight: 650; vertical-stretch: 0; }
+                Text { text: @tr("Controls network access for Dogi updates."); color: Theme.text-muted; font-size: 11px; vertical-stretch: 0; }
+            }
+
+            Divider {}
+
+            VerticalLayout {
+                padding-left: 24px;
+                padding-right: 24px;
+                padding-top: 18px;
+                padding-bottom: 18px;
+                spacing: 14px;
+
+                HorizontalLayout {
+                    height: 36px;
+                    spacing: 16px;
+                    vertical-stretch: 0;
+                    Text { text: @tr("Connection"); color: Theme.text; font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                    FormComboBox {
+                        width: 260px;
+                        height: 36px;
+                        horizontal-stretch: 0;
+                        model: root.mode-options;
+                        current-index <=> root.mode-index;
+                        enabled: !root.busy;
+                        selected(value) => { root.edited(); }
+                    }
+                }
+
+                if root.manual : VerticalLayout {
+                    height: 66px;
+                    spacing: 6px;
+                    vertical-stretch: 0;
+                    HorizontalLayout {
+                        height: 18px;
+                        spacing: 10px;
+                        vertical-stretch: 0;
+                        Text { width: 132px; text: @tr("Protocol"); color: Theme.text-muted; font-size: 10px; horizontal-stretch: 0; }
+                        Text { text: @tr("Host"); color: Theme.text-muted; font-size: 10px; }
+                        Text { width: 100px; text: @tr("Port"); color: Theme.text-muted; font-size: 10px; horizontal-stretch: 0; }
+                    }
+                    HorizontalLayout {
+                        height: 36px;
+                        spacing: 10px;
+                        vertical-stretch: 0;
+                        FormComboBox { width: 132px; height: 36px; horizontal-stretch: 0; model: root.protocol-options; current-index <=> root.protocol-index; enabled: !root.busy; selected(value) => { root.edited(); } }
+                        FormLineEdit { height: 36px; text <=> root.host; placeholder-text: "127.0.0.1"; enabled: !root.busy; edited(value) => { root.edited(); } }
+                        FormLineEdit { width: 100px; height: 36px; horizontal-stretch: 0; text <=> root.port; placeholder-text: "7890"; input-type: InputType.number; enabled: !root.busy; edited(value) => { root.edited(); } }
+                    }
+                }
+
+                if root.manual : Rectangle {
+                    height: 54px;
+                    background: Theme.surface;
+                    border-radius: 6px;
+                    vertical-stretch: 0;
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 12px;
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 1px;
+                            Text { height: 18px; text: @tr("Proxy authentication"); color: Theme.text; font-size: 11px; font-weight: 600; vertical-stretch: 0; }
+                            Text { height: 16px; text: @tr("Store credentials in the desktop keyring"); color: Theme.text-muted; font-size: 10px; vertical-stretch: 0; }
+                        }
+                        VerticalLayout {
+                            width: 44px;
+                            horizontal-stretch: 0;
+                            alignment: center;
+                            AccentSwitch {
+                                width: 44px;
+                                label: @tr("Proxy authentication");
+                                checked <=> root.authentication-enabled;
+                                enabled: !root.busy;
+                                toggled => { root.edited(); }
+                                vertical-stretch: 0;
+                            }
+                        }
+                    }
+                }
+
+                if root.manual && root.authentication-enabled : VerticalLayout {
+                    height: 66px;
+                    spacing: 6px;
+                    vertical-stretch: 0;
+                    HorizontalLayout {
+                        height: 18px;
+                        spacing: 10px;
+                        vertical-stretch: 0;
+                        Text { text: @tr("Username"); color: Theme.text-muted; font-size: 10px; }
+                        Text { text: @tr("Password"); color: Theme.text-muted; font-size: 10px; }
+                    }
+                    HorizontalLayout {
+                        height: 36px;
+                        spacing: 10px;
+                        vertical-stretch: 0;
+                        FormLineEdit { height: 36px; text <=> root.username; enabled: !root.busy; edited(value) => { root.edited(); } }
+                        FormLineEdit {
+                            height: 36px;
+                            text <=> root.password;
+                            placeholder-text: root.password-saved ? @tr("Saved password") : @tr("Password");
+                            input-type: InputType.password;
+                            enabled: !root.busy;
+                            edited(value) => { root.edited(); }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 54px;
+                    background: root.test-state == NetworkTestState.success ? Theme.success-soft
+                        : root.test-state == NetworkTestState.failed ? Theme.warning-bg
+                        : Theme.surface;
+                    border-radius: 6px;
+                    vertical-stretch: 0;
+                    Text {
+                        x: 14px;
+                        width: parent.width - 28px;
+                        height: parent.height;
+                        text: root.test-state == NetworkTestState.testing ? @tr("Testing connection…")
+                            : root.test-state == NetworkTestState.saving ? @tr("Saving proxy settings…")
+                            : root.test-state == NetworkTestState.success && root.test-detail == "" ? @tr("Connected directly")
+                            : root.test-state == NetworkTestState.success ? @tr("Connected through {}", root.test-detail)
+                            : root.test-state == NetworkTestState.failed ? root.test-detail
+                            : @tr("Test access to GitHub before saving.");
+                        color: root.test-state == NetworkTestState.success ? Theme.success
+                            : root.test-state == NetworkTestState.failed ? Theme.warning
+                            : Theme.text-muted;
+                        font-size: 10px;
+                        wrap: word-wrap;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Divider {}
+
+            HorizontalLayout {
+                height: 70px;
+                padding-left: 24px;
+                padding-right: 24px;
+                padding-top: 17px;
+                padding-bottom: 17px;
+                spacing: 10px;
+                vertical-stretch: 0;
+                Rectangle { horizontal-stretch: 1; }
+                ActionButton { width: 88px; height: 36px; title: @tr("Cancel"); enabled: !root.busy; clicked => { root.cancel(); } horizontal-stretch: 0; }
+                ActionButton { width: 128px; height: 36px; title: @tr("Test connection"); enabled: root.valid && !root.busy; clicked => { root.test(); } horizontal-stretch: 0; }
+                ActionButton { width: 92px; height: 36px; title: @tr("Save"); primary: true; enabled: root.valid && !root.busy; clicked => { root.save(); } horizontal-stretch: 0; }
+            }
+        }
+    }
+}
+
 component ConfirmationOverlay inherits Rectangle {
     in property <string> title;
     in property <string> message;
@@ -1977,6 +2260,7 @@ export component MainWindow inherits Window {
     in-out property <bool> revert-confirm-visible: false;
     in-out property <bool> quit-confirm-visible: false;
     in-out property <bool> update-install-confirm-visible: false;
+    in-out property <bool> network-proxy-dialog-visible: false;
     in-out property <int> confirm-change-count: 0;
     in-out property <UiStatus> status;
     in-out property <bool> draft-dirty: false;
@@ -1997,6 +2281,16 @@ export component MainWindow inherits Window {
     in property <string> current-version;
     in property <string> available-version;
     in property <string> update-detail;
+    in-out property <int> network-proxy-mode-index: 0;
+    in-out property <int> network-proxy-protocol-index: 0;
+    in-out property <string> network-proxy-host;
+    in-out property <string> network-proxy-port: "7890";
+    in-out property <bool> network-proxy-authentication-enabled: false;
+    in-out property <string> network-proxy-username;
+    in-out property <string> network-proxy-password;
+    in property <bool> network-proxy-password-saved: false;
+    in property <NetworkTestState> network-test-state: NetworkTestState.idle;
+    in property <string> network-test-detail;
     out property <string> update-notification-title: @tr("Dogi {} is ready", root.available-version);
     out property <string> update-notification-body: @tr("Install the update when you are ready to restart Dogi.");
     in-out property <bool> horizontal-scroll-test-open: false;
@@ -2035,6 +2329,11 @@ export component MainWindow inherits Window {
     callback check-for-updates();
     callback automatic-update-check();
     callback install-update-requested();
+    callback open-network-proxy();
+    callback cancel-network-proxy();
+    callback save-network-proxy();
+    callback test-network-proxy();
+    callback network-proxy-edited();
     callback save-and-install-update();
     callback install-update-without-saving();
     callback cancel-update-install();
@@ -2894,9 +3193,14 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        if root.page-index == 3 : VerticalLayout {
+                        if root.page-index == 3 : ScrollView {
+                            viewport-width: self.width;
+                            viewport-height: 684px;
+
+                            VerticalLayout {
+                            width: parent.width;
+                            height: 684px;
                             spacing: 10px;
-                            vertical-stretch: 1;
 
                             PageHeading { title: @tr("Appearance"); }
 
@@ -2984,6 +3288,31 @@ export component MainWindow inherits Window {
 
                             Rectangle { height: 6px; vertical-stretch: 0; }
 
+                            PageHeading { title: @tr("Network"); }
+
+                            Rectangle {
+                                width: 720px;
+                                height: 65px;
+                                background: Theme.panel;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                border-radius: 8px;
+                                clip: true;
+                                horizontal-stretch: 0;
+                                vertical-stretch: 0;
+
+                                SettingsNetworkRow {
+                                    width: parent.width;
+                                    mode-index: root.network-proxy-mode-index;
+                                    protocol-index: root.network-proxy-protocol-index;
+                                    host: root.network-proxy-host;
+                                    port: root.network-proxy-port;
+                                    configure => { root.open-network-proxy(); }
+                                }
+                            }
+
+                            Rectangle { height: 6px; vertical-stretch: 0; }
+
                             PageHeading { title: @tr("Updates"); }
 
                             Rectangle {
@@ -3012,6 +3341,7 @@ export component MainWindow inherits Window {
                             }
 
                             Rectangle { vertical-stretch: 1; }
+                            }
                         }
                     }
 
@@ -3281,6 +3611,25 @@ export component MainWindow inherits Window {
                 }
             }
         }
+    }
+
+    if root.network-proxy-dialog-visible : NetworkProxyOverlay {
+        width: parent.width;
+        height: parent.height;
+        mode-index <=> root.network-proxy-mode-index;
+        protocol-index <=> root.network-proxy-protocol-index;
+        host <=> root.network-proxy-host;
+        port <=> root.network-proxy-port;
+        authentication-enabled <=> root.network-proxy-authentication-enabled;
+        username <=> root.network-proxy-username;
+        password <=> root.network-proxy-password;
+        password-saved: root.network-proxy-password-saved;
+        test-state: root.network-test-state;
+        test-detail: root.network-test-detail;
+        edited => { root.network-proxy-edited(); }
+        test => { root.test-network-proxy(); }
+        save => { root.save-network-proxy(); }
+        cancel => { root.cancel-network-proxy(); }
     }
 
     if root.revert-confirm-visible : ConfirmationOverlay {

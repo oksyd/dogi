@@ -17,7 +17,9 @@ pub(crate) fn launch_gui(environment: &AppEnvironment) -> Result<()> {
     let _instance_lock = ProcessLock::acquire(&environment.paths.gui_instance_lock(), "window")?;
     let devices = DeviceService::for_environment(environment);
     let application_store = ApplicationConfigStore::for_environment(environment);
-    let update_store = Some(application_store.clone());
+    let update_store = application_store.clone();
+    let network_service = crate::network::NetworkService::new(application_store.clone());
+    let network = network_preferences(network_service.clone());
     let preferences = application_preferences(application_store);
     let settings = devices.load_master3s_settings()?;
     let inventory_devices = devices.clone();
@@ -87,9 +89,34 @@ pub(crate) fn launch_gui(environment: &AppEnvironment) -> Result<()> {
                 }),
             },
             preferences,
-            updates: crate::update::application_update_manager(environment, update_store),
+            network,
+            updates: crate::update::application_update_manager(
+                environment,
+                update_store,
+                network_service,
+            ),
         },
     )
+}
+
+fn network_preferences(
+    service: crate::network::NetworkService,
+) -> dogi_ui::NetworkPreferencesIntegration {
+    let fallback = service.default_preferences();
+    let (initial, load_error) = match service.load_preferences() {
+        Ok(preferences) => (preferences, None),
+        Err(error) => (fallback, Some(error.to_string())),
+    };
+    let save_service = service.clone();
+    let integration = dogi_ui::NetworkPreferencesIntegration::new(
+        initial,
+        move |draft| save_service.save(draft),
+        move |draft| service.test(draft),
+    );
+    match load_error {
+        Some(error) => integration.with_load_error(error),
+        None => integration,
+    }
 }
 
 fn application_preferences(

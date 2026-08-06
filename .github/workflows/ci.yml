@@ -36,6 +36,7 @@ jobs:
             appstream \
             desktop-file-utils \
             libfontconfig1-dev \
+            libglib2.0-dev \
             libxml2-utils \
             udev
 
@@ -130,6 +131,7 @@ jobs:
             binutils \
             dpkg-dev \
             libfontconfig1-dev \
+            libglib2.0-dev \
             zstd
 
       - name: Prepare Rust toolchain

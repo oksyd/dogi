@@ -1,5 +1,6 @@
 use std::env;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use dogi_core::Result;
 
@@ -146,6 +147,150 @@ impl ApplicationPreferencesIntegration {
 impl Default for ApplicationPreferencesIntegration {
     fn default() -> Self {
         Self::new(ApplicationPreferences::default(), |_| Ok(()))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NetworkProxyMode {
+    #[default]
+    System,
+    Direct,
+    Manual,
+}
+
+impl NetworkProxyMode {
+    pub(crate) fn from_index(index: i32) -> Self {
+        match index {
+            1 => Self::Direct,
+            2 => Self::Manual,
+            _ => Self::System,
+        }
+    }
+
+    pub(crate) fn index(self) -> i32 {
+        match self {
+            Self::System => 0,
+            Self::Direct => 1,
+            Self::Manual => 2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NetworkProxyProtocol {
+    #[default]
+    Http,
+    Https,
+    Socks5,
+}
+
+impl NetworkProxyProtocol {
+    pub(crate) fn from_index(index: i32) -> Self {
+        match index {
+            1 => Self::Https,
+            2 => Self::Socks5,
+            _ => Self::Http,
+        }
+    }
+
+    pub(crate) fn index(self) -> i32 {
+        match self {
+            Self::Http => 0,
+            Self::Https => 1,
+            Self::Socks5 => 2,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NetworkProxyPreferences {
+    pub mode: NetworkProxyMode,
+    pub protocol: NetworkProxyProtocol,
+    pub host: String,
+    pub port: u16,
+    pub authentication_enabled: bool,
+    pub username: String,
+    pub password_saved: bool,
+}
+
+impl Default for NetworkProxyPreferences {
+    fn default() -> Self {
+        Self {
+            mode: NetworkProxyMode::System,
+            protocol: NetworkProxyProtocol::Http,
+            host: String::new(),
+            port: 7890,
+            authentication_enabled: false,
+            username: String::new(),
+            password_saved: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NetworkProxyDraft {
+    pub preferences: NetworkProxyPreferences,
+    pub password: String,
+}
+
+impl NetworkProxyDraft {
+    pub fn from_preferences(preferences: NetworkProxyPreferences) -> Self {
+        Self {
+            preferences,
+            password: String::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NetworkConnectionTestResult {
+    pub route: String,
+}
+
+pub type NetworkProxySaver =
+    Arc<dyn Fn(NetworkProxyDraft) -> Result<NetworkProxyPreferences> + Send + Sync>;
+pub type NetworkProxyTester =
+    Arc<dyn Fn(NetworkProxyDraft) -> Result<NetworkConnectionTestResult> + Send + Sync>;
+
+#[derive(Clone)]
+pub struct NetworkPreferencesIntegration {
+    pub initial: NetworkProxyPreferences,
+    pub load_error: Option<String>,
+    pub save: NetworkProxySaver,
+    pub test: NetworkProxyTester,
+}
+
+impl NetworkPreferencesIntegration {
+    pub fn new(
+        initial: NetworkProxyPreferences,
+        save: impl Fn(NetworkProxyDraft) -> Result<NetworkProxyPreferences> + Send + Sync + 'static,
+        test: impl Fn(NetworkProxyDraft) -> Result<NetworkConnectionTestResult> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            initial,
+            load_error: None,
+            save: Arc::new(save),
+            test: Arc::new(test),
+        }
+    }
+
+    pub fn with_load_error(mut self, error: impl Into<String>) -> Self {
+        self.load_error = Some(error.into());
+        self
+    }
+}
+
+impl Default for NetworkPreferencesIntegration {
+    fn default() -> Self {
+        Self::new(
+            NetworkProxyPreferences::default(),
+            |draft| Ok(draft.preferences),
+            |_| {
+                Err(dogi_core::DogiError::BackendUnavailable(
+                    "network connection testing is unavailable".to_owned(),
+                ))
+            },
+        )
     }
 }
 

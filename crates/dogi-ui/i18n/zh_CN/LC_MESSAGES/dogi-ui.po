@@ -1043,3 +1043,73 @@ msgstr "{} 版本已可安装"
 #: crates/dogi-ui/ui/app.slint:1025
 msgid "Settings · Update available"
 msgstr "设置 · 有可用更新"
+
+msgid "Configure"
+msgstr "配置"
+
+msgid "Connected directly"
+msgstr "已直接连接"
+
+#, python-brace-format
+msgid "Connected through {}"
+msgstr "已通过 {} 连接"
+
+msgid "Connection"
+msgstr "连接方式"
+
+msgid "Controls network access for Dogi updates."
+msgstr "控制 Dogi 更新的网络连接。"
+
+msgid "Direct connection"
+msgstr "直接连接"
+
+msgid "Follow system settings"
+msgstr "跟随系统设置"
+
+msgid "Host"
+msgstr "主机"
+
+msgid "Manual proxy"
+msgstr "手动代理"
+
+msgid "Network"
+msgstr "网络"
+
+msgid "Network proxy"
+msgstr "网络代理"
+
+msgid "Password"
+msgstr "密码"
+
+msgid "Port"
+msgstr "端口"
+
+msgid "Protocol"
+msgstr "协议"
+
+msgid "Proxy authentication"
+msgstr "代理认证"
+
+msgid "Save"
+msgstr "保存"
+
+msgid "Saved password"
+msgstr "已保存的密码"
+
+msgid "Saving proxy settings…"
+msgstr "正在保存代理设置…"
+
+msgid "Store credentials in the desktop keyring"
+msgstr "将凭据存储在桌面密钥环中"
+
+msgid "Test access to GitHub before saving."
+msgstr "保存前测试 GitHub 连接。"
+
+msgid "Test connection"
+msgstr "测试连接"
+
+msgid "Testing connection…"
+msgstr "正在测试连接…"
+
+msgid "Username"
+msgstr "用户名"

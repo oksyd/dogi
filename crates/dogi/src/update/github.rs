@@ -3,14 +3,15 @@ use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use semver::Version;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use ssh_key::{PublicKey, SshSig};
-use ureq::tls::{RootCerts, TlsConfig};
+
+use crate::network::NetworkPolicy;
 
 const API_ROOT: &str = "https://api.github.com/repos/oksyd/dogi";
 const RELEASE_ROOT: &str = "https://github.com/oksyd/dogi/releases";
@@ -49,22 +50,13 @@ impl ReleaseAssetKind {
     }
 }
 
-pub(super) struct GitHubReleaseClient {
-    agent: ureq::Agent,
+pub(super) struct GitHubReleaseClient<'a> {
+    network: &'a NetworkPolicy,
 }
 
-impl GitHubReleaseClient {
-    pub(super) fn new() -> Self {
-        let tls = TlsConfig::builder()
-            .root_certs(RootCerts::PlatformVerifier)
-            .build();
-        let config = ureq::Agent::config_builder()
-            .timeout_global(Some(Duration::from_secs(30)))
-            .tls_config(tls)
-            .build();
-        Self {
-            agent: config.new_agent(),
-        }
+impl<'a> GitHubReleaseClient<'a> {
+    pub(super) fn new(network: &'a NetworkPolicy) -> Self {
+        Self { network }
     }
 
     pub(super) fn latest(
@@ -116,7 +108,8 @@ impl GitHubReleaseClient {
 
     fn download_into(&self, artifact: &ReleaseArtifact, output: &mut File) -> Result<(), String> {
         let mut response = self
-            .request(&artifact.url)
+            .request(&artifact.url)?
+            .0
             .call()
             .map_err(|error| format!("could not download the update: {error}"))?;
         if let Some(length) = response.body().content_length()
@@ -176,7 +169,8 @@ impl GitHubReleaseClient {
     }
 
     fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T, String> {
-        self.request(url)
+        self.request(url)?
+            .0
             .call()
             .map_err(|error| format!("GitHub update request failed: {error}"))?
             .body_mut()
@@ -186,13 +180,28 @@ impl GitHubReleaseClient {
             .map_err(|error| format!("GitHub returned invalid update metadata: {error}"))
     }
 
-    fn request(&self, url: &str) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
-        self.agent
+    fn request(
+        &self,
+        url: &str,
+    ) -> Result<(ureq::RequestBuilder<ureq::typestate::WithoutBody>, String), String> {
+        let routed = self.network.agent_for(url)?;
+        let request = routed
+            .agent
             .get(url)
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", API_VERSION)
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", USER_AGENT);
+        Ok((request, routed.route))
     }
+}
+
+pub(crate) fn test_connection(network: &NetworkPolicy) -> Result<String, String> {
+    let client = GitHubReleaseClient::new(network);
+    let (request, route) = client.request(&format!("{API_ROOT}/releases/latest"))?;
+    request
+        .call()
+        .map_err(|error| format!("GitHub connection test failed: {error}"))?;
+    Ok(route)
 }
 
 fn validate_release(

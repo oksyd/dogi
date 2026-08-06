@@ -220,6 +220,7 @@ export component FormLineEdit inherits Rectangle {
     in property <string> placeholder-text;
     in property <bool> enabled: true;
     in property <bool> read-only: false;
+    in property <InputType> input-type: InputType.text;
     callback edited(string);
     callback accepted(string);
 
@@ -291,6 +292,7 @@ export component FormLineEdit inherits Rectangle {
             text <=> root.text;
             enabled: root.enabled;
             read-only: root.read-only;
+            input-type: root.input-type;
             single-line: true;
             color: root.enabled ? Theme.text : Theme.text-faint;
             font-size: 11px;

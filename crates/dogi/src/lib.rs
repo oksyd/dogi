@@ -4,6 +4,7 @@ mod config;
 mod desktop;
 mod device;
 mod environment;
+mod network;
 mod runtime;
 mod update;
 

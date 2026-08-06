@@ -9,14 +9,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use dogi_ui::{
     ApplicationLanguage, ApplicationPreferenceChange, ApplicationPreferences, ApplicationTheme,
-    CloseBehavior,
+    CloseBehavior, NetworkProxyMode, NetworkProxyPreferences, NetworkProxyProtocol,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::environment::AppEnvironment;
 
-const APP_CONFIG_SCHEMA_VERSION: u16 = 3;
+const APP_CONFIG_SCHEMA_VERSION: u16 = 4;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -123,6 +123,81 @@ impl Default for StoredBehavior {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum StoredProxyMode {
+    #[default]
+    System,
+    Direct,
+    Manual,
+}
+
+impl StoredProxyMode {
+    fn application_value(self) -> NetworkProxyMode {
+        match self {
+            Self::System => NetworkProxyMode::System,
+            Self::Direct => NetworkProxyMode::Direct,
+            Self::Manual => NetworkProxyMode::Manual,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum StoredProxyProtocol {
+    #[default]
+    Http,
+    Https,
+    Socks5,
+}
+
+impl StoredProxyProtocol {
+    fn application_value(self) -> NetworkProxyProtocol {
+        match self {
+            Self::Http => NetworkProxyProtocol::Http,
+            Self::Https => NetworkProxyProtocol::Https,
+            Self::Socks5 => NetworkProxyProtocol::Socks5,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredManualProxy {
+    protocol: StoredProxyProtocol,
+    host: String,
+    port: u16,
+    authentication_enabled: bool,
+    username: String,
+    password_saved: bool,
+}
+
+impl Default for StoredManualProxy {
+    fn default() -> Self {
+        Self {
+            protocol: StoredProxyProtocol::Http,
+            host: String::new(),
+            port: 7890,
+            authentication_enabled: false,
+            username: String::new(),
+            password_saved: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredProxy {
+    mode: StoredProxyMode,
+    manual: StoredManualProxy,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredNetwork {
+    proxy: StoredProxy,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StoredApplicationConfig {
@@ -131,6 +206,8 @@ struct StoredApplicationConfig {
     behavior: StoredBehavior,
     #[serde(default)]
     updates: StoredUpdates,
+    #[serde(default)]
+    network: StoredNetwork,
 }
 
 impl Default for StoredApplicationConfig {
@@ -140,6 +217,7 @@ impl Default for StoredApplicationConfig {
             appearance: StoredAppearance::default(),
             behavior: StoredBehavior::default(),
             updates: StoredUpdates::default(),
+            network: StoredNetwork::default(),
         }
     }
 }
@@ -207,6 +285,43 @@ impl ApplicationConfigStore {
             background_operations_enabled: self.defaults.behavior.background_operations_enabled,
             automatic_update_checks_enabled: self.defaults.updates.automatic_update_checks_enabled,
         }
+    }
+
+    pub(crate) fn load_network_proxy(
+        &self,
+    ) -> Result<NetworkProxyPreferences, ApplicationConfigError> {
+        let proxy = self.load()?.network.proxy;
+        Ok(NetworkProxyPreferences {
+            mode: proxy.mode.application_value(),
+            protocol: proxy.manual.protocol.application_value(),
+            host: proxy.manual.host,
+            port: proxy.manual.port,
+            authentication_enabled: proxy.manual.authentication_enabled,
+            username: proxy.manual.username,
+            password_saved: proxy.manual.password_saved,
+        })
+    }
+
+    pub(crate) fn default_network_proxy(&self) -> NetworkProxyPreferences {
+        NetworkProxyPreferences::default()
+    }
+
+    pub(crate) fn save_network_proxy(
+        &self,
+        preferences: &NetworkProxyPreferences,
+    ) -> Result<(), ApplicationConfigError> {
+        let stored = StoredProxy {
+            mode: preferences.mode.into(),
+            manual: StoredManualProxy {
+                protocol: preferences.protocol.into(),
+                host: preferences.host.clone(),
+                port: preferences.port,
+                authentication_enabled: preferences.authentication_enabled,
+                username: preferences.username.clone(),
+                password_saved: preferences.password_saved,
+            },
+        };
+        self.update(|config| config.network.proxy = stored)
     }
 
     pub(crate) fn save_preference(
@@ -377,6 +492,26 @@ impl From<CloseBehavior> for StoredCloseBehavior {
         match behavior {
             CloseBehavior::Quit => Self::Quit,
             CloseBehavior::MinimizeToTray => Self::MinimizeToTray,
+        }
+    }
+}
+
+impl From<NetworkProxyMode> for StoredProxyMode {
+    fn from(mode: NetworkProxyMode) -> Self {
+        match mode {
+            NetworkProxyMode::System => Self::System,
+            NetworkProxyMode::Direct => Self::Direct,
+            NetworkProxyMode::Manual => Self::Manual,
+        }
+    }
+}
+
+impl From<NetworkProxyProtocol> for StoredProxyProtocol {
+    fn from(protocol: NetworkProxyProtocol) -> Self {
+        match protocol {
+            NetworkProxyProtocol::Http => Self::Http,
+            NetworkProxyProtocol::Https => Self::Https,
+            NetworkProxyProtocol::Socks5 => Self::Socks5,
         }
     }
 }
@@ -591,10 +726,11 @@ mod tests {
                 },
                 behavior: StoredBehavior::default(),
                 updates: StoredUpdates::default(),
+                network: StoredNetwork::default(),
             }
         );
         let json = fs::read_to_string(root.join("config.json")).unwrap();
-        assert!(json.contains("\"schema_version\": 3"));
+        assert!(json.contains("\"schema_version\": 4"));
         assert!(json.contains("\"appearance\""));
 
         let _ = fs::remove_dir_all(root);
@@ -728,6 +864,30 @@ mod tests {
     }
 
     #[test]
+    fn schema_three_is_migrated_with_system_proxy_defaults() {
+        let root = unique_test_root("schema-three");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("config.json"),
+            r#"{
+                "schema_version": 3,
+                "appearance": {"language": "system", "theme": "system"},
+                "behavior": {"close_behavior": "quit", "background_operations_enabled": true},
+                "updates": {"automatic_update_checks_enabled": true}
+            }"#,
+        )
+        .unwrap();
+        let store = ApplicationConfigStore::at(root.join("config.json"));
+
+        assert_eq!(
+            store.load_network_proxy().unwrap(),
+            NetworkProxyPreferences::default()
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn successful_update_checks_are_throttled_for_the_configured_interval() {
         let root = unique_test_root("update-check-throttle");
         let store = ApplicationConfigStore::at(root.join("config.json"));
@@ -753,6 +913,30 @@ mod tests {
                 .automatic_update_check_due(checked_at + interval, interval)
                 .unwrap()
         );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn network_proxy_round_trip_preserves_manual_settings_without_a_secret() {
+        let root = unique_test_root("network-proxy");
+        let store = ApplicationConfigStore::at(root.join("config.json"));
+        let preferences = NetworkProxyPreferences {
+            mode: NetworkProxyMode::Manual,
+            protocol: NetworkProxyProtocol::Socks5,
+            host: "127.0.0.1".to_owned(),
+            port: 7890,
+            authentication_enabled: true,
+            username: "proxy-user".to_owned(),
+            password_saved: true,
+        };
+
+        store.save_network_proxy(&preferences).unwrap();
+
+        assert_eq!(store.load_network_proxy().unwrap(), preferences);
+        let json = fs::read_to_string(root.join("config.json")).unwrap();
+        assert!(!json.contains("password\":"));
+        assert!(!json.contains("proxy-password"));
 
         let _ = fs::remove_dir_all(root);
     }

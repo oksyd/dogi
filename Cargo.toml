@@ -26,10 +26,12 @@ serde_json = { version = "1.0.150", default-features = false, features = ["std"]
 semver = { version = "1.0.28", default-features = false, features = ["std"] }
 
 libc = { version = "0.2.186", default-features = false }
+gio = { version = "0.22.8", default-features = false, features = ["v2_74"] }
+keyring = { version = "4.1.6", default-features = false, features = ["v1", "zbus-secret-service-keyring-store"] }
 sha2 = { version = "0.10.9", default-features = false, features = ["std"] }
 ssh-key = { version = "0.6.7", default-features = false, features = ["ed25519", "std"] }
 tar = { version = "0.4.44", default-features = false }
-ureq = { version = "3.3.0", default-features = false, features = ["json", "platform-verifier", "rustls"] }
+ureq = { version = "3.3.0", default-features = false, features = ["json", "platform-verifier", "rustls", "socks-proxy"] }
 zstd = { version = "0.13.3", default-features = false }
 zbus = { version = "5.16.0", default-features = false, features = ["async-io", "blocking-api"] }
 

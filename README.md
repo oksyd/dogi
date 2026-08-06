@@ -12,7 +12,7 @@ actions.
 - Explicit, diff-only device writes with confirmation before changes are applied.
 - Custom keyboard and mouse actions through Linux `uinput`.
 - System tray integration, background runtime management, and English/Chinese UI.
-- Verified updates from immutable GitHub Releases for Debian and portable installations.
+- Verified updates from immutable GitHub Releases with system, direct, and manual proxy modes.
 
 ## Build and run
 
@@ -61,11 +61,12 @@ behavior are implemented locally through the background runtime and `uinput`.
 Installed and portable releases store configuration under `$XDG_CONFIG_HOME/dogi`, or
 `$HOME/.config/dogi` when `XDG_CONFIG_HOME` is unset:
 
-- `config.json` — application appearance and lifecycle preferences.
+- `config.json` — application, update, and non-secret network preferences.
 - `master3s.json` — default and per-device mouse profiles.
 
 Configuration writes use atomic replacement. Unsupported or malformed schemas are reported and
-left unchanged.
+left unchanged. Authenticated proxy passwords are stored in the desktop keyring, never in
+`config.json`.
 
 Local Cargo builds, including `--release` builds, use an isolated `dogi-development` namespace for
 configuration, cache, runtime sockets, and the GUI instance lock. They never install or rewrite the

@@ -35,7 +35,9 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libfontconfig1-dev
+          sudo apt-get install --no-install-recommends -y \
+            libfontconfig1-dev \
+            libglib2.0-dev
 
       - name: Prepare Rust toolchain
         run: rustup show active-toolchain
@@ -81,6 +83,8 @@ jobs:
           render update-restart-confirmation DOGI_UI_SNAPSHOT_UPDATE_READY=0.2.0 DOGI_UI_SNAPSHOT_UPDATE_CONFIRM=1
           render settings-dark DOGI_UI_SNAPSHOT_PAGE=3 DOGI_UI_SNAPSHOT_THEME=2
           render settings-zh-cn DOGI_UI_SNAPSHOT_PAGE=3 DOGI_UI_SNAPSHOT_LOCALE=zh_CN
+          render proxy-settings DOGI_UI_SNAPSHOT_PROXY=manual
+          render proxy-settings-zh-cn DOGI_UI_SNAPSHOT_PROXY=authenticated DOGI_UI_SNAPSHOT_LOCALE=zh_CN
           render language-menu DOGI_UI_SNAPSHOT_LANGUAGE_MENU=1
 
       - name: Upload rendered snapshots

@@ -1,4 +1,4 @@
-mod github;
+pub(crate) mod github;
 mod install;
 
 use std::path::PathBuf;
@@ -29,15 +29,16 @@ struct UpdateService {
     current_exe: PathBuf,
     cache_directory: PathBuf,
     installation: Installation,
-    github: GitHubReleaseClient,
-    config_store: Option<ApplicationConfigStore>,
+    network: crate::network::NetworkService,
+    config_store: ApplicationConfigStore,
     prepared: Option<PreparedUpdate>,
 }
 
 impl UpdateService {
     fn from_environment(
         environment: &AppEnvironment,
-        config_store: Option<ApplicationConfigStore>,
+        config_store: ApplicationConfigStore,
+        network: crate::network::NetworkService,
     ) -> std::result::Result<Self, String> {
         if !environment.updates.enabled {
             return Err(environment.updates.detail.clone());
@@ -55,7 +56,7 @@ impl UpdateService {
             current_exe,
             cache_directory,
             installation,
-            github: GitHubReleaseClient::new(),
+            network,
             config_store,
             prepared: None,
         })
@@ -76,22 +77,22 @@ impl UpdateService {
         intent: ApplicationUpdateCheckIntent,
     ) -> std::result::Result<ApplicationUpdateResult, String> {
         if intent == ApplicationUpdateCheckIntent::Automatic
-            && let Some(store) = &self.config_store
-            && !store
+            && !self
+                .config_store
                 .automatic_update_check_due(SystemTime::now(), AUTOMATIC_CHECK_INTERVAL)
                 .map_err(|error| error.to_string())?
         {
             return Ok(ApplicationUpdateResult::Deferred);
         }
+        let network = self.network.policy().map_err(|error| error.to_string())?;
+        let github = GitHubReleaseClient::new(&network);
         let kind = self.installation.asset_kind();
-        let Some(candidate) = self.github.latest(&self.current_version, &kind)? else {
+        let Some(candidate) = github.latest(&self.current_version, &kind)? else {
             self.prepared = None;
             self.record_successful_check();
             return Ok(ApplicationUpdateResult::UpToDate);
         };
-        let artifact = self
-            .github
-            .download(&candidate.artifact, &self.cache_directory)?;
+        let artifact = github.download(&candidate.artifact, &self.cache_directory)?;
         let version = candidate.version.to_string();
         self.prepared = Some(PreparedUpdate {
             candidate,
@@ -102,9 +103,9 @@ impl UpdateService {
     }
 
     fn record_successful_check(&self) {
-        if let Some(store) = &self.config_store {
-            let _ = store.record_successful_update_check(SystemTime::now());
-        }
+        let _ = self
+            .config_store
+            .record_successful_update_check(SystemTime::now());
     }
 
     fn install(&mut self) -> std::result::Result<ApplicationUpdateResult, String> {
@@ -126,10 +127,11 @@ impl UpdateService {
 
 pub(crate) fn application_update_manager(
     environment: &AppEnvironment,
-    config_store: Option<ApplicationConfigStore>,
+    config_store: ApplicationConfigStore,
+    network: crate::network::NetworkService,
 ) -> ApplicationUpdateManager {
     let current_version = env!("CARGO_PKG_VERSION").to_owned();
-    let service = match UpdateService::from_environment(environment, config_store) {
+    let service = match UpdateService::from_environment(environment, config_store, network) {
         Ok(service) => service,
         Err(detail) => return ApplicationUpdateManager::unavailable(detail),
     };
@@ -167,6 +169,8 @@ mod tests {
     #[test]
     fn development_policy_is_enforced_before_network_setup() {
         let environment = AppEnvironment::detect().unwrap();
-        assert!(UpdateService::from_environment(&environment, None).is_err());
+        let store = ApplicationConfigStore::for_environment(&environment);
+        let network = crate::network::NetworkService::new(store.clone());
+        assert!(UpdateService::from_environment(&environment, store, network).is_err());
     }
 }
