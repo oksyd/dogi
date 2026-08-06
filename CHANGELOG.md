@@ -1,8 +1,14 @@
+## [0.1.8] - 2026-08-06
+
+### 🐛 Bug Fixes
+
+- *(ui)* Prevent crash when enabling tray mode
 ## [0.1.7] - 2026-08-06
 
 ### ⚙️ Miscellaneous Tasks
 
 - *(ci)* Update
+- Release 0.1.7
 ## [0.1.6] - 2026-08-06
 
 ### 🚀 Features
