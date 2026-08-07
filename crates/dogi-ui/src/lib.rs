@@ -5,10 +5,11 @@ use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 use dogi_core::{
-    AppProfile, BatteryStatus, ButtonAction, CapabilityState, ConnectionKind,
-    DEFAULT_THUMB_WHEEL_SPEED_PERCENT, DeviceInfo, DogiError, MAX_THUMB_WHEEL_SPEED_PERCENT,
-    MIN_THUMB_WHEEL_SPEED_PERCENT, Master3sButton, Master3sSettings, Result,
-    SettingsApplyOperation, SettingsApplyPlan, SettingsApplyReport, SettingsApplyScope,
+    Action, AppProfile, AppProfileOverrides, ApplicationMatchField, ApplicationMatcher,
+    BatteryStatus, ButtonAction, ButtonBinding, CapabilityState, ConnectionKind,
+    DEFAULT_THUMB_WHEEL_SPEED_PERCENT, DeviceInfo, DogiError, GestureBindings,
+    MAX_THUMB_WHEEL_SPEED_PERCENT, MIN_THUMB_WHEEL_SPEED_PERCENT, Master3sButton, Master3sSettings,
+    Result, SettingsApplyOperation, SettingsApplyPlan, SettingsApplyReport, SettingsApplyScope,
     SettingsApplyStatus, SettingsApplyStep, ThumbWheelMode, WheelRatchetMode,
     build_master3s_apply_plan, build_master3s_device_diff_plan, device_settings_id,
     known_logitech_model_name, known_logitech_product_name, known_logitech_wpid_name,
@@ -2771,7 +2772,30 @@ fn set_settings_controls(window: &MainWindow, settings: &Master3sSettings) {
         settings.button_action(Master3sButton::ModeShift),
     ));
     window.set_middle_action_index(action_index(settings.button_action(Master3sButton::Middle)));
+    set_gesture_editor(window, &settings.gestures, false);
     set_app_profile_editor_from_settings(window, settings);
+}
+
+fn set_gesture_editor(window: &MainWindow, gestures: &GestureBindings, app_profile: bool) {
+    if app_profile {
+        window.set_app_profile_editor_gesture_click_action_index(runtime_action_index(
+            gestures.click,
+        ));
+        window.set_app_profile_editor_gesture_up_action_index(runtime_action_index(gestures.up));
+        window
+            .set_app_profile_editor_gesture_down_action_index(runtime_action_index(gestures.down));
+        window
+            .set_app_profile_editor_gesture_left_action_index(runtime_action_index(gestures.left));
+        window.set_app_profile_editor_gesture_right_action_index(runtime_action_index(
+            gestures.right,
+        ));
+    } else {
+        window.set_gesture_click_action_index(runtime_action_index(gestures.click));
+        window.set_gesture_up_action_index(runtime_action_index(gestures.up));
+        window.set_gesture_down_action_index(runtime_action_index(gestures.down));
+        window.set_gesture_left_action_index(runtime_action_index(gestures.left));
+        window.set_gesture_right_action_index(runtime_action_index(gestures.right));
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3126,16 +3150,16 @@ fn hidraw_node_missing(device: &LogicalDevice) -> bool {
 
 fn app_profile_row_from_profile(profile: &AppProfile) -> AppProfileRow {
     AppProfileRow {
-        app: profile.app_name.clone().into(),
+        app: profile.name.clone().into(),
         initial: profile
-            .app_name
+            .name
             .chars()
             .next()
             .map(|character| character.to_uppercase().collect::<String>())
             .unwrap_or_else(|| "?".to_owned())
             .into(),
-        pointer_speed: i32::from(profile.pointer_speed_percent),
-        thumb_wheel_index: thumb_wheel_index(profile.thumb_wheel),
+        match_field_index: application_match_field_index(profile.matcher.field),
+        override_count: i32::try_from(profile.overrides.count()).unwrap_or(i32::MAX),
     }
 }
 
@@ -3161,19 +3185,99 @@ fn set_app_profile_editor_from_settings(window: &MainWindow, settings: &Master3s
         set_app_profile_editor_from_profile(window, profile);
         window.set_selected_app_profile_index(0);
     } else {
-        window.set_app_profile_editor_app(String::new().into());
-        window.set_app_profile_editor_pointer_speed(100.0);
-        window.set_app_profile_editor_thumb_wheel_index(thumb_wheel_index(
-            ThumbWheelMode::HorizontalScroll,
-        ));
+        reset_app_profile_editor(window);
         window.set_selected_app_profile_index(-1);
     }
 }
 
 fn set_app_profile_editor_from_profile(window: &MainWindow, profile: &AppProfile) {
-    window.set_app_profile_editor_app(profile.app_name.clone().into());
-    window.set_app_profile_editor_pointer_speed(f32::from(profile.pointer_speed_percent));
-    window.set_app_profile_editor_thumb_wheel_index(thumb_wheel_index(profile.thumb_wheel));
+    reset_app_profile_editor(window);
+    window.set_app_profile_editor_app(profile.matcher.value.clone().into());
+    window.set_app_profile_editor_match_field_index(application_match_field_index(
+        profile.matcher.field,
+    ));
+    let overrides = &profile.overrides;
+    window.set_app_profile_editor_pointer_enabled(overrides.pointer_speed_percent.is_some());
+    window.set_app_profile_editor_pointer_speed(f32::from(
+        overrides.pointer_speed_percent.unwrap_or(100),
+    ));
+    window.set_app_profile_editor_wheel_enabled(
+        overrides.ratchet_mode.is_some() || overrides.smart_shift_threshold.is_some(),
+    );
+    window.set_app_profile_editor_wheel_mode_index(wheel_mode_index(
+        overrides
+            .ratchet_mode
+            .unwrap_or(WheelRatchetMode::SmartShift),
+    ));
+    window.set_app_profile_editor_smart_shift_threshold(f32::from(
+        overrides.smart_shift_threshold.unwrap_or(45),
+    ));
+    window.set_app_profile_editor_scroll_enabled(
+        overrides.high_resolution_scroll.is_some() || overrides.natural_scroll.is_some(),
+    );
+    window.set_app_profile_editor_high_resolution_scroll(
+        overrides.high_resolution_scroll.unwrap_or(true),
+    );
+    window.set_app_profile_editor_scroll_direction_index(i32::from(
+        overrides.natural_scroll.unwrap_or(false),
+    ));
+    window.set_app_profile_editor_thumb_wheel_enabled(
+        overrides.thumb_wheel.is_some() || overrides.thumb_wheel_speed_percent.is_some(),
+    );
+    window.set_app_profile_editor_thumb_wheel_index(thumb_wheel_index(
+        overrides
+            .thumb_wheel
+            .unwrap_or(ThumbWheelMode::HorizontalScroll),
+    ));
+    window.set_app_profile_editor_thumb_wheel_speed(f32::from(
+        overrides
+            .thumb_wheel_speed_percent
+            .unwrap_or(DEFAULT_THUMB_WHEEL_SPEED_PERCENT),
+    ));
+    window.set_app_profile_editor_buttons_enabled(!overrides.buttons.is_empty());
+    for button in Master3sButton::ALL {
+        let action = overrides
+            .buttons
+            .iter()
+            .find(|binding| binding.button == button)
+            .map(|binding| binding.action)
+            .unwrap_or(ButtonAction::Native);
+        set_app_profile_button_action(window, button, action_index(action));
+    }
+    if let Some(gestures) = &overrides.gestures {
+        set_gesture_editor(window, gestures, true);
+    }
+}
+
+fn reset_app_profile_editor(window: &MainWindow) {
+    window.set_app_profile_editor_app(String::new().into());
+    window.set_app_profile_editor_match_field_index(0);
+    window.set_app_profile_editor_pointer_enabled(false);
+    window.set_app_profile_editor_pointer_speed(100.0);
+    window.set_app_profile_editor_wheel_enabled(false);
+    window.set_app_profile_editor_wheel_mode_index(2);
+    window.set_app_profile_editor_smart_shift_threshold(45.0);
+    window.set_app_profile_editor_scroll_enabled(false);
+    window.set_app_profile_editor_high_resolution_scroll(true);
+    window.set_app_profile_editor_scroll_direction_index(0);
+    window.set_app_profile_editor_thumb_wheel_enabled(false);
+    window.set_app_profile_editor_thumb_wheel_index(0);
+    window.set_app_profile_editor_thumb_wheel_speed(100.0);
+    window.set_app_profile_editor_buttons_enabled(false);
+    for button in Master3sButton::ALL {
+        set_app_profile_button_action(window, button, action_index(ButtonAction::Native));
+    }
+    set_gesture_editor(window, &GestureBindings::default(), true);
+}
+
+fn set_app_profile_button_action(window: &MainWindow, button: Master3sButton, index: i32) {
+    match button {
+        Master3sButton::Back => window.set_app_profile_editor_back_action_index(index),
+        Master3sButton::Forward => window.set_app_profile_editor_forward_action_index(index),
+        Master3sButton::Gesture => window.set_app_profile_editor_gesture_action_index(index),
+        Master3sButton::ModeShift => window.set_app_profile_editor_mode_shift_action_index(index),
+        Master3sButton::Middle => window.set_app_profile_editor_middle_action_index(index),
+    }
 }
 
 fn plan_row_from_step(step: &SettingsApplyStep, settings: &Master3sSettings) -> PlanRow {
@@ -3227,9 +3331,8 @@ fn plan_row_from_step(step: &SettingsApplyStep, settings: &Master3sSettings) -> 
         }
         SettingsApplyOperation::AppProfile { profile } => {
             row.kind = PlanKind::AppProfile;
-            row.name = profile.app_name.clone().into();
-            row.value = i32::from(profile.pointer_speed_percent);
-            row.primary_index = thumb_wheel_index(profile.thumb_wheel);
+            row.name = profile.name.clone().into();
+            row.secondary_value = i32::try_from(profile.overrides.count()).unwrap_or(i32::MAX);
         }
     }
 
@@ -3297,7 +3400,38 @@ fn settings_from_window(window: &MainWindow, base: &Master3sSettings) -> Master3
         Master3sButton::Middle,
         action_from_index(window.get_middle_action_index()),
     );
+    settings.gestures = gestures_from_window(window, false);
     settings
+}
+
+fn gestures_from_window(window: &MainWindow, app_profile: bool) -> GestureBindings {
+    if app_profile {
+        GestureBindings {
+            click: runtime_action_from_index(
+                window.get_app_profile_editor_gesture_click_action_index(),
+            ),
+            up: runtime_action_from_index(window.get_app_profile_editor_gesture_up_action_index()),
+            down: runtime_action_from_index(
+                window.get_app_profile_editor_gesture_down_action_index(),
+            ),
+            left: runtime_action_from_index(
+                window.get_app_profile_editor_gesture_left_action_index(),
+            ),
+            right: runtime_action_from_index(
+                window.get_app_profile_editor_gesture_right_action_index(),
+            ),
+            ..GestureBindings::default()
+        }
+    } else {
+        GestureBindings {
+            click: runtime_action_from_index(window.get_gesture_click_action_index()),
+            up: runtime_action_from_index(window.get_gesture_up_action_index()),
+            down: runtime_action_from_index(window.get_gesture_down_action_index()),
+            left: runtime_action_from_index(window.get_gesture_left_action_index()),
+            right: runtime_action_from_index(window.get_gesture_right_action_index()),
+            ..GestureBindings::default()
+        }
+    }
 }
 
 fn upsert_app_profile_from_window(
@@ -3305,20 +3439,23 @@ fn upsert_app_profile_from_window(
     settings: &mut Master3sSettings,
 ) -> std::result::Result<String, ProfileEditError> {
     let app_name = clean_app_profile_name(&window.get_app_profile_editor_app())?;
-    let pointer_speed = clamp_percent(window.get_app_profile_editor_pointer_speed());
-    let thumb_wheel =
-        thumb_wheel_mode_from_index(window.get_app_profile_editor_thumb_wheel_index());
-    let profile_name = upsert_app_profile(settings, &app_name, pointer_speed, thumb_wheel)?;
+    let overrides = app_profile_overrides_from_window(window);
+    let profile_name = upsert_app_profile(
+        settings,
+        &app_name,
+        application_match_field_from_index(window.get_app_profile_editor_match_field_index()),
+        overrides,
+    )?;
     let profile = settings
         .app_profiles
         .iter()
         .find(|profile| {
-            normalize_app_profile_key(&profile.app_name) == normalize_app_profile_key(&profile_name)
+            normalize_app_profile_key(&profile.name) == normalize_app_profile_key(&profile_name)
         })
         .expect("updated app profile exists");
     set_app_profile_editor_from_profile(window, profile);
     if let Some(index) = settings.app_profiles.iter().position(|profile| {
-        normalize_app_profile_key(&profile.app_name) == normalize_app_profile_key(&profile_name)
+        normalize_app_profile_key(&profile.name) == normalize_app_profile_key(&profile_name)
     }) {
         window.set_selected_app_profile_index(index as i32);
     }
@@ -3329,8 +3466,8 @@ fn upsert_app_profile_from_window(
 fn upsert_app_profile(
     settings: &mut Master3sSettings,
     app_name: &str,
-    pointer_speed: u8,
-    thumb_wheel: ThumbWheelMode,
+    match_field: ApplicationMatchField,
+    overrides: AppProfileOverrides,
 ) -> std::result::Result<String, ProfileEditError> {
     let app_name = clean_app_profile_name(app_name)?;
     let key = normalize_app_profile_key(&app_name);
@@ -3338,20 +3475,102 @@ fn upsert_app_profile(
     if let Some(profile) = settings
         .app_profiles
         .iter_mut()
-        .find(|profile| normalize_app_profile_key(&profile.app_name) == key)
+        .find(|profile| normalize_app_profile_key(&profile.name) == key)
     {
-        profile.app_name = app_name.clone();
-        profile.pointer_speed_percent = pointer_speed;
-        profile.thumb_wheel = thumb_wheel;
+        *profile = AppProfile {
+            name: app_name.clone(),
+            matcher: ApplicationMatcher {
+                field: match_field,
+                value: app_name.clone(),
+            },
+            overrides,
+        }
+        .normalized();
     } else {
         settings.app_profiles.push(AppProfile {
-            app_name: app_name.clone(),
-            pointer_speed_percent: pointer_speed,
-            thumb_wheel,
+            name: app_name.clone(),
+            matcher: ApplicationMatcher {
+                field: match_field,
+                value: app_name.clone(),
+            },
+            overrides,
         });
     }
 
     Ok(app_name)
+}
+
+fn app_profile_overrides_from_window(window: &MainWindow) -> AppProfileOverrides {
+    let buttons = if window.get_app_profile_editor_buttons_enabled() {
+        [
+            (
+                Master3sButton::Back,
+                window.get_app_profile_editor_back_action_index(),
+            ),
+            (
+                Master3sButton::Forward,
+                window.get_app_profile_editor_forward_action_index(),
+            ),
+            (
+                Master3sButton::Gesture,
+                window.get_app_profile_editor_gesture_action_index(),
+            ),
+            (
+                Master3sButton::ModeShift,
+                window.get_app_profile_editor_mode_shift_action_index(),
+            ),
+            (
+                Master3sButton::Middle,
+                window.get_app_profile_editor_middle_action_index(),
+            ),
+        ]
+        .into_iter()
+        .map(|(button, index)| ButtonBinding {
+            button,
+            action: action_from_index(index),
+        })
+        .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let gestures = buttons
+        .iter()
+        .any(|binding| binding.action == ButtonAction::Gestures)
+        .then(|| gestures_from_window(window, true));
+
+    AppProfileOverrides {
+        pointer_speed_percent: window
+            .get_app_profile_editor_pointer_enabled()
+            .then(|| clamp_percent(window.get_app_profile_editor_pointer_speed())),
+        smart_shift_threshold: window
+            .get_app_profile_editor_wheel_enabled()
+            .then(|| clamp_u8(window.get_app_profile_editor_smart_shift_threshold(), 1, 50)),
+        ratchet_mode: window
+            .get_app_profile_editor_wheel_enabled()
+            .then(|| ratchet_mode_from_index(window.get_app_profile_editor_wheel_mode_index())),
+        high_resolution_scroll: window
+            .get_app_profile_editor_scroll_enabled()
+            .then(|| window.get_app_profile_editor_high_resolution_scroll()),
+        natural_scroll: window
+            .get_app_profile_editor_scroll_enabled()
+            .then(|| window.get_app_profile_editor_scroll_direction_index() == 1),
+        thumb_wheel: window
+            .get_app_profile_editor_thumb_wheel_enabled()
+            .then(|| {
+                thumb_wheel_mode_from_index(window.get_app_profile_editor_thumb_wheel_index())
+            }),
+        thumb_wheel_speed_percent: window
+            .get_app_profile_editor_thumb_wheel_enabled()
+            .then(|| {
+                clamp_u16(
+                    window.get_app_profile_editor_thumb_wheel_speed(),
+                    MIN_THUMB_WHEEL_SPEED_PERCENT,
+                    MAX_THUMB_WHEEL_SPEED_PERCENT,
+                )
+            }),
+        buttons,
+        gestures,
+    }
 }
 
 fn remove_app_profile_from_window(
@@ -3371,7 +3590,7 @@ fn remove_app_profile(
     let original_len = settings.app_profiles.len();
     settings
         .app_profiles
-        .retain(|profile| normalize_app_profile_key(&profile.app_name) != key);
+        .retain(|profile| normalize_app_profile_key(&profile.name) != key);
 
     if settings.app_profiles.len() == original_len {
         return Err(ProfileEditError::NotFound(app_name));
@@ -3466,33 +3685,65 @@ fn thumb_wheel_index(mode: ThumbWheelMode) -> i32 {
 
 fn action_from_index(index: i32) -> ButtonAction {
     match index {
-        0 => ButtonAction::Back,
-        1 => ButtonAction::Forward,
-        2 => ButtonAction::Overview,
-        3 => ButtonAction::WindowSwitcher,
-        4 => ButtonAction::PreviousWorkspace,
-        5 => ButtonAction::NextWorkspace,
-        6 => ButtonAction::MiddleClick,
-        7 => ButtonAction::Copy,
-        8 => ButtonAction::Paste,
-        9 => ButtonAction::Disabled,
+        0..=9 => ButtonAction::Action(runtime_action_from_index(index)),
+        11 => ButtonAction::Gestures,
         _ => ButtonAction::Native,
     }
 }
 
 fn action_index(action: ButtonAction) -> i32 {
     match action {
-        ButtonAction::Back => 0,
-        ButtonAction::Forward => 1,
-        ButtonAction::Overview => 2,
-        ButtonAction::WindowSwitcher => 3,
-        ButtonAction::PreviousWorkspace => 4,
-        ButtonAction::NextWorkspace => 5,
-        ButtonAction::MiddleClick => 6,
-        ButtonAction::Copy => 7,
-        ButtonAction::Paste => 8,
-        ButtonAction::Disabled => 9,
+        ButtonAction::Action(action) => runtime_action_index(action),
         ButtonAction::Native => 10,
+        ButtonAction::Gestures => 11,
+    }
+}
+
+fn runtime_action_from_index(index: i32) -> Action {
+    match index {
+        0 => Action::Back,
+        1 => Action::Forward,
+        2 => Action::Overview,
+        3 => Action::WindowSwitcher,
+        4 => Action::PreviousWorkspace,
+        5 => Action::NextWorkspace,
+        6 => Action::MiddleClick,
+        7 => Action::Copy,
+        8 => Action::Paste,
+        _ => Action::Disabled,
+    }
+}
+
+fn runtime_action_index(action: Action) -> i32 {
+    match action {
+        Action::Back => 0,
+        Action::Forward => 1,
+        Action::Overview => 2,
+        Action::WindowSwitcher => 3,
+        Action::PreviousWorkspace => 4,
+        Action::NextWorkspace => 5,
+        Action::MiddleClick => 6,
+        Action::Copy => 7,
+        Action::Paste => 8,
+        Action::Disabled => 9,
+    }
+}
+
+fn application_match_field_from_index(index: i32) -> ApplicationMatchField {
+    match index {
+        1 => ApplicationMatchField::Title,
+        2 => ApplicationMatchField::Class,
+        3 => ApplicationMatchField::Executable,
+        _ => ApplicationMatchField::Any,
+    }
+}
+
+fn application_match_field_index(field: ApplicationMatchField) -> i32 {
+    match field {
+        ApplicationMatchField::Any => 0,
+        ApplicationMatchField::Title => 1,
+        ApplicationMatchField::Class => 2,
+        ApplicationMatchField::Executable => 3,
     }
 }
 
@@ -3517,6 +3768,21 @@ mod tests {
     use slint::ComponentHandle;
     use slint_snapshot::{SnapshotRuntime, runtime::ClockMode};
     use std::{cell::Cell, path::Path};
+
+    fn test_app_profile(name: &str) -> AppProfile {
+        AppProfile {
+            name: name.to_owned(),
+            matcher: ApplicationMatcher {
+                field: ApplicationMatchField::Any,
+                value: name.to_owned(),
+            },
+            overrides: AppProfileOverrides {
+                pointer_speed_percent: Some(90),
+                thumb_wheel: Some(ThumbWheelMode::Zoom),
+                ..AppProfileOverrides::default()
+            },
+        }
+    }
 
     #[test]
     fn logical_devices_collapse_receiver_interfaces() {
@@ -3770,12 +4036,14 @@ mod tests {
 
     #[test]
     fn maps_button_actions_to_widget_indices() {
-        for (index, action) in ButtonAction::ALL.into_iter().enumerate() {
-            assert_eq!(action_from_index(index as i32), action);
-            assert_eq!(action_index(action), index as i32);
+        for (index, action) in Action::ALL.into_iter().enumerate() {
+            let button_action = ButtonAction::Action(action);
+            assert_eq!(action_from_index(index as i32), button_action);
+            assert_eq!(action_index(button_action), index as i32);
         }
 
         assert_eq!(action_from_index(99), ButtonAction::Native);
+        assert_eq!(action_from_index(11), ButtonAction::Gestures);
     }
 
     #[test]
@@ -4020,18 +4288,14 @@ mod tests {
         let button_step = SettingsApplyStep {
             operation: SettingsApplyOperation::ButtonMapping {
                 button: Master3sButton::Back,
-                action: ButtonAction::Back,
+                action: ButtonAction::Action(Action::Back),
             },
             feature: HidppFeature::ReprogrammableControls,
             requires_device_write: true,
         };
         let local_step = SettingsApplyStep {
             operation: SettingsApplyOperation::AppProfile {
-                profile: AppProfile {
-                    app_name: "Firefox".to_owned(),
-                    pointer_speed_percent: 100,
-                    thumb_wheel: ThumbWheelMode::HorizontalScroll,
-                },
+                profile: test_app_profile("Firefox"),
             },
             feature: HidppFeature::LocalProfile,
             requires_device_write: false,
@@ -4119,11 +4383,7 @@ mod tests {
     fn local_only_changes_do_not_create_mouse_write_steps() {
         let saved = Master3sSettings::default();
         let mut target = saved.clone();
-        target.app_profiles.push(AppProfile {
-            app_name: "Firefox".to_owned(),
-            pointer_speed_percent: 90,
-            thumb_wheel: ThumbWheelMode::Zoom,
-        });
+        target.app_profiles.push(test_app_profile("Firefox"));
 
         assert!(
             device_apply_plan("device-1", &saved, &target)
@@ -4188,23 +4448,48 @@ mod tests {
             ..Master3sSettings::default()
         };
 
-        upsert_app_profile(&mut settings, " firefox ", 90, ThumbWheelMode::TabSwitch).unwrap();
-        upsert_app_profile(&mut settings, "Firefox", 110, ThumbWheelMode::Zoom).unwrap();
+        upsert_app_profile(
+            &mut settings,
+            " firefox ",
+            ApplicationMatchField::Any,
+            AppProfileOverrides {
+                pointer_speed_percent: Some(90),
+                ..AppProfileOverrides::default()
+            },
+        )
+        .unwrap();
+        upsert_app_profile(
+            &mut settings,
+            "Firefox",
+            ApplicationMatchField::Executable,
+            AppProfileOverrides {
+                pointer_speed_percent: Some(110),
+                thumb_wheel: Some(ThumbWheelMode::Zoom),
+                ..AppProfileOverrides::default()
+            },
+        )
+        .unwrap();
 
         assert_eq!(settings.app_profiles.len(), 1);
-        assert_eq!(settings.app_profiles[0].app_name, "Firefox");
-        assert_eq!(settings.app_profiles[0].pointer_speed_percent, 110);
-        assert_eq!(settings.app_profiles[0].thumb_wheel, ThumbWheelMode::Zoom);
+        assert_eq!(settings.app_profiles[0].name, "Firefox");
+        assert_eq!(
+            settings.app_profiles[0].overrides.pointer_speed_percent,
+            Some(110)
+        );
+        assert_eq!(
+            settings.app_profiles[0].overrides.thumb_wheel,
+            Some(ThumbWheelMode::Zoom)
+        );
+        assert_eq!(
+            settings.app_profiles[0].matcher.field,
+            ApplicationMatchField::Executable
+        );
     }
 
     #[test]
     fn app_profile_remove_deletes_by_normalized_name() {
         let mut settings = Master3sSettings {
-            app_profiles: vec![AppProfile {
-                app_name: "Visual Studio Code".to_owned(),
-                pointer_speed_percent: 90,
-                thumb_wheel: ThumbWheelMode::HorizontalScroll,
-            }],
+            app_profiles: vec![test_app_profile("Visual Studio Code")],
             ..Master3sSettings::default()
         };
 
@@ -4288,14 +4573,14 @@ mod tests {
                 AppProfileRow {
                     app: "Firefox".into(),
                     initial: "F".into(),
-                    pointer_speed: 90,
-                    thumb_wheel_index: 1,
+                    match_field_index: 0,
+                    override_count: 2,
                 },
                 AppProfileRow {
                     app: "Code".into(),
                     initial: "C".into(),
-                    pointer_speed: 100,
-                    thumb_wheel_index: 0,
+                    match_field_index: 3,
+                    override_count: 3,
                 },
             ]))
             .into(),
@@ -4662,8 +4947,8 @@ mod tests {
                         format!("Creative application workspace {}", index + 1).into()
                     },
                     initial: if index == 0 { "F" } else { "A" }.into(),
-                    pointer_speed: 80 + index * 5,
-                    thumb_wheel_index: 0,
+                    match_field_index: index % 4,
+                    override_count: 1 + index % 5,
                 })
                 .collect()
         } else {
@@ -4671,20 +4956,20 @@ mod tests {
                 AppProfileRow {
                     app: "Firefox".into(),
                     initial: "F".into(),
-                    pointer_speed: 90,
-                    thumb_wheel_index: 1,
+                    match_field_index: 0,
+                    override_count: 2,
                 },
                 AppProfileRow {
                     app: "Code".into(),
                     initial: "C".into(),
-                    pointer_speed: 100,
-                    thumb_wheel_index: 0,
+                    match_field_index: 3,
+                    override_count: 4,
                 },
                 AppProfileRow {
                     app: "Figma".into(),
                     initial: "F".into(),
-                    pointer_speed: 120,
-                    thumb_wheel_index: 2,
+                    match_field_index: 1,
+                    override_count: 3,
                 },
             ]
         };
@@ -4808,6 +5093,22 @@ mod tests {
         window.set_app_profile_editor_thumb_wheel_index(if empty_profiles_preview { 0 } else { 1 });
         window.set_selected_button_index(2);
         window.set_selected_app_profile_index(if empty_profiles_preview { -1 } else { 0 });
+        if std::env::var_os("DOGI_UI_SNAPSHOT_GESTURES").is_some() {
+            window.set_page_index(1);
+            window.set_selected_button_index(2);
+            window.set_gesture_action_index(11);
+        }
+        if std::env::var_os("DOGI_UI_SNAPSHOT_APP_PROFILE_EDITOR").is_some() {
+            window.set_page_index(2);
+            window.set_selected_app_profile_index(0);
+            window.set_app_profile_editor_app("firefox".into());
+            window.set_app_profile_editor_match_field_index(3);
+            window.set_app_profile_editor_pointer_enabled(true);
+            window.set_app_profile_editor_pointer_speed(90.0);
+            window.set_app_profile_editor_scroll_enabled(true);
+            window.set_app_profile_editor_high_resolution_scroll(true);
+            window.set_app_profile_editor_scroll_direction_index(1);
+        }
         window.set_draft_dirty(std::env::var_os("DOGI_UI_SNAPSHOT_CLEAN").is_none());
         if let Ok(theme_index) = std::env::var("DOGI_UI_SNAPSHOT_THEME")
             && let Ok(theme_index) = theme_index.parse::<i32>()

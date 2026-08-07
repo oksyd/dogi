@@ -8,6 +8,7 @@ actions.
 
 - Multi-device profiles with independent drafts and settings.
 - Pointer speed, scroll wheel, thumb wheel, button, and application-profile controls.
+- Five-way gesture assignments with an in-app gesture test surface.
 - Device identity, capability, connection, and battery detection through HID++.
 - Explicit, diff-only device writes with confirmation before changes are applied.
 - Custom keyboard and mouse actions through Linux `uinput`.
@@ -88,4 +89,4 @@ operations are explicitly enabled. Unmanaged and development binaries do not cre
 services.
 
 X11 application matching uses `xprop`. Wayland does not expose an equivalent global active-window
-API, so application profiles remain visible but unavailable there.
+API, so profiles can be edited there but automatic profile switching remains unavailable.

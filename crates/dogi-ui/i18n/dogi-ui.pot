@@ -1,8 +1,8 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: dogi-ui 0.1.8\n"
-"POT-Creation-Date: 2026-08-06 09:41+0000\n"
+"Project-Id-Version: dogi-ui 0.1.9\n"
+"POT-Creation-Date: 2026-08-07 02:06+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -12,666 +12,735 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: crates/dogi-ui/ui/app.slint:546
+#: crates/dogi-ui/ui/app.slint:547
 msgid "Test horizontal scrolling"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:569
+#: crates/dogi-ui/ui/app.slint:570
 msgid "Baseline · 100%"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:598
+#: crates/dogi-ui/ui/app.slint:599
 msgid "Current · {}%"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:621 crates/dogi-ui/ui/app.slint:1641
-#: crates/dogi-ui/ui/app.slint:621 crates/dogi-ui/ui/app.slint:1641 crates/dogi-ui/ui/app.slint:3103
+#: crates/dogi-ui/ui/app.slint:622 crates/dogi-ui/ui/app.slint:1693
+#: crates/dogi-ui/ui/app.slint:622 crates/dogi-ui/ui/app.slint:1693 crates/dogi-ui/ui/app.slint:3268
 msgid "Unavailable"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:622 crates/dogi-ui/ui/app.slint:1642
+#: crates/dogi-ui/ui/app.slint:623 crates/dogi-ui/ui/app.slint:1694
 msgid "Starting…"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:623
+#: crates/dogi-ui/ui/app.slint:624
 msgid "Stop"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:624
+#: crates/dogi-ui/ui/app.slint:625
 msgid "Test"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:711
+#: crates/dogi-ui/ui/app.slint:712
 msgid "Roll the thumb wheel"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:850 crates/dogi-ui/ui/app.slint:865
+#: crates/dogi-ui/ui/app.slint:851 crates/dogi-ui/ui/app.slint:866
 msgid "Scroll mode"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1028
+#: crates/dogi-ui/ui/app.slint:1029
 msgid "Settings · Update available"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1147 crates/dogi-ui/ui/i18n.slint:38
+#: crates/dogi-ui/ui/app.slint:1148 crates/dogi-ui/ui/i18n.slint:38
 msgid "Identifying…"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1148 crates/dogi-ui/ui/i18n.slint:33
+#: crates/dogi-ui/ui/app.slint:1149 crates/dogi-ui/ui/i18n.slint:33
 msgid "Connected"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1149
+#: crates/dogi-ui/ui/app.slint:1150
 msgid "Detected"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1150
+#: crates/dogi-ui/ui/app.slint:1151
 msgid "Offline"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1163
+#: crates/dogi-ui/ui/app.slint:1164
 msgid "Receiver overview"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1164
+#: crates/dogi-ui/ui/app.slint:1165
 msgid "Device overview"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1165
+#: crates/dogi-ui/ui/app.slint:1166
 msgid "Preview"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1239
+#: crates/dogi-ui/ui/app.slint:1240
 msgid "Pointer"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1251 crates/dogi-ui/ui/app.slint:3159
+#: crates/dogi-ui/ui/app.slint:1252 crates/dogi-ui/ui/app.slint:3296
 msgid "Main wheel"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1263 crates/dogi-ui/ui/app.slint:2814
-#: crates/dogi-ui/ui/app.slint:1263 crates/dogi-ui/ui/app.slint:2814
+#: crates/dogi-ui/ui/app.slint:1264 crates/dogi-ui/ui/app.slint:2930
+#: crates/dogi-ui/ui/app.slint:1264 crates/dogi-ui/ui/app.slint:2930
 msgid "Thumb wheel"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1276
+#: crates/dogi-ui/ui/app.slint:1277
 msgid "Transport"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1287 crates/dogi-ui/ui/i18n.slint:13
+#: crates/dogi-ui/ui/app.slint:1288 crates/dogi-ui/ui/i18n.slint:13
 msgid "USB"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1288
+#: crates/dogi-ui/ui/app.slint:1289
 msgid "Interface"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1300
+#: crates/dogi-ui/ui/app.slint:1301
 msgid "Interfaces"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1423
+#: crates/dogi-ui/ui/app.slint:1424
 msgid "Select a control on the mouse"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1643
+#: crates/dogi-ui/ui/app.slint:1530
+msgid "Test gesture"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:1531 crates/dogi-ui/ui/app.slint:3099
+#: crates/dogi-ui/ui/app.slint:1531 crates/dogi-ui/ui/app.slint:3099
+msgid "Click"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:1531
+msgid "Up"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:1531
+msgid "Down"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:1531
+msgid "Left"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:1531
+msgid "Right"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:1695
 msgid "Running"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1644
+#: crates/dogi-ui/ui/app.slint:1696
 msgid "Off"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1645 crates/dogi-ui/ui/app.slint:1753
+#: crates/dogi-ui/ui/app.slint:1697 crates/dogi-ui/ui/app.slint:1805
 msgid "Needs attention"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1652
+#: crates/dogi-ui/ui/app.slint:1704
 msgid "Development builds do not manage the installed background service"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1654
+#: crates/dogi-ui/ui/app.slint:1706
 msgid "This binary has no persistent background integration"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1672 crates/dogi-ui/ui/app.slint:1726
+#: crates/dogi-ui/ui/app.slint:1724 crates/dogi-ui/ui/app.slint:1778
 msgid "Background operations"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1710 crates/dogi-ui/ui/app.slint:1822
+#: crates/dogi-ui/ui/app.slint:1762 crates/dogi-ui/ui/app.slint:1874
 msgid "Retry"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1710
+#: crates/dogi-ui/ui/app.slint:1762
 msgid "Restart"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1749 crates/dogi-ui/ui/app.slint:1823
+#: crates/dogi-ui/ui/app.slint:1801 crates/dogi-ui/ui/app.slint:1875
 msgid "Checking…"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1750
+#: crates/dogi-ui/ui/app.slint:1802
 msgid "Up to date"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1751
+#: crates/dogi-ui/ui/app.slint:1803
 msgid "Ready"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1752 crates/dogi-ui/ui/app.slint:1824
+#: crates/dogi-ui/ui/app.slint:1804 crates/dogi-ui/ui/app.slint:1876
 msgid "Installing…"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1755
+#: crates/dogi-ui/ui/app.slint:1807
 msgid "Automatic"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1762
+#: crates/dogi-ui/ui/app.slint:1814
 msgid "Version {} is ready to install"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1765 crates/dogi-ui/ui/app.slint:1766
+#: crates/dogi-ui/ui/app.slint:1817 crates/dogi-ui/ui/app.slint:1818
 msgid "Version {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1783
+#: crates/dogi-ui/ui/app.slint:1835
 msgid "Dogi updates"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1821
+#: crates/dogi-ui/ui/app.slint:1873
 msgid "Install & Restart"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1825
+#: crates/dogi-ui/ui/app.slint:1877
 msgid "Check now"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1848
+#: crates/dogi-ui/ui/app.slint:1900
 msgid "Check and download updates automatically"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1868 crates/dogi-ui/ui/app.slint:1935
+#: crates/dogi-ui/ui/app.slint:1920 crates/dogi-ui/ui/app.slint:1987
 msgid "Follow system settings"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1869 crates/dogi-ui/ui/app.slint:1936
+#: crates/dogi-ui/ui/app.slint:1921 crates/dogi-ui/ui/app.slint:1988
 msgid "Direct connection"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1870 crates/dogi-ui/ui/app.slint:1937
+#: crates/dogi-ui/ui/app.slint:1922 crates/dogi-ui/ui/app.slint:1989
 msgid "Manual proxy"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1885 crates/dogi-ui/ui/app.slint:1970
-#: crates/dogi-ui/ui/app.slint:1885 crates/dogi-ui/ui/app.slint:1970
+#: crates/dogi-ui/ui/app.slint:1937 crates/dogi-ui/ui/app.slint:2022
+#: crates/dogi-ui/ui/app.slint:1937 crates/dogi-ui/ui/app.slint:2022
 msgid "Network proxy"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1896
+#: crates/dogi-ui/ui/app.slint:1948
 msgid "Configure"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:1985
+#: crates/dogi-ui/ui/app.slint:2037
 msgid "Controls network access for Dogi updates."
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2001
+#: crates/dogi-ui/ui/app.slint:2053
 msgid "Connection"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2021
+#: crates/dogi-ui/ui/app.slint:2073
 msgid "Protocol"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2022
+#: crates/dogi-ui/ui/app.slint:2074
 msgid "Host"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2023
+#: crates/dogi-ui/ui/app.slint:2075
 msgid "Port"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2047 crates/dogi-ui/ui/app.slint:2056
+#: crates/dogi-ui/ui/app.slint:2099 crates/dogi-ui/ui/app.slint:2108
 msgid "Proxy authentication"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2048
+#: crates/dogi-ui/ui/app.slint:2100
 msgid "Store credentials in the desktop keyring"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2074
+#: crates/dogi-ui/ui/app.slint:2126
 msgid "Username"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2075 crates/dogi-ui/ui/app.slint:2085
+#: crates/dogi-ui/ui/app.slint:2127 crates/dogi-ui/ui/app.slint:2137
 msgid "Password"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2085
+#: crates/dogi-ui/ui/app.slint:2137
 msgid "Saved password"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2104
+#: crates/dogi-ui/ui/app.slint:2156
 msgid "Testing connection…"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2105
+#: crates/dogi-ui/ui/app.slint:2157
 msgid "Saving proxy settings…"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2106
+#: crates/dogi-ui/ui/app.slint:2158
 msgid "Connected directly"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2107
+#: crates/dogi-ui/ui/app.slint:2159
 msgid "Connected through {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2109
+#: crates/dogi-ui/ui/app.slint:2161
 msgid "Test access to GitHub before saving."
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2131 crates/dogi-ui/ui/app.slint:2225
-#: crates/dogi-ui/ui/app.slint:2131 crates/dogi-ui/ui/app.slint:2225
+#: crates/dogi-ui/ui/app.slint:2183 crates/dogi-ui/ui/app.slint:2277
+#: crates/dogi-ui/ui/app.slint:2183 crates/dogi-ui/ui/app.slint:2277
 msgid "Cancel"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2132
+#: crates/dogi-ui/ui/app.slint:2184
 msgid "Test connection"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2133
+#: crates/dogi-ui/ui/app.slint:2185
 msgid "Save"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2293 crates/dogi-ui/ui/app.slint:3675
+#: crates/dogi-ui/ui/app.slint:2345 crates/dogi-ui/ui/app.slint:3850
 msgid "Dogi {} is ready"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2294
+#: crates/dogi-ui/ui/app.slint:2346
 msgid "Install the update when you are ready to restart Dogi."
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2425
+#: crates/dogi-ui/ui/app.slint:2523
+msgid "Any identity"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:2524
+msgid "Window title"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:2525
+msgid "Window class"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:2526
+msgid "Executable"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:2541
 msgid "System language"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2430
+#: crates/dogi-ui/ui/app.slint:2546
 msgid "System theme"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2431
+#: crates/dogi-ui/ui/app.slint:2547
 msgid "Light"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2432
+#: crates/dogi-ui/ui/app.slint:2548
 msgid "Dark"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2435 crates/dogi-ui/ui/app.slint:3695
+#: crates/dogi-ui/ui/app.slint:2551 crates/dogi-ui/ui/app.slint:3870
 msgid "Quit dogi"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2436
+#: crates/dogi-ui/ui/app.slint:2552
 msgid "Keep running in tray"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2503
+#: crates/dogi-ui/ui/app.slint:2619
 msgid "Devices"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2511
+#: crates/dogi-ui/ui/app.slint:2627
 msgid "No mouse found"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2518 crates/dogi-ui/ui/app.slint:2594
+#: crates/dogi-ui/ui/app.slint:2634 crates/dogi-ui/ui/app.slint:2710
 msgid "Logitech device"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2539 crates/dogi-ui/ui/app.slint:2590
+#: crates/dogi-ui/ui/app.slint:2655 crates/dogi-ui/ui/app.slint:2706
 msgid "Settings"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2592
+#: crates/dogi-ui/ui/app.slint:2708
 msgid "No mouse connected"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2606
+#: crates/dogi-ui/ui/app.slint:2722
 msgid "Supported"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2635
+#: crates/dogi-ui/ui/app.slint:2751
 msgid "Editing default settings"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2637
+#: crates/dogi-ui/ui/app.slint:2753
 msgid "{} · Identifying…"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2640
+#: crates/dogi-ui/ui/app.slint:2756
 msgid "{} · {} · {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2644
+#: crates/dogi-ui/ui/app.slint:2760
 msgid "{} · {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2663
+#: crates/dogi-ui/ui/app.slint:2779
 msgid "Scanning…"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2663
+#: crates/dogi-ui/ui/app.slint:2779
 msgid "Rescan"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2678 crates/dogi-ui/ui/app.slint:3633
+#: crates/dogi-ui/ui/app.slint:2794 crates/dogi-ui/ui/app.slint:3808
 msgid "Revert Changes"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2692 crates/dogi-ui/ui/app.slint:2740
-#: crates/dogi-ui/ui/app.slint:2692 crates/dogi-ui/ui/app.slint:2740
+#: crates/dogi-ui/ui/app.slint:2808 crates/dogi-ui/ui/app.slint:2856
+#: crates/dogi-ui/ui/app.slint:2808 crates/dogi-ui/ui/app.slint:2856
 msgid "Pointer & Wheel"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2693
+#: crates/dogi-ui/ui/app.slint:2809
 msgid "Buttons"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2694 crates/dogi-ui/ui/app.slint:2975
-#: crates/dogi-ui/ui/app.slint:2694 crates/dogi-ui/ui/app.slint:2975
+#: crates/dogi-ui/ui/app.slint:2810 crates/dogi-ui/ui/app.slint:3125
+#: crates/dogi-ui/ui/app.slint:2810 crates/dogi-ui/ui/app.slint:3125
 msgid "App Profiles"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2730
+#: crates/dogi-ui/ui/app.slint:2846
 msgid "Preparing custom actions…"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2732
+#: crates/dogi-ui/ui/app.slint:2848
 msgid "Background operations are off"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2733
+#: crates/dogi-ui/ui/app.slint:2849
 msgid "Custom actions are unavailable: {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2757
+#: crates/dogi-ui/ui/app.slint:2873
 msgid "{} · {}%"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2774 crates/dogi-ui/ui/app.slint:3134
+#: crates/dogi-ui/ui/app.slint:2890 crates/dogi-ui/ui/app.slint:3285
 msgid "Pointer speed"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2793
+#: crates/dogi-ui/ui/app.slint:2909
 msgid "Scroll wheel"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2796
+#: crates/dogi-ui/ui/app.slint:2912 crates/dogi-ui/ui/app.slint:3300
 msgid "SmartShift sensitivity"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2800
+#: crates/dogi-ui/ui/app.slint:2916 crates/dogi-ui/ui/app.slint:3311
 msgid "Smooth scrolling"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2805
+#: crates/dogi-ui/ui/app.slint:2921
 msgid "Scroll direction"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2806
+#: crates/dogi-ui/ui/app.slint:2922 crates/dogi-ui/ui/app.slint:3313
 msgid "Standard"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2806
+#: crates/dogi-ui/ui/app.slint:2922 crates/dogi-ui/ui/app.slint:3313
 msgid "Natural"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2817 crates/dogi-ui/ui/app.slint:2918
-#: crates/dogi-ui/ui/app.slint:2817 crates/dogi-ui/ui/app.slint:2918
+#: crates/dogi-ui/ui/app.slint:2933 crates/dogi-ui/ui/app.slint:3035
+#: crates/dogi-ui/ui/app.slint:2933 crates/dogi-ui/ui/app.slint:3035
 msgid "Dogi"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2835
+#: crates/dogi-ui/ui/app.slint:2951
 msgid "Horizontal scroll speed"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2875 crates/dogi-ui/ui/app.slint:3171
-#: crates/dogi-ui/ui/app.slint:2875 crates/dogi-ui/ui/app.slint:3171
+#: crates/dogi-ui/ui/app.slint:2992 crates/dogi-ui/ui/app.slint:3335
+#: crates/dogi-ui/ui/app.slint:2992 crates/dogi-ui/ui/app.slint:3335
 msgid "Button assignments"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2923
+#: crates/dogi-ui/ui/app.slint:3040
 msgid "Thumb · rear"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2924
+#: crates/dogi-ui/ui/app.slint:3041
 msgid "Thumb · front"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2925
+#: crates/dogi-ui/ui/app.slint:3042
 msgid "Thumb rest"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2926
+#: crates/dogi-ui/ui/app.slint:3043
 msgid "Behind the wheel"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2927
+#: crates/dogi-ui/ui/app.slint:3044
 msgid "Wheel press"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2933 crates/dogi-ui/ui/app.slint:2935
-#: crates/dogi-ui/ui/app.slint:2933 crates/dogi-ui/ui/app.slint:2935 crates/dogi-ui/ui/app.slint:2937
-#: crates/dogi-ui/ui/app.slint:2933 crates/dogi-ui/ui/app.slint:2935 crates/dogi-ui/ui/app.slint:2937 crates/dogi-ui/ui/app.slint:2939
+#: crates/dogi-ui/ui/app.slint:3050 crates/dogi-ui/ui/app.slint:3052
+#: crates/dogi-ui/ui/app.slint:3050 crates/dogi-ui/ui/app.slint:3052 crates/dogi-ui/ui/app.slint:3054
+#: crates/dogi-ui/ui/app.slint:3050 crates/dogi-ui/ui/app.slint:3052 crates/dogi-ui/ui/app.slint:3054 crates/dogi-ui/ui/app.slint:3056
 msgid "Assigned action"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2958
+#: crates/dogi-ui/ui/app.slint:3075
 msgid "All controls"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:2978
+#: crates/dogi-ui/ui/app.slint:3100 crates/dogi-ui/ui/app.slint:3351
+msgid "Move up"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:3101 crates/dogi-ui/ui/app.slint:3352
+msgid "Move down"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:3102 crates/dogi-ui/ui/app.slint:3353
+msgid "Move left"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:3103 crates/dogi-ui/ui/app.slint:3354
+msgid "Move right"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:3128
 msgid "Automatic app switching is unavailable in this Wayland session."
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3013
+#: crates/dogi-ui/ui/app.slint:3163
 msgid "Profiles"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3014
+#: crates/dogi-ui/ui/app.slint:3164
 msgid "{n} profile configured"
 msgid_plural "{n} profiles configured"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/dogi-ui/ui/app.slint:3025
+#: crates/dogi-ui/ui/app.slint:3175
 msgid "New"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3045
+#: crates/dogi-ui/ui/app.slint:3211
 msgid "No profiles yet"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3048
+#: crates/dogi-ui/ui/app.slint:3214
 msgid "Create one to override settings for an application."
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3049
+#: crates/dogi-ui/ui/app.slint:3215
 msgid "Profiles switch pointer and thumb wheel settings for the active app."
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3095
+#: crates/dogi-ui/ui/app.slint:3267
 msgid "New profile"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3107
+#: crates/dogi-ui/ui/app.slint:3269
 msgid "Remove"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3108
+#: crates/dogi-ui/ui/app.slint:3270
 msgid "Add profile"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3108
+#: crates/dogi-ui/ui/app.slint:3270
 msgid "Update profile"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3117 crates/dogi-ui/ui/app.slint:3118
-msgid "App name or ID"
+#: crates/dogi-ui/ui/app.slint:3274
+msgid "Application match"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3118
+#: crates/dogi-ui/ui/app.slint:3275
+msgid "Match field"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:3276
+msgid "Application identifier"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:3276
 msgid "For example: firefox"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3121
+#: crates/dogi-ui/ui/app.slint:3278
 msgid "Overrides"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3140
-msgid "Inherited from the device"
+#: crates/dogi-ui/ui/app.slint:3287 crates/dogi-ui/ui/app.slint:3326
+msgid "Speed"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3170
-msgid "5 controls"
+#: crates/dogi-ui/ui/app.slint:3298
+msgid "Mode"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3182
-msgid "Device defaults"
+#: crates/dogi-ui/ui/app.slint:3309
+msgid "Scroll behavior"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3183
-msgid "When unmatched"
+#: crates/dogi-ui/ui/app.slint:3313
+msgid "Direction"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3199
+#: crates/dogi-ui/ui/app.slint:3324
+msgid "Behavior"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:3373
 msgid "Appearance"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3217
+#: crates/dogi-ui/ui/app.slint:3391
 msgid "Language"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3224
+#: crates/dogi-ui/ui/app.slint:3398
 msgid "Theme"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3234
+#: crates/dogi-ui/ui/app.slint:3408
 msgid "Window"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3248
+#: crates/dogi-ui/ui/app.slint:3422
 msgid "When closing the window"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3257
+#: crates/dogi-ui/ui/app.slint:3431
 msgid "Background"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3285
+#: crates/dogi-ui/ui/app.slint:3459
 msgid "Network"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3310
+#: crates/dogi-ui/ui/app.slint:3484
 msgid "Updates"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3438 crates/dogi-ui/ui/loading.slint:50
-#: crates/dogi-ui/ui/app.slint:3438 crates/dogi-ui/ui/loading.slint:50
+#: crates/dogi-ui/ui/app.slint:3613 crates/dogi-ui/ui/loading.slint:50
+#: crates/dogi-ui/ui/app.slint:3613 crates/dogi-ui/ui/loading.slint:50
 msgid "Identifying device…"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3440
+#: crates/dogi-ui/ui/app.slint:3615
 msgid "Ready to apply"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3440
+#: crates/dogi-ui/ui/app.slint:3615
 msgid "Changes not saved"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3441
+#: crates/dogi-ui/ui/app.slint:3616
 msgid "Settings saved"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3454
+#: crates/dogi-ui/ui/app.slint:3629
 msgid "Apply Changes…"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3463
+#: crates/dogi-ui/ui/app.slint:3638
 msgid "Save Changes"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3507
+#: crates/dogi-ui/ui/app.slint:3682
 msgid "Apply Changes"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3510
+#: crates/dogi-ui/ui/app.slint:3685
 msgid "{n} setting · {}"
 msgid_plural "{n} settings · {}"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/dogi-ui/ui/app.slint:3546
+#: crates/dogi-ui/ui/app.slint:3721
 msgid ""
 "Dogi adjusts active settings only; it does not update firmware or manage "
 "onboard profiles."
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3562
+#: crates/dogi-ui/ui/app.slint:3737
 msgid "Settings to apply"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3565
+#: crates/dogi-ui/ui/app.slint:3740
 msgid "{n} setting"
 msgid_plural "{n} settings"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/dogi-ui/ui/app.slint:3603
+#: crates/dogi-ui/ui/app.slint:3778
 msgid "Apply"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3631
+#: crates/dogi-ui/ui/app.slint:3806
 msgid "Revert Unsaved Changes?"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3632
+#: crates/dogi-ui/ui/app.slint:3807
 msgid "The saved configuration for this mouse will be restored."
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3645
+#: crates/dogi-ui/ui/app.slint:3820
 msgid "Unsaved Changes"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3646
+#: crates/dogi-ui/ui/app.slint:3821
 msgid "Save your mouse changes before installing Dogi {}? Dogi will restart."
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3647
+#: crates/dogi-ui/ui/app.slint:3822
 msgid "Save & Restart"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3648
+#: crates/dogi-ui/ui/app.slint:3823
 msgid "Restart Without Saving"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3658
+#: crates/dogi-ui/ui/app.slint:3833
 msgid "Quit Without Saving?"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3659
+#: crates/dogi-ui/ui/app.slint:3834
 msgid "Unsaved mouse configuration changes will be lost."
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3660
+#: crates/dogi-ui/ui/app.slint:3835
 msgid "Quit Without Saving"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3686
+#: crates/dogi-ui/ui/app.slint:3861
 msgid "Open dogi"
 msgstr ""
 
-#: crates/dogi-ui/ui/app.slint:3690
+#: crates/dogi-ui/ui/app.slint:3865
 msgid "Update available · {}"
 msgstr ""
 
@@ -855,11 +924,11 @@ msgstr ""
 msgid "Middle click"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:104 crates/dogi-ui/ui/i18n.slint:119
+#: crates/dogi-ui/ui/i18n.slint:104 crates/dogi-ui/ui/i18n.slint:120
 msgid "Back"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:105 crates/dogi-ui/ui/i18n.slint:120
+#: crates/dogi-ui/ui/i18n.slint:105 crates/dogi-ui/ui/i18n.slint:121
 msgid "Forward"
 msgstr ""
 
@@ -879,204 +948,210 @@ msgstr ""
 msgid "Next Workspace"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:110 crates/dogi-ui/ui/i18n.slint:122
+#: crates/dogi-ui/ui/i18n.slint:110 crates/dogi-ui/ui/i18n.slint:123
 msgid "Middle Click"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:114 crates/dogi-ui/ui/i18n.slint:123
+#: crates/dogi-ui/ui/i18n.slint:114 crates/dogi-ui/ui/i18n.slint:124
 msgid "Default Behavior"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:121
+#: crates/dogi-ui/ui/i18n.slint:115
+msgid "Gestures"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:122
 msgid "Scroll Mode Switch"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:127
-msgid "{}% pointer, thumb wheel {}"
-msgstr ""
+#: crates/dogi-ui/ui/i18n.slint:128
+msgid "{n} override"
+msgid_plural "{n} overrides"
+msgstr[0] ""
+msgstr[1] ""
 
-#: crates/dogi-ui/ui/i18n.slint:132
+#: crates/dogi-ui/ui/i18n.slint:133
 msgid "Set pointer speed to {}%"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:134
+#: crates/dogi-ui/ui/i18n.slint:135
 msgid "Use SmartShift with sensitivity {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:136
+#: crates/dogi-ui/ui/i18n.slint:137
 msgid "Use {} scrolling"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:138
+#: crates/dogi-ui/ui/i18n.slint:139
 msgid "Smooth scrolling · Natural direction"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:140
+#: crates/dogi-ui/ui/i18n.slint:141
 msgid "Smooth scrolling · Standard direction"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:142
+#: crates/dogi-ui/ui/i18n.slint:143
 msgid "Smooth scrolling off · Natural direction"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:144
+#: crates/dogi-ui/ui/i18n.slint:145
 msgid "Smooth scrolling off · Standard direction"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:146
+#: crates/dogi-ui/ui/i18n.slint:147
 msgid "Enable smooth scrolling"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:148
+#: crates/dogi-ui/ui/i18n.slint:149
 msgid "Disable smooth scrolling"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:150
+#: crates/dogi-ui/ui/i18n.slint:151
 msgid "Use natural scroll direction"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:152
+#: crates/dogi-ui/ui/i18n.slint:153
 msgid "Use standard scroll direction"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:154
+#: crates/dogi-ui/ui/i18n.slint:155
 msgid "Use native horizontal scrolling"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:156
+#: crates/dogi-ui/ui/i18n.slint:157
 msgid "Use horizontal scrolling at {}% through Dogi"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:158
+#: crates/dogi-ui/ui/i18n.slint:159
 msgid "Route thumb wheel through Dogi for {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:160
+#: crates/dogi-ui/ui/i18n.slint:161
 msgid "Route {} through dogi for {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:162
+#: crates/dogi-ui/ui/i18n.slint:163
 msgid "Use native behavior for {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:164
+#: crates/dogi-ui/ui/i18n.slint:165
 msgid "Run the local runtime listener"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:165
-msgid "Save local app profile {} at {}%, thumb wheel {}"
+#: crates/dogi-ui/ui/i18n.slint:166
+msgid "Save local app profile {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:172
+#: crates/dogi-ui/ui/i18n.slint:173
 msgid "Applied with {} failed, {} successful, {} unsupported"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:174
+#: crates/dogi-ui/ui/i18n.slint:175
 msgid "Applied {} settings, {} unsupported"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:175
+#: crates/dogi-ui/ui/i18n.slint:176
 msgid "Applied {} settings"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:179
+#: crates/dogi-ui/ui/i18n.slint:180
 msgid "Device scanner stopped unexpectedly"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:180
+#: crates/dogi-ui/ui/i18n.slint:181
 msgid "Scan failed: {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:181
+#: crates/dogi-ui/ui/i18n.slint:182
 msgid "No Logitech devices found"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:182
+#: crates/dogi-ui/ui/i18n.slint:183
 msgid "Scanning devices…"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:183
+#: crates/dogi-ui/ui/i18n.slint:184
 msgid "Scan failed to start: {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:184
+#: crates/dogi-ui/ui/i18n.slint:185
 msgid "Editing {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:185
+#: crates/dogi-ui/ui/i18n.slint:186
 msgid "Changes reverted"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:186
+#: crates/dogi-ui/ui/i18n.slint:187
 msgid "Changes saved"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:188
+#: crates/dogi-ui/ui/i18n.slint:189
 msgid "Changes saved. Apply them when the mouse is available."
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:189
+#: crates/dogi-ui/ui/i18n.slint:190
 msgid "Save failed: {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:190
+#: crates/dogi-ui/ui/i18n.slint:191
 msgid "Enter an app name"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:191
+#: crates/dogi-ui/ui/i18n.slint:192
 msgid "App profile {} was not found"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:192
+#: crates/dogi-ui/ui/i18n.slint:193
 msgid "Connect a supported mouse with full HID access to apply settings"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:193
+#: crates/dogi-ui/ui/i18n.slint:194
 msgid "Connect the mouse to apply {n} setting"
 msgid_plural "Connect the mouse to apply {n} settings"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/dogi-ui/ui/i18n.slint:194
+#: crates/dogi-ui/ui/i18n.slint:195
 msgid "Applying {n} setting is unavailable"
 msgid_plural "Applying {n} settings is unavailable"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/dogi-ui/ui/i18n.slint:195
+#: crates/dogi-ui/ui/i18n.slint:196
 msgid "Review {n} mouse setting"
 msgid_plural "Review {n} mouse settings"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/dogi-ui/ui/i18n.slint:197
+#: crates/dogi-ui/ui/i18n.slint:198
 msgid "{} · Settings saved"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:200
+#: crates/dogi-ui/ui/i18n.slint:201
 msgid "Could not apply settings: {}. Your changes were saved."
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:202
+#: crates/dogi-ui/ui/i18n.slint:203
 msgid "Apply failed: {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:204
+#: crates/dogi-ui/ui/i18n.slint:205
 msgid "Could not save application settings: {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:206
+#: crates/dogi-ui/ui/i18n.slint:207
 msgid "Could not load application settings: {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:208
+#: crates/dogi-ui/ui/i18n.slint:209
 msgid "Could not switch language: {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:210
+#: crates/dogi-ui/ui/i18n.slint:211
 msgid "System tray is unavailable: {}"
 msgstr ""
 
-#: crates/dogi-ui/ui/i18n.slint:212
+#: crates/dogi-ui/ui/i18n.slint:213
 msgid "System tray is unavailable"
 msgstr ""

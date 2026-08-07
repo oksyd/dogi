@@ -6,13 +6,14 @@ use std::time::Duration;
 
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 use dogi_core::{
-    ActiveApplication, AppProfile, ButtonAction, CapabilityState, DeviceInfo, DogiError,
-    HidppFeature, LOGITECH_VENDOR_ID, LocalRuntimePlan, Master3sButton, Master3sRuntimeEvent,
-    Master3sSettings, ResolvedRuntimeAction, Result, RuntimeActionSource, SettingsApplyPlan,
-    SettingsApplyReport, SettingsApplyStatus, ThumbWheelMode, ThumbWheelRuntimeAction,
-    WheelRatchetMode, build_master3s_apply_plan, build_master3s_device_diff_plan,
-    build_master3s_runtime_plan, device_settings_id, effective_master3s_settings_for_app,
-    resolve_master3s_runtime_event, resolved_logitech_device_name, settings_apply_step_scope,
+    Action, ActiveApplication, AppProfile, AppProfileOverrides, ApplicationMatchField,
+    ApplicationMatcher, ButtonAction, CapabilityState, DeviceInfo, DogiError, GestureBindings,
+    GestureDirection, HidppFeature, LOGITECH_VENDOR_ID, LocalRuntimePlan, Master3sButton,
+    Master3sRuntimeEvent, Master3sSettings, ResolvedRuntimeAction, Result, RuntimeActionResolver,
+    RuntimeActionSource, SettingsApplyPlan, SettingsApplyReport, SettingsApplyStatus,
+    ThumbWheelMode, ThumbWheelRuntimeAction, WheelRatchetMode, build_master3s_apply_plan,
+    build_master3s_device_diff_plan, build_master3s_runtime_plan, device_settings_id,
+    effective_master3s_settings_for_app, resolved_logitech_device_name, settings_apply_step_scope,
 };
 
 use crate::application;
@@ -231,12 +232,42 @@ struct ConfigAppProfileSetArgs {
     /// Application name/class/executable substring, such as firefox or code.
     #[arg(long)]
     app: String,
+    /// Identity field used to match the active application.
+    #[arg(long, value_enum, default_value_t = CliApplicationMatchField::Any)]
+    match_field: CliApplicationMatchField,
     /// Pointer speed percent for this app, clamped to 50..200.
     #[arg(long)]
     pointer_speed: Option<u8>,
+    /// Main wheel behavior for this app.
+    #[arg(long)]
+    wheel_mode: Option<CliWheelMode>,
+    /// SmartShift sensitivity for this app, clamped to 1..50.
+    #[arg(long)]
+    smart_shift_threshold: Option<u8>,
+    /// Enable smooth scrolling for this app.
+    #[arg(long, action = ArgAction::SetTrue, conflicts_with = "no_smooth_scrolling")]
+    smooth_scrolling: bool,
+    /// Disable smooth scrolling for this app.
+    #[arg(long, action = ArgAction::SetTrue)]
+    no_smooth_scrolling: bool,
+    /// Use natural scrolling for this app.
+    #[arg(long, action = ArgAction::SetTrue, conflicts_with = "standard_scrolling")]
+    natural_scrolling: bool,
+    /// Use standard scrolling for this app.
+    #[arg(long, action = ArgAction::SetTrue)]
+    standard_scrolling: bool,
     /// Thumb wheel behavior for this app.
     #[arg(long)]
     thumb_wheel: Option<CliThumbWheelMode>,
+    /// Thumb wheel speed percent for this app, clamped to 25..400.
+    #[arg(long)]
+    thumb_wheel_speed: Option<u16>,
+    /// Button override such as gesture=gestures or back=copy. Can be repeated.
+    #[arg(long = "button", value_parser = parse_button_mapping)]
+    button_mappings: Vec<CliButtonMapping>,
+    /// Gesture binding such as up=overview. Can be repeated.
+    #[arg(long = "gesture", value_parser = parse_gesture_mapping)]
+    gesture_mappings: Vec<CliGestureMapping>,
     /// Print JSON instead of a readable report.
     #[arg(long)]
     json: bool,
@@ -353,10 +384,25 @@ enum CliThumbWheelMode {
     Disabled,
 }
 
+#[derive(Clone, Copy, Debug, Default, ValueEnum)]
+enum CliApplicationMatchField {
+    #[default]
+    Any,
+    Title,
+    Class,
+    Executable,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct CliButtonMapping {
     button: Master3sButton,
     action: ButtonAction,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CliGestureMapping {
+    direction: GestureDirection,
+    action: Action,
 }
 
 pub fn run() -> ExitCode {
@@ -669,9 +715,10 @@ fn runtime_listen(
         args.events,
         Duration::from_millis(args.idle_timeout_ms),
     )?;
+    let mut resolver = RuntimeActionResolver::default();
     let actions = events
         .iter()
-        .flat_map(|event| resolve_master3s_runtime_event(&runtime_plan, event))
+        .flat_map(|event| resolver.resolve(&runtime_plan, event))
         .collect::<Vec<_>>();
     let executions = if args.execute_actions {
         daemon.execute_master3s_runtime_actions(&actions)?
@@ -766,6 +813,7 @@ fn runtime_run_session(
     let mut preview_error: Option<(u64, String)> = None;
     let mut listener = daemon.open_master3s_runtime_event_listener(&device_id)?;
     let mut action_executor = None;
+    let mut action_resolver = RuntimeActionResolver::default();
 
     println!("Runtime service for {device_id}");
     println!(
@@ -802,7 +850,7 @@ fn runtime_run_session(
         let matched_profile_name = effective
             .matched_profile
             .as_ref()
-            .map(|profile| profile.app_name.clone());
+            .map(|profile| profile.name.clone());
         let preview_snapshot = preview_state.snapshot();
         if preview_error
             .as_ref()
@@ -834,6 +882,9 @@ fn runtime_run_session(
         let device_settings = runtime_device_settings(&effective.settings, active_preview);
         let profile_changed =
             active_effective_state.profile_name.as_deref() != matched_profile_name.as_deref();
+        if profile_changed {
+            action_resolver.reset();
+        }
         let preview_transition = active_effective_state.preview_active != active_preview.is_some();
         let mut preview_apply_failed = false;
         let device_apply_needed = profile_changed || preview_transition;
@@ -916,7 +967,7 @@ fn runtime_run_session(
         }
 
         for event in events {
-            let actions = resolve_master3s_runtime_event(&runtime_plan, &event);
+            let actions = action_resolver.resolve(&runtime_plan, &event);
             let executions = if !args.execute_actions {
                 Vec::new()
             } else if let Some(executor) = action_executor.as_mut() {
@@ -1572,10 +1623,16 @@ fn print_app_profiles(profiles: &[AppProfile]) {
     println!("  app profiles: {}", profiles.len());
     for profile in profiles {
         println!(
-            "    {}: pointer {}%, thumb wheel {}",
-            profile.app_name,
-            profile.pointer_speed_percent,
-            profile.thumb_wheel.label()
+            "    {}: {} {} · {} override group{}",
+            profile.name,
+            profile.matcher.field.label(),
+            profile.matcher.value,
+            profile.overrides.count(),
+            if profile.overrides.count() == 1 {
+                ""
+            } else {
+                "s"
+            }
         );
     }
 }
@@ -1729,6 +1786,9 @@ fn format_runtime_event(event: &Master3sRuntimeEvent) -> String {
                 (true, true) => "diverted buttons none".to_owned(),
             }
         }
+        Master3sRuntimeEvent::RawMovement { x, y } => {
+            format!("gesture movement x {x}, y {y}")
+        }
     }
 }
 
@@ -1744,6 +1804,9 @@ fn format_runtime_action_source(source: &RuntimeActionSource) -> String {
     match source {
         RuntimeActionSource::ThumbWheel => "thumb wheel".to_owned(),
         RuntimeActionSource::Button(button) => button.label().to_owned(),
+        RuntimeActionSource::Gesture { button, direction } => {
+            format!("{} gesture {}", button.label(), direction.label())
+        }
         RuntimeActionSource::UnknownControlId(control_id) => {
             format!("unknown control 0x{control_id:04X}")
         }
@@ -1870,29 +1933,81 @@ fn upsert_app_profile(
 ) -> Result<()> {
     let app_name = clean_app_profile_name(&args.app)?;
     let key = normalize_cli_name(&app_name);
-    let profile = settings
+    let mut gestures = GestureBindings::default();
+    for mapping in &args.gesture_mappings {
+        match mapping.direction {
+            GestureDirection::Click => gestures.click = mapping.action,
+            GestureDirection::Up => gestures.up = mapping.action,
+            GestureDirection::Down => gestures.down = mapping.action,
+            GestureDirection::Left => gestures.left = mapping.action,
+            GestureDirection::Right => gestures.right = mapping.action,
+        }
+    }
+    let mut buttons = args
+        .button_mappings
+        .iter()
+        .map(|mapping| dogi_core::ButtonBinding {
+            button: mapping.button,
+            action: mapping.action,
+        })
+        .collect::<Vec<_>>();
+    if !args.gesture_mappings.is_empty() {
+        match buttons
+            .iter()
+            .find(|binding| binding.button == Master3sButton::Gesture)
+        {
+            Some(binding) if binding.action != ButtonAction::Gestures => {
+                return Err(DogiError::InvalidArgument(
+                    "gesture mappings require --button gesture=gestures".to_owned(),
+                ));
+            }
+            Some(_) => {}
+            None => buttons.push(dogi_core::ButtonBinding {
+                button: Master3sButton::Gesture,
+                action: ButtonAction::Gestures,
+            }),
+        }
+    }
+    let overrides = AppProfileOverrides {
+        pointer_speed_percent: args.pointer_speed,
+        smart_shift_threshold: args.smart_shift_threshold,
+        ratchet_mode: args.wheel_mode.map(WheelRatchetMode::from),
+        high_resolution_scroll: args
+            .smooth_scrolling
+            .then_some(true)
+            .or(args.no_smooth_scrolling.then_some(false)),
+        natural_scroll: args
+            .natural_scrolling
+            .then_some(true)
+            .or(args.standard_scrolling.then_some(false)),
+        thumb_wheel: args.thumb_wheel.map(ThumbWheelMode::from),
+        thumb_wheel_speed_percent: args.thumb_wheel_speed,
+        buttons,
+        gestures: (!args.gesture_mappings.is_empty()).then_some(gestures),
+    };
+    if overrides.count() == 0 {
+        return Err(DogiError::InvalidArgument(
+            "app profile requires at least one override".to_owned(),
+        ));
+    }
+    let profile = AppProfile {
+        name: app_name.clone(),
+        matcher: ApplicationMatcher {
+            field: args.match_field.into(),
+            value: app_name.clone(),
+        },
+        overrides,
+    }
+    .normalized();
+
+    if let Some(existing) = settings
         .app_profiles
         .iter_mut()
-        .find(|profile| normalize_cli_name(&profile.app_name) == key);
-
-    match profile {
-        Some(profile) => {
-            profile.app_name = app_name;
-            if let Some(pointer_speed) = args.pointer_speed {
-                profile.pointer_speed_percent = pointer_speed;
-            }
-            if let Some(thumb_wheel) = args.thumb_wheel {
-                profile.thumb_wheel = thumb_wheel.into();
-            }
-        }
-        None => settings.app_profiles.push(AppProfile {
-            app_name,
-            pointer_speed_percent: args.pointer_speed.unwrap_or(100),
-            thumb_wheel: args
-                .thumb_wheel
-                .map(ThumbWheelMode::from)
-                .unwrap_or(ThumbWheelMode::HorizontalScroll),
-        }),
+        .find(|profile| normalize_cli_name(&profile.name) == key)
+    {
+        *existing = profile;
+    } else {
+        settings.app_profiles.push(profile);
     }
 
     Ok(())
@@ -1904,7 +2019,7 @@ fn remove_app_profile(settings: &mut Master3sSettings, app_name: &str) -> Result
     let original_len = settings.app_profiles.len();
     settings
         .app_profiles
-        .retain(|profile| normalize_cli_name(&profile.app_name) != key);
+        .retain(|profile| normalize_cli_name(&profile.name) != key);
 
     if settings.app_profiles.len() == original_len {
         return Err(DogiError::InvalidArgument(format!(
@@ -2000,6 +2115,17 @@ impl From<CliThumbWheelMode> for ThumbWheelMode {
     }
 }
 
+impl From<CliApplicationMatchField> for ApplicationMatchField {
+    fn from(value: CliApplicationMatchField) -> Self {
+        match value {
+            CliApplicationMatchField::Any => Self::Any,
+            CliApplicationMatchField::Title => Self::Title,
+            CliApplicationMatchField::Class => Self::Class,
+            CliApplicationMatchField::Executable => Self::Executable,
+        }
+    }
+}
+
 fn parse_button_mapping(value: &str) -> std::result::Result<CliButtonMapping, String> {
     let Some((button, action)) = value.split_once('=') else {
         return Err("expected BUTTON=ACTION, for example back=copy".to_owned());
@@ -2025,20 +2151,43 @@ fn parse_master3s_button(value: &str) -> std::result::Result<Master3sButton, Str
 fn parse_button_action(value: &str) -> std::result::Result<ButtonAction, String> {
     match normalize_cli_name(value).as_str() {
         "native" | "default" | "defaultbehavior" => Ok(ButtonAction::Native),
-        "back" => Ok(ButtonAction::Back),
-        "forward" => Ok(ButtonAction::Forward),
-        "overview" | "activitiesoverview" | "missioncontrol" => Ok(ButtonAction::Overview),
-        "switchwindows" | "windowswitcher" | "appexpose" | "expose" => {
-            Ok(ButtonAction::WindowSwitcher)
-        }
-        "previousworkspace" | "desktopleft" | "leftdesktop" => Ok(ButtonAction::PreviousWorkspace),
-        "nextworkspace" | "desktopright" | "rightdesktop" => Ok(ButtonAction::NextWorkspace),
-        "middleclick" | "middle" => Ok(ButtonAction::MiddleClick),
-        "copy" => Ok(ButtonAction::Copy),
-        "paste" => Ok(ButtonAction::Paste),
-        "disabled" | "disable" | "none" => Ok(ButtonAction::Disabled),
-        _ => Err(format!("unknown button action '{value}'")),
+        "gestures" | "gesture" => Ok(ButtonAction::Gestures),
+        _ => parse_action(value).map(ButtonAction::Action),
     }
+}
+
+fn parse_action(value: &str) -> std::result::Result<Action, String> {
+    match normalize_cli_name(value).as_str() {
+        "back" => Ok(Action::Back),
+        "forward" => Ok(Action::Forward),
+        "overview" | "activitiesoverview" | "missioncontrol" => Ok(Action::Overview),
+        "switchwindows" | "windowswitcher" | "appexpose" | "expose" => Ok(Action::WindowSwitcher),
+        "previousworkspace" | "desktopleft" | "leftdesktop" => Ok(Action::PreviousWorkspace),
+        "nextworkspace" | "desktopright" | "rightdesktop" => Ok(Action::NextWorkspace),
+        "middleclick" | "middle" => Ok(Action::MiddleClick),
+        "copy" => Ok(Action::Copy),
+        "paste" => Ok(Action::Paste),
+        "disabled" | "disable" | "none" => Ok(Action::Disabled),
+        _ => Err(format!("unknown action '{value}'")),
+    }
+}
+
+fn parse_gesture_mapping(value: &str) -> std::result::Result<CliGestureMapping, String> {
+    let Some((direction, action)) = value.split_once('=') else {
+        return Err("expected DIRECTION=ACTION, for example up=overview".to_owned());
+    };
+    let direction = match normalize_cli_name(direction).as_str() {
+        "click" | "none" => GestureDirection::Click,
+        "up" => GestureDirection::Up,
+        "down" => GestureDirection::Down,
+        "left" => GestureDirection::Left,
+        "right" => GestureDirection::Right,
+        _ => return Err(format!("unknown gesture direction '{direction}'")),
+    };
+    Ok(CliGestureMapping {
+        direction,
+        action: parse_action(action)?,
+    })
 }
 
 fn normalize_cli_name(value: &str) -> String {
@@ -2113,6 +2262,40 @@ struct DoctorReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn app_profile_args(app: &str) -> ConfigAppProfileSetArgs {
+        ConfigAppProfileSetArgs {
+            app: app.to_owned(),
+            match_field: CliApplicationMatchField::Any,
+            pointer_speed: None,
+            wheel_mode: None,
+            smart_shift_threshold: None,
+            smooth_scrolling: false,
+            no_smooth_scrolling: false,
+            natural_scrolling: false,
+            standard_scrolling: false,
+            thumb_wheel: None,
+            thumb_wheel_speed: None,
+            button_mappings: Vec::new(),
+            gesture_mappings: Vec::new(),
+            json: false,
+        }
+    }
+
+    fn test_app_profile(name: &str) -> AppProfile {
+        AppProfile {
+            name: name.to_owned(),
+            matcher: ApplicationMatcher {
+                field: ApplicationMatchField::Any,
+                value: name.to_owned(),
+            },
+            overrides: AppProfileOverrides {
+                pointer_speed_percent: Some(80),
+                thumb_wheel: Some(ThumbWheelMode::Zoom),
+                ..AppProfileOverrides::default()
+            },
+        }
+    }
 
     #[test]
     fn truncate_keeps_short_values() {
@@ -2598,67 +2781,106 @@ mod tests {
 
         assert_eq!(
             settings.button_action(Master3sButton::Gesture),
-            ButtonAction::Copy
+            ButtonAction::Action(Action::Copy)
         );
     }
 
     #[test]
-    fn app_profile_set_adds_new_profile_with_defaults() {
+    fn app_profile_set_adds_new_profile_with_explicit_overrides() {
         let mut settings = Master3sSettings {
             app_profiles: Vec::new(),
             ..Master3sSettings::default()
         };
-        let args = ConfigAppProfileSetArgs {
-            app: " firefox ".to_owned(),
-            pointer_speed: None,
-            thumb_wheel: None,
-            json: false,
-        };
+        let mut args = app_profile_args(" firefox ");
+        args.pointer_speed = Some(100);
+        args.thumb_wheel = Some(CliThumbWheelMode::HorizontalScroll);
 
         upsert_app_profile(&mut settings, &args).unwrap();
 
         assert_eq!(settings.app_profiles.len(), 1);
-        assert_eq!(settings.app_profiles[0].app_name, "firefox");
-        assert_eq!(settings.app_profiles[0].pointer_speed_percent, 100);
+        assert_eq!(settings.app_profiles[0].name, "firefox");
         assert_eq!(
-            settings.app_profiles[0].thumb_wheel,
-            ThumbWheelMode::HorizontalScroll
+            settings.app_profiles[0].overrides.pointer_speed_percent,
+            Some(100)
+        );
+        assert_eq!(
+            settings.app_profiles[0].overrides.thumb_wheel,
+            Some(ThumbWheelMode::HorizontalScroll)
         );
     }
 
     #[test]
-    fn app_profile_set_updates_existing_profile_without_resetting_unspecified_fields() {
+    fn app_profile_set_replaces_existing_override_set() {
         let mut settings = Master3sSettings {
-            app_profiles: vec![AppProfile {
-                app_name: "Firefox".to_owned(),
-                pointer_speed_percent: 80,
-                thumb_wheel: ThumbWheelMode::Zoom,
-            }],
+            app_profiles: vec![test_app_profile("Firefox")],
             ..Master3sSettings::default()
         };
-        let args = ConfigAppProfileSetArgs {
-            app: "firefox".to_owned(),
-            pointer_speed: Some(95),
-            thumb_wheel: None,
-            json: false,
-        };
+        let mut args = app_profile_args("firefox");
+        args.pointer_speed = Some(95);
 
         upsert_app_profile(&mut settings, &args).unwrap();
 
         assert_eq!(settings.app_profiles.len(), 1);
-        assert_eq!(settings.app_profiles[0].app_name, "firefox");
-        assert_eq!(settings.app_profiles[0].pointer_speed_percent, 95);
-        assert_eq!(settings.app_profiles[0].thumb_wheel, ThumbWheelMode::Zoom);
+        assert_eq!(settings.app_profiles[0].name, "firefox");
+        assert_eq!(
+            settings.app_profiles[0].overrides.pointer_speed_percent,
+            Some(95)
+        );
+        assert_eq!(settings.app_profiles[0].overrides.thumb_wheel, None);
+    }
+
+    #[test]
+    fn app_profile_gesture_mapping_enables_the_gesture_button() {
+        let mut settings = Master3sSettings {
+            app_profiles: Vec::new(),
+            ..Master3sSettings::default()
+        };
+        let mut args = app_profile_args("Firefox");
+        args.gesture_mappings
+            .push(parse_gesture_mapping("left=copy").unwrap());
+
+        upsert_app_profile(&mut settings, &args).unwrap();
+
+        let overrides = &settings.app_profiles[0].overrides;
+        assert_eq!(overrides.gestures.as_ref().unwrap().left, Action::Copy);
+        assert!(overrides.buttons.iter().any(|binding| {
+            binding.button == Master3sButton::Gesture && binding.action == ButtonAction::Gestures
+        }));
+    }
+
+    #[test]
+    fn app_profile_set_rejects_an_empty_override_set() {
+        let mut settings = Master3sSettings::default();
+
+        let error = upsert_app_profile(&mut settings, &app_profile_args("Firefox")).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid argument: app profile requires at least one override"
+        );
+    }
+
+    #[test]
+    fn app_profile_set_rejects_conflicting_gesture_configuration() {
+        let mut settings = Master3sSettings::default();
+        let mut args = app_profile_args("Firefox");
+        args.button_mappings
+            .push(parse_button_mapping("gesture=copy").unwrap());
+        args.gesture_mappings
+            .push(parse_gesture_mapping("left=paste").unwrap());
+
+        let error = upsert_app_profile(&mut settings, &args).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid argument: gesture mappings require --button gesture=gestures"
+        );
     }
 
     #[test]
     fn app_profile_remove_deletes_by_normalized_name() {
         let mut settings = Master3sSettings {
-            app_profiles: vec![AppProfile {
-                app_name: "Visual Studio Code".to_owned(),
-                pointer_speed_percent: 90,
-                thumb_wheel: ThumbWheelMode::HorizontalScroll,
-            }],
+            app_profiles: vec![test_app_profile("Visual Studio Code")],
             ..Master3sSettings::default()
         };
 

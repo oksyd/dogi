@@ -38,7 +38,7 @@ impl ConfigFileOwner {
     }
 }
 
-const SETTINGS_FILE_VERSION: u8 = 4;
+const SETTINGS_FILE_VERSION: u8 = 5;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

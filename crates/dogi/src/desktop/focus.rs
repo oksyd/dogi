@@ -11,6 +11,7 @@ pub fn active_application() -> Result<Option<ActiveApplication>> {
 #[cfg(target_os = "linux")]
 mod platform {
     use super::*;
+    use std::fs;
     use std::process::Command;
 
     pub struct SystemActiveApplicationProvider;
@@ -33,8 +34,21 @@ mod platform {
             let Some(window_id) = parse_active_window_id(&root) else {
                 return Ok(None);
             };
-            let props = run_xprop(&["-id", &window_id, "WM_CLASS", "_NET_WM_NAME", "WM_NAME"])?;
-            Ok(parse_window_properties(&props))
+            let props = run_xprop(&[
+                "-id",
+                &window_id,
+                "WM_CLASS",
+                "_NET_WM_NAME",
+                "WM_NAME",
+                "_NET_WM_PID",
+            ])?;
+            let mut application = parse_window_properties(&props);
+            if let Some(executable) = parse_window_pid(&props).and_then(executable_for_pid)
+                && let Some(application) = &mut application
+            {
+                application.executable = Some(executable);
+            }
+            Ok(application)
         }
     }
 
@@ -79,7 +93,25 @@ mod platform {
         }
 
         let app = ActiveApplication::new(title, class, executable);
-        (app.name.is_some() || app.class.is_some() || app.executable.is_some()).then_some(app)
+        (app.title.is_some() || app.class.is_some() || app.executable.is_some()).then_some(app)
+    }
+
+    fn parse_window_pid(output: &str) -> Option<u32> {
+        output
+            .lines()
+            .find(|line| line.starts_with("_NET_WM_PID"))?
+            .split_once('=')?
+            .1
+            .trim()
+            .parse()
+            .ok()
+    }
+
+    fn executable_for_pid(pid: u32) -> Option<String> {
+        fs::read_link(format!("/proc/{pid}/exe"))
+            .ok()
+            .map(|path| path.to_string_lossy().into_owned())
+            .filter(|path| !path.is_empty())
     }
 
     fn parse_xprop_string_value(line: &str) -> Option<String> {
@@ -152,9 +184,18 @@ mod platform {
             )
             .unwrap();
 
-            assert_eq!(app.name.as_deref(), Some("dogi - Mozilla Firefox"));
+            assert_eq!(app.title.as_deref(), Some("dogi - Mozilla Firefox"));
             assert_eq!(app.class.as_deref(), Some("firefox"));
             assert_eq!(app.executable.as_deref(), Some("Navigator"));
+        }
+
+        #[test]
+        fn parses_window_process_id() {
+            assert_eq!(
+                parse_window_pid("_NET_WM_PID(CARDINAL) = 31415\n"),
+                Some(31_415)
+            );
+            assert_eq!(parse_window_pid("_NET_WM_PID:  not found.\n"), None);
         }
 
         #[test]

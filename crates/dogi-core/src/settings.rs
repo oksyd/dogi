@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_THUMB_WHEEL_SPEED_PERCENT: u16 = 100;
 pub const MIN_THUMB_WHEEL_SPEED_PERCENT: u16 = 25;
 pub const MAX_THUMB_WHEEL_SPEED_PERCENT: u16 = 400;
+pub const DEFAULT_GESTURE_THRESHOLD: u16 = 50;
+pub const MIN_GESTURE_THRESHOLD: u16 = 20;
+pub const MAX_GESTURE_THRESHOLD: u16 = 250;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Master3sSettings {
@@ -17,6 +20,7 @@ pub struct Master3sSettings {
     #[serde(default = "default_thumb_wheel_speed_percent")]
     pub thumb_wheel_speed_percent: u16,
     pub buttons: Vec<ButtonBinding>,
+    pub gestures: GestureBindings,
     pub app_profiles: Vec<AppProfile>,
 }
 
@@ -33,6 +37,7 @@ impl Default for Master3sSettings {
             thumb_wheel: ThumbWheelMode::HorizontalScroll,
             thumb_wheel_speed_percent: DEFAULT_THUMB_WHEEL_SPEED_PERCENT,
             buttons: default_master3s_buttons(),
+            gestures: GestureBindings::default(),
             app_profiles: Vec::new(),
         }
     }
@@ -52,10 +57,10 @@ impl Master3sSettings {
         }
         settings.smart_shift_enabled = settings.ratchet_mode == WheelRatchetMode::SmartShift;
         settings.buttons = normalize_button_bindings(&settings.buttons);
+        settings.gestures = settings.gestures.normalized();
 
         for profile in &mut settings.app_profiles {
-            profile.app_name = non_empty_or_default(&profile.app_name, "Application");
-            profile.pointer_speed_percent = clamp_u8(profile.pointer_speed_percent, 50, 200);
+            *profile = profile.normalized();
         }
 
         settings
@@ -160,17 +165,12 @@ impl Master3sButton {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ButtonAction {
-    Native,
+pub enum Action {
     Back,
     Forward,
-    #[serde(alias = "mission_control")]
     Overview,
-    #[serde(alias = "app_expose")]
     WindowSwitcher,
-    #[serde(alias = "desktop_left")]
     PreviousWorkspace,
-    #[serde(alias = "desktop_right")]
     NextWorkspace,
     MiddleClick,
     Copy,
@@ -178,8 +178,8 @@ pub enum ButtonAction {
     Disabled,
 }
 
-impl ButtonAction {
-    pub const ALL: [Self; 11] = [
+impl Action {
+    pub const ALL: [Self; 10] = [
         Self::Back,
         Self::Forward,
         Self::Overview,
@@ -190,12 +190,10 @@ impl ButtonAction {
         Self::Copy,
         Self::Paste,
         Self::Disabled,
-        Self::Native,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Native => "Default behavior",
             Self::Back => "Back",
             Self::Forward => "Forward",
             Self::Overview => "Activities overview",
@@ -210,24 +208,231 @@ impl ButtonAction {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ButtonAction {
+    Native,
+    Action(Action),
+    Gestures,
+}
+
+impl ButtonAction {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Native => "Default behavior",
+            Self::Action(action) => action.label(),
+            Self::Gestures => "Gestures",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GestureDirection {
+    Click,
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl GestureDirection {
+    pub const ALL: [Self; 5] = [Self::Click, Self::Up, Self::Down, Self::Left, Self::Right];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Click => "Click",
+            Self::Up => "Up",
+            Self::Down => "Down",
+            Self::Left => "Left",
+            Self::Right => "Right",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GestureBindings {
+    pub threshold: u16,
+    pub click: Action,
+    pub up: Action,
+    pub down: Action,
+    pub left: Action,
+    pub right: Action,
+}
+
+impl Default for GestureBindings {
+    fn default() -> Self {
+        Self {
+            threshold: DEFAULT_GESTURE_THRESHOLD,
+            click: Action::Overview,
+            up: Action::Overview,
+            down: Action::WindowSwitcher,
+            left: Action::PreviousWorkspace,
+            right: Action::NextWorkspace,
+        }
+    }
+}
+
+impl GestureBindings {
+    pub fn normalized(&self) -> Self {
+        Self {
+            threshold: self
+                .threshold
+                .clamp(MIN_GESTURE_THRESHOLD, MAX_GESTURE_THRESHOLD),
+            ..self.clone()
+        }
+    }
+
+    pub fn action(&self, direction: GestureDirection) -> Action {
+        match direction {
+            GestureDirection::Click => self.click,
+            GestureDirection::Up => self.up,
+            GestureDirection::Down => self.down,
+            GestureDirection::Left => self.left,
+            GestureDirection::Right => self.right,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApplicationMatchField {
+    #[default]
+    Any,
+    Title,
+    Class,
+    Executable,
+}
+
+impl ApplicationMatchField {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Any => "Any identity",
+            Self::Title => "Window title",
+            Self::Class => "Window class",
+            Self::Executable => "Executable",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ApplicationMatcher {
+    pub field: ApplicationMatchField,
+    pub value: String,
+}
+
+impl ApplicationMatcher {
+    pub fn normalized(&self) -> Self {
+        Self {
+            field: self.field,
+            value: self.value.trim().to_owned(),
+        }
+    }
+
+    pub fn matches(&self, application: &ActiveApplication) -> bool {
+        let needle = app_match_key(&self.value);
+        if needle.is_empty() {
+            return false;
+        }
+
+        let matches = |value: Option<&str>| {
+            value
+                .map(app_match_key)
+                .is_some_and(|value| !value.is_empty() && value.contains(&needle))
+        };
+        match self.field {
+            ApplicationMatchField::Any => {
+                application.match_fields().any(|value| matches(Some(value)))
+            }
+            ApplicationMatchField::Title => matches(application.title.as_deref()),
+            ApplicationMatchField::Class => matches(application.class.as_deref()),
+            ApplicationMatchField::Executable => matches(application.executable.as_deref()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AppProfileOverrides {
+    pub pointer_speed_percent: Option<u8>,
+    pub smart_shift_threshold: Option<u8>,
+    pub ratchet_mode: Option<WheelRatchetMode>,
+    pub high_resolution_scroll: Option<bool>,
+    pub natural_scroll: Option<bool>,
+    pub thumb_wheel: Option<ThumbWheelMode>,
+    pub thumb_wheel_speed_percent: Option<u16>,
+    pub buttons: Vec<ButtonBinding>,
+    pub gestures: Option<GestureBindings>,
+}
+
+impl AppProfileOverrides {
+    pub fn normalized(&self) -> Self {
+        Self {
+            pointer_speed_percent: self
+                .pointer_speed_percent
+                .map(|value| clamp_u8(value, 50, 200)),
+            smart_shift_threshold: self
+                .smart_shift_threshold
+                .map(|value| clamp_u8(value, 1, 50)),
+            ratchet_mode: self.ratchet_mode,
+            high_resolution_scroll: self.high_resolution_scroll,
+            natural_scroll: self.natural_scroll,
+            thumb_wheel: self.thumb_wheel,
+            thumb_wheel_speed_percent: self.thumb_wheel_speed_percent.map(|value| {
+                value.clamp(MIN_THUMB_WHEEL_SPEED_PERCENT, MAX_THUMB_WHEEL_SPEED_PERCENT)
+            }),
+            buttons: normalize_button_overrides(&self.buttons),
+            gestures: self.gestures.as_ref().map(GestureBindings::normalized),
+        }
+    }
+
+    pub fn count(&self) -> usize {
+        [
+            self.pointer_speed_percent.is_some(),
+            self.smart_shift_threshold.is_some() || self.ratchet_mode.is_some(),
+            self.high_resolution_scroll.is_some() || self.natural_scroll.is_some(),
+            self.thumb_wheel.is_some() || self.thumb_wheel_speed_percent.is_some(),
+            !self.buttons.is_empty() || self.gestures.is_some(),
+        ]
+        .into_iter()
+        .filter(|value| *value)
+        .count()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AppProfile {
-    pub app_name: String,
-    pub pointer_speed_percent: u8,
-    pub thumb_wheel: ThumbWheelMode,
+    pub name: String,
+    pub matcher: ApplicationMatcher,
+    pub overrides: AppProfileOverrides,
+}
+
+impl AppProfile {
+    pub fn normalized(&self) -> Self {
+        let matcher = self.matcher.normalized();
+        let fallback_name = if matcher.value.is_empty() {
+            "Application"
+        } else {
+            &matcher.value
+        };
+        Self {
+            name: non_empty_or_default(&self.name, fallback_name),
+            matcher,
+            overrides: self.overrides.normalized(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActiveApplication {
-    pub name: Option<String>,
+    pub title: Option<String>,
     pub class: Option<String>,
     pub executable: Option<String>,
 }
 
 impl ActiveApplication {
-    pub fn new(name: Option<String>, class: Option<String>, executable: Option<String>) -> Self {
+    pub fn new(title: Option<String>, class: Option<String>, executable: Option<String>) -> Self {
         Self {
-            name: clean_optional_app_string(name),
+            title: clean_optional_app_string(title),
             class: clean_optional_app_string(class),
             executable: clean_optional_app_string(executable),
         }
@@ -235,7 +440,7 @@ impl ActiveApplication {
 
     pub fn summary(&self) -> String {
         [
-            self.name.as_deref(),
+            self.title.as_deref(),
             self.class.as_deref(),
             self.executable.as_deref(),
         ]
@@ -247,7 +452,7 @@ impl ActiveApplication {
 
     fn match_fields(&self) -> impl Iterator<Item = &str> {
         [
-            self.name.as_deref(),
+            self.title.as_deref(),
             self.class.as_deref(),
             self.executable.as_deref(),
         ]
@@ -267,6 +472,7 @@ pub struct LocalRuntimePlan {
     pub profile_name: String,
     pub thumb_wheel: Option<ThumbWheelRuntimeAction>,
     pub buttons: Vec<ButtonRuntimeBinding>,
+    pub gestures: GestureBindings,
     pub app_profiles: Vec<AppProfile>,
 }
 
@@ -348,6 +554,10 @@ pub enum Master3sRuntimeEvent {
         buttons: Vec<Master3sButton>,
         unknown_control_ids: Vec<u16>,
     },
+    RawMovement {
+        x: i16,
+        y: i16,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -361,6 +571,10 @@ pub struct ResolvedRuntimeAction {
 pub enum RuntimeActionSource {
     ThumbWheel,
     Button(Master3sButton),
+    Gesture {
+        button: Master3sButton,
+        direction: GestureDirection,
+    },
     UnknownControlId(u16),
 }
 
@@ -588,10 +802,9 @@ impl SettingsApplyOperation {
                 format!("Run local runtime listener for {}", parts.join(", "))
             }
             Self::AppProfile { profile } => format!(
-                "Save local app profile {} at {}%, thumb wheel {}",
-                profile.app_name,
-                profile.pointer_speed_percent,
-                profile.thumb_wheel.label()
+                "Save local app profile {} with {} override groups",
+                profile.name,
+                profile.overrides.count()
             ),
         }
     }
@@ -811,6 +1024,7 @@ pub fn build_master3s_runtime_plan(settings: &Master3sSettings) -> LocalRuntimeP
         profile_name: settings.profile_name,
         thumb_wheel,
         buttons,
+        gestures: settings.gestures,
         app_profiles: settings.app_profiles,
     }
 }
@@ -825,9 +1039,8 @@ pub fn effective_master3s_settings_for_app(
         .cloned();
 
     if let Some(profile) = &matched_profile {
-        effective.profile_name = format!("{} / {}", effective.profile_name, profile.app_name);
-        effective.pointer_speed_percent = profile.pointer_speed_percent;
-        effective.thumb_wheel = profile.thumb_wheel;
+        effective.profile_name = format!("{} / {}", effective.profile_name, profile.name);
+        apply_app_profile_overrides(&mut effective, &profile.overrides);
     }
 
     EffectiveAppSettings {
@@ -847,15 +1060,38 @@ pub fn matching_app_profile<'a>(
 }
 
 fn app_profile_matches(profile: &AppProfile, active_application: &ActiveApplication) -> bool {
-    let needle = app_match_key(&profile.app_name);
-    if needle.is_empty() {
-        return false;
-    }
+    profile.matcher.matches(active_application)
+}
 
-    active_application
-        .match_fields()
-        .map(app_match_key)
-        .any(|field| !field.is_empty() && field.contains(&needle))
+fn apply_app_profile_overrides(settings: &mut Master3sSettings, overrides: &AppProfileOverrides) {
+    if let Some(value) = overrides.pointer_speed_percent {
+        settings.pointer_speed_percent = value;
+    }
+    if let Some(value) = overrides.smart_shift_threshold {
+        settings.smart_shift_threshold = value;
+    }
+    if let Some(value) = overrides.ratchet_mode {
+        settings.ratchet_mode = value;
+        settings.smart_shift_enabled = value == WheelRatchetMode::SmartShift;
+    }
+    if let Some(value) = overrides.high_resolution_scroll {
+        settings.high_resolution_scroll = value;
+    }
+    if let Some(value) = overrides.natural_scroll {
+        settings.natural_scroll = value;
+    }
+    if let Some(value) = overrides.thumb_wheel {
+        settings.thumb_wheel = value;
+    }
+    if let Some(value) = overrides.thumb_wheel_speed_percent {
+        settings.thumb_wheel_speed_percent = value;
+    }
+    for binding in &overrides.buttons {
+        settings.set_button_action(binding.button, binding.action);
+    }
+    if let Some(gestures) = &overrides.gestures {
+        settings.gestures = gestures.clone();
+    }
 }
 
 pub fn thumb_wheel_runtime_action(
@@ -902,46 +1138,141 @@ pub fn resolve_master3s_runtime_event(
     plan: &LocalRuntimePlan,
     event: &Master3sRuntimeEvent,
 ) -> Vec<ResolvedRuntimeAction> {
-    match event {
-        Master3sRuntimeEvent::ThumbWheel {
-            delta,
-            resolution,
-            direction,
-            ..
-        } => plan
-            .thumb_wheel
-            .and_then(|action| thumb_wheel_command(action, *delta, *resolution, *direction))
-            .map(|command| ResolvedRuntimeAction {
-                source: RuntimeActionSource::ThumbWheel,
-                command,
-            })
-            .into_iter()
-            .collect(),
-        Master3sRuntimeEvent::DivertedButtons {
-            buttons,
-            unknown_control_ids,
-        } => {
-            let mut actions = buttons
-                .iter()
-                .filter_map(|button| {
-                    plan.buttons
-                        .iter()
-                        .find(|binding| binding.button == *button)
-                        .map(|binding| ResolvedRuntimeAction {
-                            source: RuntimeActionSource::Button(*button),
-                            command: button_action_command(binding.action),
-                        })
-                })
-                .collect::<Vec<_>>();
+    RuntimeActionResolver::default().resolve(plan, event)
+}
 
-            actions.extend(unknown_control_ids.iter().copied().map(|control_id| {
-                ResolvedRuntimeAction {
-                    source: RuntimeActionSource::UnknownControlId(control_id),
-                    command: RuntimeCommand::Unsupported,
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeActionResolver {
+    pressed_buttons: Vec<Master3sButton>,
+    gesture: Option<ActiveGesture>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ActiveGesture {
+    button: Master3sButton,
+    bindings: GestureBindings,
+    x: i32,
+    y: i32,
+}
+
+impl RuntimeActionResolver {
+    pub fn resolve(
+        &mut self,
+        plan: &LocalRuntimePlan,
+        event: &Master3sRuntimeEvent,
+    ) -> Vec<ResolvedRuntimeAction> {
+        match event {
+            Master3sRuntimeEvent::ThumbWheel {
+                delta,
+                resolution,
+                direction,
+                ..
+            } => plan
+                .thumb_wheel
+                .and_then(|action| thumb_wheel_command(action, *delta, *resolution, *direction))
+                .map(|command| ResolvedRuntimeAction {
+                    source: RuntimeActionSource::ThumbWheel,
+                    command,
+                })
+                .into_iter()
+                .collect(),
+            Master3sRuntimeEvent::RawMovement { x, y } => {
+                if let Some(gesture) = &mut self.gesture {
+                    gesture.x = gesture.x.saturating_add(i32::from(*x));
+                    gesture.y = gesture.y.saturating_add(i32::from(*y));
                 }
-            }));
-            actions
+                Vec::new()
+            }
+            Master3sRuntimeEvent::DivertedButtons {
+                buttons,
+                unknown_control_ids,
+            } => self.resolve_buttons(plan, buttons, unknown_control_ids),
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.pressed_buttons.clear();
+        self.gesture = None;
+    }
+
+    fn resolve_buttons(
+        &mut self,
+        plan: &LocalRuntimePlan,
+        buttons: &[Master3sButton],
+        unknown_control_ids: &[u16],
+    ) -> Vec<ResolvedRuntimeAction> {
+        let released_gesture = self
+            .gesture
+            .as_ref()
+            .is_some_and(|gesture| !buttons.contains(&gesture.button))
+            .then(|| self.gesture.take())
+            .flatten();
+        let mut actions = released_gesture
+            .map(resolve_gesture)
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        for button in buttons
+            .iter()
+            .copied()
+            .filter(|button| !self.pressed_buttons.contains(button))
+        {
+            let Some(binding) = plan.buttons.iter().find(|binding| binding.button == button) else {
+                continue;
+            };
+            match binding.action {
+                ButtonAction::Native => {}
+                ButtonAction::Action(action) => actions.push(ResolvedRuntimeAction {
+                    source: RuntimeActionSource::Button(button),
+                    command: action_command(action),
+                }),
+                ButtonAction::Gestures if self.gesture.is_none() => {
+                    self.gesture = Some(ActiveGesture {
+                        button,
+                        bindings: plan.gestures.clone(),
+                        x: 0,
+                        y: 0,
+                    });
+                }
+                ButtonAction::Gestures => {}
+            }
+        }
+
+        actions.extend(unknown_control_ids.iter().copied().map(|control_id| {
+            ResolvedRuntimeAction {
+                source: RuntimeActionSource::UnknownControlId(control_id),
+                command: RuntimeCommand::Unsupported,
+            }
+        }));
+        self.pressed_buttons = buttons.to_vec();
+        actions
+    }
+}
+
+fn resolve_gesture(gesture: ActiveGesture) -> ResolvedRuntimeAction {
+    let threshold = i64::from(gesture.bindings.threshold);
+    let x = i64::from(gesture.x);
+    let y = i64::from(gesture.y);
+    let direction =
+        if x.saturating_mul(x) + y.saturating_mul(y) < threshold.saturating_mul(threshold) {
+            GestureDirection::Click
+        } else if x.abs() >= y.abs() {
+            if x < 0 {
+                GestureDirection::Left
+            } else {
+                GestureDirection::Right
+            }
+        } else if y < 0 {
+            GestureDirection::Up
+        } else {
+            GestureDirection::Down
+        };
+    ResolvedRuntimeAction {
+        source: RuntimeActionSource::Gesture {
+            button: gesture.button,
+            direction,
+        },
+        command: action_command(gesture.bindings.action(direction)),
     }
 }
 
@@ -980,27 +1311,24 @@ fn thumb_wheel_command(
     Some(RuntimeCommand::KeyChord(keys))
 }
 
-fn button_action_command(action: ButtonAction) -> RuntimeCommand {
+fn action_command(action: Action) -> RuntimeCommand {
     match action {
-        ButtonAction::Native => RuntimeCommand::Noop,
-        ButtonAction::Back => RuntimeCommand::KeyChord(vec![RuntimeKey::Alt, RuntimeKey::Left]),
-        ButtonAction::Forward => RuntimeCommand::KeyChord(vec![RuntimeKey::Alt, RuntimeKey::Right]),
-        ButtonAction::Overview => RuntimeCommand::KeyChord(vec![RuntimeKey::Super]),
-        ButtonAction::WindowSwitcher => {
-            RuntimeCommand::KeyChord(vec![RuntimeKey::Alt, RuntimeKey::Tab])
-        }
-        ButtonAction::PreviousWorkspace => {
+        Action::Back => RuntimeCommand::KeyChord(vec![RuntimeKey::Alt, RuntimeKey::Left]),
+        Action::Forward => RuntimeCommand::KeyChord(vec![RuntimeKey::Alt, RuntimeKey::Right]),
+        Action::Overview => RuntimeCommand::KeyChord(vec![RuntimeKey::Super]),
+        Action::WindowSwitcher => RuntimeCommand::KeyChord(vec![RuntimeKey::Alt, RuntimeKey::Tab]),
+        Action::PreviousWorkspace => {
             RuntimeCommand::KeyChord(vec![RuntimeKey::Control, RuntimeKey::Alt, RuntimeKey::Left])
         }
-        ButtonAction::NextWorkspace => RuntimeCommand::KeyChord(vec![
+        Action::NextWorkspace => RuntimeCommand::KeyChord(vec![
             RuntimeKey::Control,
             RuntimeKey::Alt,
             RuntimeKey::Right,
         ]),
-        ButtonAction::MiddleClick => RuntimeCommand::MouseButton(RuntimeMouseButton::Middle),
-        ButtonAction::Copy => RuntimeCommand::KeyChord(vec![RuntimeKey::Control, RuntimeKey::C]),
-        ButtonAction::Paste => RuntimeCommand::KeyChord(vec![RuntimeKey::Control, RuntimeKey::V]),
-        ButtonAction::Disabled => RuntimeCommand::Noop,
+        Action::MiddleClick => RuntimeCommand::MouseButton(RuntimeMouseButton::Middle),
+        Action::Copy => RuntimeCommand::KeyChord(vec![RuntimeKey::Control, RuntimeKey::C]),
+        Action::Paste => RuntimeCommand::KeyChord(vec![RuntimeKey::Control, RuntimeKey::V]),
+        Action::Disabled => RuntimeCommand::Noop,
     }
 }
 
@@ -1024,6 +1352,19 @@ fn normalize_button_bindings(bindings: &[ButtonBinding]) -> Vec<ButtonBinding> {
                 .map(|binding| binding.action)
                 .unwrap_or_else(|| default_button_action(button));
             ButtonBinding { button, action }
+        })
+        .collect()
+}
+
+fn normalize_button_overrides(bindings: &[ButtonBinding]) -> Vec<ButtonBinding> {
+    Master3sButton::ALL
+        .into_iter()
+        .filter_map(|button| {
+            bindings
+                .iter()
+                .rev()
+                .find(|binding| binding.button == button)
+                .cloned()
         })
         .collect()
 }
@@ -1089,6 +1430,21 @@ fn app_match_key(value: &str) -> String {
 mod tests {
     use super::*;
 
+    fn app_profile(name: &str, pointer_speed: u8, thumb_wheel: ThumbWheelMode) -> AppProfile {
+        AppProfile {
+            name: name.to_owned(),
+            matcher: ApplicationMatcher {
+                field: ApplicationMatchField::Any,
+                value: name.to_owned(),
+            },
+            overrides: AppProfileOverrides {
+                pointer_speed_percent: Some(pointer_speed),
+                thumb_wheel: Some(thumb_wheel),
+                ..AppProfileOverrides::default()
+            },
+        }
+    }
+
     #[test]
     fn default_master3s_plan_is_device_only() {
         let settings = Master3sSettings::default();
@@ -1109,7 +1465,10 @@ mod tests {
         let mut target = baseline.clone();
         target.pointer_speed_percent = 125;
         target.natural_scroll = true;
-        target.set_button_action(Master3sButton::Gesture, ButtonAction::Overview);
+        target.set_button_action(
+            Master3sButton::Gesture,
+            ButtonAction::Action(Action::Overview),
+        );
 
         let plan = build_master3s_device_diff_plan("device-1", &baseline, &target);
 
@@ -1141,11 +1500,9 @@ mod tests {
     fn device_diff_plan_ignores_unchanged_and_local_only_settings() {
         let baseline = Master3sSettings::default();
         let mut target = baseline.clone();
-        target.app_profiles.push(AppProfile {
-            app_name: "Firefox".to_owned(),
-            pointer_speed_percent: 90,
-            thumb_wheel: ThumbWheelMode::TabSwitch,
-        });
+        target
+            .app_profiles
+            .push(app_profile("Firefox", 90, ThumbWheelMode::TabSwitch));
 
         assert!(
             build_master3s_device_diff_plan("device-1", &baseline, &baseline)
@@ -1214,18 +1571,14 @@ mod tests {
         let button_step = SettingsApplyStep {
             operation: SettingsApplyOperation::ButtonMapping {
                 button: Master3sButton::Back,
-                action: ButtonAction::Back,
+                action: ButtonAction::Action(Action::Back),
             },
             feature: HidppFeature::ReprogrammableControls,
             requires_device_write: true,
         };
         let local_step = SettingsApplyStep {
             operation: SettingsApplyOperation::AppProfile {
-                profile: AppProfile {
-                    app_name: "Firefox".to_owned(),
-                    pointer_speed_percent: 100,
-                    thumb_wheel: ThumbWheelMode::HorizontalScroll,
-                },
+                profile: app_profile("Firefox", 100, ThumbWheelMode::HorizontalScroll),
             },
             feature: HidppFeature::LocalProfile,
             requires_device_write: false,
@@ -1268,14 +1621,10 @@ mod tests {
                 },
                 ButtonBinding {
                     button: Master3sButton::Gesture,
-                    action: ButtonAction::Copy,
+                    action: ButtonAction::Action(Action::Copy),
                 },
             ],
-            app_profiles: vec![AppProfile {
-                app_name: "Browser".to_owned(),
-                pointer_speed_percent: 100,
-                thumb_wheel: ThumbWheelMode::TabSwitch,
-            }],
+            app_profiles: vec![app_profile("Browser", 100, ThumbWheelMode::TabSwitch)],
             ..Master3sSettings::default()
         };
 
@@ -1288,7 +1637,7 @@ mod tests {
             plan.buttons
                 .iter()
                 .any(|binding| binding.button == Master3sButton::Gesture
-                    && binding.action == ButtonAction::Copy
+                    && binding.action == ButtonAction::Action(Action::Copy)
                     && binding.control_id == 0x00c3)
         );
         assert!(
@@ -1357,11 +1706,7 @@ mod tests {
     #[test]
     fn matches_active_application_to_app_profile() {
         let settings = Master3sSettings {
-            app_profiles: vec![AppProfile {
-                app_name: "Firefox".to_owned(),
-                pointer_speed_percent: 80,
-                thumb_wheel: ThumbWheelMode::TabSwitch,
-            }],
+            app_profiles: vec![app_profile("Firefox", 80, ThumbWheelMode::TabSwitch)],
             ..Master3sSettings::default()
         };
         let active = ActiveApplication::new(
@@ -1376,7 +1721,7 @@ mod tests {
             effective
                 .matched_profile
                 .as_ref()
-                .map(|profile| profile.app_name.as_str()),
+                .map(|profile| profile.name.as_str()),
             Some("Firefox")
         );
         assert_eq!(effective.settings.pointer_speed_percent, 80);
@@ -1388,11 +1733,7 @@ mod tests {
         let settings = Master3sSettings {
             pointer_speed_percent: 125,
             thumb_wheel: ThumbWheelMode::Zoom,
-            app_profiles: vec![AppProfile {
-                app_name: "Firefox".to_owned(),
-                pointer_speed_percent: 80,
-                thumb_wheel: ThumbWheelMode::TabSwitch,
-            }],
+            app_profiles: vec![app_profile("Firefox", 80, ThumbWheelMode::TabSwitch)],
             ..Master3sSettings::default()
         };
         let active = ActiveApplication::new(Some("Terminal".to_owned()), None, None);
@@ -1402,6 +1743,76 @@ mod tests {
         assert_eq!(effective.matched_profile, None);
         assert_eq!(effective.settings.pointer_speed_percent, 125);
         assert_eq!(effective.settings.thumb_wheel, ThumbWheelMode::Zoom);
+    }
+
+    #[test]
+    fn app_profile_match_field_uses_only_the_selected_identity() {
+        let profile = AppProfile {
+            name: "Browser".to_owned(),
+            matcher: ApplicationMatcher {
+                field: ApplicationMatchField::Executable,
+                value: "firefox".to_owned(),
+            },
+            overrides: AppProfileOverrides {
+                pointer_speed_percent: Some(80),
+                ..AppProfileOverrides::default()
+            },
+        };
+        let title_only = ActiveApplication::new(
+            Some("Firefox documentation".to_owned()),
+            None,
+            Some("/usr/bin/other-browser".to_owned()),
+        );
+        let executable = ActiveApplication::new(
+            Some("Documentation".to_owned()),
+            None,
+            Some("/usr/lib/firefox/firefox".to_owned()),
+        );
+
+        assert!(!profile.matcher.matches(&title_only));
+        assert!(profile.matcher.matches(&executable));
+    }
+
+    #[test]
+    fn app_profile_overrides_only_explicit_groups() {
+        let settings = Master3sSettings {
+            pointer_speed_percent: 125,
+            natural_scroll: false,
+            buttons: vec![ButtonBinding {
+                button: Master3sButton::Back,
+                action: ButtonAction::Action(Action::Copy),
+            }],
+            app_profiles: vec![AppProfile {
+                name: "Editor".to_owned(),
+                matcher: ApplicationMatcher {
+                    field: ApplicationMatchField::Class,
+                    value: "code".to_owned(),
+                },
+                overrides: AppProfileOverrides {
+                    natural_scroll: Some(true),
+                    buttons: vec![ButtonBinding {
+                        button: Master3sButton::Gesture,
+                        action: ButtonAction::Gestures,
+                    }],
+                    ..AppProfileOverrides::default()
+                },
+            }],
+            ..Master3sSettings::default()
+        };
+        let active = ActiveApplication::new(None, Some("code.Code".to_owned()), None);
+
+        let effective = effective_master3s_settings_for_app(&settings, Some(&active)).settings;
+
+        assert_eq!(effective.pointer_speed_percent, 125);
+        assert!(effective.natural_scroll);
+        assert_eq!(
+            effective.button_action(Master3sButton::Back),
+            ButtonAction::Action(Action::Copy)
+        );
+        assert_eq!(
+            effective.button_action(Master3sButton::Gesture),
+            ButtonAction::Gestures
+        );
     }
 
     #[test]
@@ -1461,7 +1872,7 @@ mod tests {
         let settings = Master3sSettings {
             buttons: vec![ButtonBinding {
                 button: Master3sButton::Gesture,
-                action: ButtonAction::Copy,
+                action: ButtonAction::Action(Action::Copy),
             }],
             ..Master3sSettings::default()
         };
@@ -1489,17 +1900,125 @@ mod tests {
     }
 
     #[test]
+    fn resolves_gesture_on_release_from_raw_movement() {
+        let settings = Master3sSettings {
+            buttons: vec![ButtonBinding {
+                button: Master3sButton::Gesture,
+                action: ButtonAction::Gestures,
+            }],
+            ..Master3sSettings::default()
+        };
+        let plan = build_master3s_runtime_plan(&settings);
+        let mut resolver = RuntimeActionResolver::default();
+
+        assert!(
+            resolver
+                .resolve(
+                    &plan,
+                    &Master3sRuntimeEvent::DivertedButtons {
+                        buttons: vec![Master3sButton::Gesture],
+                        unknown_control_ids: vec![],
+                    },
+                )
+                .is_empty()
+        );
+        assert!(
+            resolver
+                .resolve(&plan, &Master3sRuntimeEvent::RawMovement { x: -80, y: 10 })
+                .is_empty()
+        );
+        assert_eq!(
+            resolver.resolve(
+                &plan,
+                &Master3sRuntimeEvent::DivertedButtons {
+                    buttons: vec![],
+                    unknown_control_ids: vec![],
+                },
+            ),
+            vec![ResolvedRuntimeAction {
+                source: RuntimeActionSource::Gesture {
+                    button: Master3sButton::Gesture,
+                    direction: GestureDirection::Left,
+                },
+                command: RuntimeCommand::KeyChord(vec![
+                    RuntimeKey::Control,
+                    RuntimeKey::Alt,
+                    RuntimeKey::Left,
+                ]),
+            }]
+        );
+    }
+
+    #[test]
+    fn short_gesture_movement_resolves_as_click() {
+        let settings = Master3sSettings {
+            buttons: vec![ButtonBinding {
+                button: Master3sButton::Gesture,
+                action: ButtonAction::Gestures,
+            }],
+            ..Master3sSettings::default()
+        };
+        let plan = build_master3s_runtime_plan(&settings);
+        let mut resolver = RuntimeActionResolver::default();
+        resolver.resolve(
+            &plan,
+            &Master3sRuntimeEvent::DivertedButtons {
+                buttons: vec![Master3sButton::Gesture],
+                unknown_control_ids: vec![],
+            },
+        );
+        resolver.resolve(&plan, &Master3sRuntimeEvent::RawMovement { x: 3, y: 4 });
+
+        assert_eq!(
+            resolver.resolve(
+                &plan,
+                &Master3sRuntimeEvent::DivertedButtons {
+                    buttons: vec![],
+                    unknown_control_ids: vec![],
+                },
+            )[0]
+            .source,
+            RuntimeActionSource::Gesture {
+                button: Master3sButton::Gesture,
+                direction: GestureDirection::Click,
+            }
+        );
+    }
+
+    #[test]
+    fn diverted_button_action_runs_once_per_press() {
+        let settings = Master3sSettings {
+            buttons: vec![ButtonBinding {
+                button: Master3sButton::Gesture,
+                action: ButtonAction::Action(Action::Copy),
+            }],
+            ..Master3sSettings::default()
+        };
+        let plan = build_master3s_runtime_plan(&settings);
+        let pressed = Master3sRuntimeEvent::DivertedButtons {
+            buttons: vec![Master3sButton::Gesture],
+            unknown_control_ids: vec![],
+        };
+        let released = Master3sRuntimeEvent::DivertedButtons {
+            buttons: vec![],
+            unknown_control_ids: vec![],
+        };
+        let mut resolver = RuntimeActionResolver::default();
+
+        assert_eq!(resolver.resolve(&plan, &pressed).len(), 1);
+        assert!(resolver.resolve(&plan, &pressed).is_empty());
+        assert!(resolver.resolve(&plan, &released).is_empty());
+        assert_eq!(resolver.resolve(&plan, &pressed).len(), 1);
+    }
+
+    #[test]
     fn normalizes_user_facing_ranges() {
         let settings = Master3sSettings {
             profile_name: "  ".to_owned(),
             pointer_speed_percent: 250,
             smart_shift_threshold: 0,
             thumb_wheel_speed_percent: 900,
-            app_profiles: vec![AppProfile {
-                app_name: "  ".to_owned(),
-                pointer_speed_percent: 10,
-                thumb_wheel: ThumbWheelMode::Zoom,
-            }],
+            app_profiles: vec![app_profile("  ", 10, ThumbWheelMode::Zoom)],
             ..Master3sSettings::default()
         };
 
@@ -1512,8 +2031,11 @@ mod tests {
             normalized.thumb_wheel_speed_percent,
             MAX_THUMB_WHEEL_SPEED_PERCENT
         );
-        assert_eq!(normalized.app_profiles[0].app_name, "Application");
-        assert_eq!(normalized.app_profiles[0].pointer_speed_percent, 50);
+        assert_eq!(normalized.app_profiles[0].name, "Application");
+        assert_eq!(
+            normalized.app_profiles[0].overrides.pointer_speed_percent,
+            Some(50)
+        );
     }
 
     #[test]
@@ -1522,11 +2044,11 @@ mod tests {
             buttons: vec![
                 ButtonBinding {
                     button: Master3sButton::Gesture,
-                    action: ButtonAction::Copy,
+                    action: ButtonAction::Action(Action::Copy),
                 },
                 ButtonBinding {
                     button: Master3sButton::Gesture,
-                    action: ButtonAction::Paste,
+                    action: ButtonAction::Action(Action::Paste),
                 },
             ],
             ..Master3sSettings::default()
@@ -1541,7 +2063,7 @@ mod tests {
         );
         assert_eq!(
             normalized.button_action(Master3sButton::Gesture),
-            ButtonAction::Copy
+            ButtonAction::Action(Action::Copy)
         );
     }
 
@@ -1549,11 +2071,11 @@ mod tests {
     fn can_update_button_action() {
         let mut settings = Master3sSettings::default();
 
-        settings.set_button_action(Master3sButton::Back, ButtonAction::Paste);
+        settings.set_button_action(Master3sButton::Back, ButtonAction::Action(Action::Paste));
 
         assert_eq!(
             settings.button_action(Master3sButton::Back),
-            ButtonAction::Paste
+            ButtonAction::Action(Action::Paste)
         );
     }
 }

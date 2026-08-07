@@ -13,17 +13,20 @@ pub use device::{
 };
 pub use error::{DogiError, Result};
 pub use settings::{
-    ActiveApplication, AppProfile, ButtonAction, ButtonBinding, ButtonRuntimeBinding,
-    DEFAULT_THUMB_WHEEL_SPEED_PERCENT, EffectiveAppSettings, HidppFeature, LocalRuntimePlan,
-    MAX_THUMB_WHEEL_SPEED_PERCENT, MIN_THUMB_WHEEL_SPEED_PERCENT, Master3sButton,
-    Master3sRuntimeEvent, Master3sSettings, ResolvedRuntimeAction, RuntimeActionSource,
-    RuntimeCommand, RuntimeKey, RuntimeMouseButton, SettingsApplyOperation, SettingsApplyOutcome,
-    SettingsApplyPlan, SettingsApplyReport, SettingsApplyScope, SettingsApplyStatus,
-    SettingsApplyStep, ThumbWheelMode, ThumbWheelRuntimeAction, WheelRatchetMode,
-    build_master3s_apply_plan, build_master3s_device_diff_plan, build_master3s_runtime_plan,
-    button_action_requires_runtime, effective_master3s_settings_for_app,
-    master3s_button_control_id, master3s_button_from_control_id, matching_app_profile,
-    resolve_master3s_runtime_event, settings_apply_step_scope, thumb_wheel_runtime_action,
+    Action, ActiveApplication, AppProfile, AppProfileOverrides, ApplicationMatchField,
+    ApplicationMatcher, ButtonAction, ButtonBinding, ButtonRuntimeBinding,
+    DEFAULT_GESTURE_THRESHOLD, DEFAULT_THUMB_WHEEL_SPEED_PERCENT, EffectiveAppSettings,
+    GestureBindings, GestureDirection, HidppFeature, LocalRuntimePlan, MAX_GESTURE_THRESHOLD,
+    MAX_THUMB_WHEEL_SPEED_PERCENT, MIN_GESTURE_THRESHOLD, MIN_THUMB_WHEEL_SPEED_PERCENT,
+    Master3sButton, Master3sRuntimeEvent, Master3sSettings, ResolvedRuntimeAction,
+    RuntimeActionResolver, RuntimeActionSource, RuntimeCommand, RuntimeKey, RuntimeMouseButton,
+    SettingsApplyOperation, SettingsApplyOutcome, SettingsApplyPlan, SettingsApplyReport,
+    SettingsApplyScope, SettingsApplyStatus, SettingsApplyStep, ThumbWheelMode,
+    ThumbWheelRuntimeAction, WheelRatchetMode, build_master3s_apply_plan,
+    build_master3s_device_diff_plan, build_master3s_runtime_plan, button_action_requires_runtime,
+    effective_master3s_settings_for_app, master3s_button_control_id,
+    master3s_button_from_control_id, matching_app_profile, resolve_master3s_runtime_event,
+    settings_apply_step_scope, thumb_wheel_runtime_action,
 };
 
 pub const APP_NAME: &str = "dogi";

@@ -78,6 +78,8 @@ jobs:
           render default
           render multi-device DOGI_UI_SNAPSHOT_MULTI=1
           render permission-error DOGI_UI_SNAPSHOT_ACCESS=permission
+          render gestures DOGI_UI_SNAPSHOT_GESTURES=1
+          render app-profiles DOGI_UI_SNAPSHOT_APP_PROFILE_EDITOR=1
           render settings DOGI_UI_SNAPSHOT_PAGE=3
           render settings-update-ready DOGI_UI_SNAPSHOT_PAGE=3 DOGI_UI_SNAPSHOT_UPDATE_READY=0.2.0
           render update-restart-confirmation DOGI_UI_SNAPSHOT_UPDATE_READY=0.2.0 DOGI_UI_SNAPSHOT_UPDATE_CONFIRM=1

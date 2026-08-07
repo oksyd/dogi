@@ -36,6 +36,7 @@ pub fn parse_master3s_runtime_notification(
     match (feature_id, function) {
         (HIDPP_FEATURE_THUMB_WHEEL, 0) => parse_thumb_wheel_runtime_event(data),
         (HIDPP_FEATURE_REPROG_CONTROLS_V4, 0) => parse_diverted_buttons_runtime_event(data),
+        (HIDPP_FEATURE_REPROG_CONTROLS_V4, 1) => parse_raw_movement_runtime_event(data),
         _ => None,
     }
 }
@@ -71,6 +72,13 @@ fn parse_diverted_buttons_runtime_event(data: &[u8]) -> Option<Master3sRuntimeEv
     Some(Master3sRuntimeEvent::DivertedButtons {
         buttons,
         unknown_control_ids,
+    })
+}
+
+fn parse_raw_movement_runtime_event(data: &[u8]) -> Option<Master3sRuntimeEvent> {
+    Some(Master3sRuntimeEvent::RawMovement {
+        x: i16::from_be_bytes([*data.first()?, *data.get(1)?]),
+        y: i16::from_be_bytes([*data.get(2)?, *data.get(3)?]),
     })
 }
 
@@ -119,6 +127,17 @@ mod runtime_notification_tests {
                 buttons: vec![Master3sButton::Back, Master3sButton::Gesture],
                 unknown_control_ids: vec![0xbeef],
             })
+        );
+    }
+
+    #[test]
+    fn parses_raw_movement_notification() {
+        let features = vec![feature(9, HIDPP_FEATURE_REPROG_CONTROLS_V4)];
+        let report = [HIDPP_LONG_REPORT_ID, 1, 9, 0x10, 0xff, 0xec, 0x00, 0x19];
+
+        assert_eq!(
+            parse_master3s_runtime_notification(&report, &features),
+            Some(Master3sRuntimeEvent::RawMovement { x: -20, y: 25 })
         );
     }
 
@@ -274,8 +293,11 @@ mod platform {
     const HIDPP_FEATURE_ONBOARD_PROFILES: u16 = 0x8100;
     const REPROG_KEY_FLAG_DIVERTABLE: u16 = 0x0020;
     const REPROG_KEY_FLAG_VIRTUAL: u16 = 0x0080;
+    const REPROG_KEY_FLAG_RAW_XY: u16 = 0x0100;
     const REPROG_MAPPING_FLAG_DIVERTED: u8 = 0x01;
     const REPROG_MAPPING_FLAG_DIVERTED_VALID: u8 = 0x02;
+    const REPROG_MAPPING_FLAG_RAW_XY: u8 = 0x10;
+    const REPROG_MAPPING_FLAG_RAW_XY_VALID: u8 = 0x20;
     const HIDPP_FEATURE_PROFILE_MANAGEMENT: u16 = 0x8101;
     const HIDPP_DOGI_FEATURE_IDS: &[u16] = &[
         HIDPP_FEATURE_DEVICE_FW_VERSION,
@@ -960,6 +982,7 @@ mod platform {
         binding: &ButtonBinding,
     ) -> SettingsApplyOutcome {
         let should_divert = button_action_requires_runtime(binding.button, binding.action);
+        let raw_xy = binding.action == dogi_core::ButtonAction::Gestures;
         let title = if should_divert {
             format!(
                 "Divert {} for {}",
@@ -1006,7 +1029,15 @@ mod platform {
             );
         }
 
-        let payload = reprogrammable_control_diversion_payload(control_id, should_divert);
+        if raw_xy && control.flags & REPROG_KEY_FLAG_RAW_XY == 0 {
+            return unsupported_outcome(
+                title,
+                HidppFeature::ReprogrammableControls,
+                format!("control 0x{control_id:04X} does not support raw movement reporting"),
+            );
+        }
+
+        let payload = reprogrammable_control_diversion_payload(control_id, should_divert, raw_xy);
         write_outcome(
             client,
             slot,
@@ -1074,13 +1105,24 @@ mod platform {
         })
     }
 
-    fn reprogrammable_control_diversion_payload(control_id: u16, diverted: bool) -> [u8; 5] {
+    fn reprogrammable_control_diversion_payload(
+        control_id: u16,
+        diverted: bool,
+        raw_xy: bool,
+    ) -> [u8; 5] {
         let [high, low] = control_id.to_be_bytes();
-        let flags = if diverted {
-            REPROG_MAPPING_FLAG_DIVERTED | REPROG_MAPPING_FLAG_DIVERTED_VALID
-        } else {
-            REPROG_MAPPING_FLAG_DIVERTED_VALID
-        };
+        let flags = REPROG_MAPPING_FLAG_DIVERTED_VALID
+            | REPROG_MAPPING_FLAG_RAW_XY_VALID
+            | if diverted {
+                REPROG_MAPPING_FLAG_DIVERTED
+            } else {
+                0
+            }
+            | if raw_xy {
+                REPROG_MAPPING_FLAG_RAW_XY
+            } else {
+                0
+            };
         [high, low, flags, 0x00, 0x00]
     }
 
@@ -3379,12 +3421,16 @@ mod platform {
         #[test]
         fn encodes_reprogrammable_control_diversion_payloads() {
             assert_eq!(
-                reprogrammable_control_diversion_payload(0x0053, true),
-                [0x00, 0x53, 0x03, 0x00, 0x00]
+                reprogrammable_control_diversion_payload(0x0053, true, false),
+                [0x00, 0x53, 0x23, 0x00, 0x00]
             );
             assert_eq!(
-                reprogrammable_control_diversion_payload(0x0053, false),
-                [0x00, 0x53, 0x02, 0x00, 0x00]
+                reprogrammable_control_diversion_payload(0x0053, false, false),
+                [0x00, 0x53, 0x22, 0x00, 0x00]
+            );
+            assert_eq!(
+                reprogrammable_control_diversion_payload(0x00c3, true, true),
+                [0x00, 0xc3, 0x33, 0x00, 0x00]
             );
         }
 

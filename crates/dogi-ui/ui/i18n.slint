@@ -111,7 +111,8 @@ export global SettingsTranslations {
             : index == 7 ? @tr("Copy")
             : index == 8 ? @tr("Paste")
             : index == 9 ? @tr("Disabled")
-            : @tr("Default Behavior");
+            : index == 10 ? @tr("Default Behavior")
+            : @tr("Gestures");
     }
 
     public pure function button-action(button-index: int, action-index: int) -> string {
@@ -123,8 +124,8 @@ export global SettingsTranslations {
             : @tr("Default Behavior");
     }
 
-    public pure function profile-summary(pointer-speed: int, thumb-wheel-index: int) -> string {
-        return @tr("{}% pointer, thumb wheel {}", pointer-speed, root.thumb-wheel(thumb-wheel-index));
+    public pure function profile-summary(override-count: int) -> string {
+        return @tr("{n} override" | "{n} overrides" % override-count);
     }
 
     public pure function plan(row: PlanRow) -> string {
@@ -162,7 +163,7 @@ export global SettingsTranslations {
             ? @tr("Use native behavior for {}", root.button(row.primary-index))
             : row.kind == PlanKind.local-runtime
             ? @tr("Run the local runtime listener")
-            : @tr("Save local app profile {} at {}%, thumb wheel {}", row.name, row.value, root.thumb-wheel(row.primary-index));
+            : @tr("Save local app profile {}", row.name);
     }
 }
 

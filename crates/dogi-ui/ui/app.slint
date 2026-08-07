@@ -1492,6 +1492,57 @@ component AssignmentRow inherits Rectangle {
     }
 }
 
+component GestureTestPad inherits Rectangle {
+    in property <[string]> actions;
+    in-out property <length> start-x;
+    in-out property <length> start-y;
+    in-out property <length> delta-x;
+    in-out property <length> delta-y;
+    in-out property <bool> tracking: false;
+    private property <bool> area-pressed: gesture-test-area.pressed;
+    out property <int> direction-index:
+        abs(root.delta-x) < 24px && abs(root.delta-y) < 24px ? 0
+        : abs(root.delta-x) >= abs(root.delta-y) ? (root.delta-x < 0px ? 3 : 4)
+        : root.delta-y < 0px ? 1 : 2;
+
+    height: 44px;
+    background: gesture-test-area.pressed ? Theme.selected : gesture-test-area.has-hover ? Theme.hover : Theme.surface;
+    border-width: 1px;
+    border-color: gesture-test-area.pressed ? Theme.accent : Theme.border;
+    border-radius: 6px;
+
+    changed area-pressed => {
+        if (root.area-pressed) {
+            root.start-x = gesture-test-area.mouse-x;
+            root.start-y = gesture-test-area.mouse-y;
+            root.delta-x = 0px;
+            root.delta-y = 0px;
+            root.tracking = true;
+        } else {
+            root.tracking = false;
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+        Text { text: @tr("Test gesture"); color: Theme.text-muted; font-size: 10px; vertical-alignment: center; }
+        Text { width: 78px; text: root.direction-index == 0 ? @tr("Click") : root.direction-index == 1 ? @tr("Up") : root.direction-index == 2 ? @tr("Down") : root.direction-index == 3 ? @tr("Left") : @tr("Right"); color: Theme.accent; font-size: 10px; font-weight: 700; horizontal-alignment: right; vertical-alignment: center; horizontal-stretch: 0; }
+        Text { width: 112px; text: root.actions[root.direction-index]; color: Theme.text; font-size: 10px; font-weight: 600; horizontal-alignment: right; vertical-alignment: center; overflow: elide; horizontal-stretch: 0; }
+    }
+
+    gesture-test-area := TouchArea {
+        mouse-cursor: crosshair;
+        moved => {
+            if (self.pressed) {
+                root.delta-x = self.mouse-x - root.start-x;
+                root.delta-y = self.mouse-y - root.start-y;
+            }
+        }
+    }
+}
+
 component ProfileRow inherits Rectangle {
     in property <string> app;
     in property <string> initial;
@@ -2356,9 +2407,35 @@ export component MainWindow inherits Window {
     in-out property <int> gesture-action-index: 10;
     in-out property <int> mode-shift-action-index: 10;
     in-out property <int> middle-action-index: 10;
+    in-out property <int> gesture-click-action-index: 2;
+    in-out property <int> gesture-up-action-index: 2;
+    in-out property <int> gesture-down-action-index: 3;
+    in-out property <int> gesture-left-action-index: 4;
+    in-out property <int> gesture-right-action-index: 5;
     in-out property <string> app-profile-editor-app;
+    in-out property <int> app-profile-editor-match-field-index: 0;
+    in-out property <bool> app-profile-editor-pointer-enabled: false;
     in-out property <float> app-profile-editor-pointer-speed: 100;
+    in-out property <bool> app-profile-editor-wheel-enabled: false;
+    in-out property <int> app-profile-editor-wheel-mode-index: 2;
+    in-out property <float> app-profile-editor-smart-shift-threshold: 45;
+    in-out property <bool> app-profile-editor-scroll-enabled: false;
+    in-out property <bool> app-profile-editor-high-resolution-scroll: true;
+    in-out property <int> app-profile-editor-scroll-direction-index: 0;
+    in-out property <bool> app-profile-editor-thumb-wheel-enabled: false;
     in-out property <int> app-profile-editor-thumb-wheel-index: 0;
+    in-out property <float> app-profile-editor-thumb-wheel-speed: 100;
+    in-out property <bool> app-profile-editor-buttons-enabled: false;
+    in-out property <int> app-profile-editor-back-action-index: 10;
+    in-out property <int> app-profile-editor-forward-action-index: 10;
+    in-out property <int> app-profile-editor-gesture-action-index: 10;
+    in-out property <int> app-profile-editor-mode-shift-action-index: 10;
+    in-out property <int> app-profile-editor-middle-action-index: 10;
+    in-out property <int> app-profile-editor-gesture-click-action-index: 2;
+    in-out property <int> app-profile-editor-gesture-up-action-index: 2;
+    in-out property <int> app-profile-editor-gesture-down-action-index: 3;
+    in-out property <int> app-profile-editor-gesture-left-action-index: 4;
+    in-out property <int> app-profile-editor-gesture-right-action-index: 5;
     in-out property <int> page-index: 0;
     in-out property <int> selected-button-index: 2;
     in-out property <int> selected-app-profile-index: -1;
@@ -2384,6 +2461,12 @@ export component MainWindow inherits Window {
         && root.horizontal-scroll-test-supported
         && root.runtime-state == DesktopRuntimeState.running
         && root.thumb-wheel-index == 0;
+    out property <bool> app-profile-editor-has-overrides:
+        root.app-profile-editor-pointer-enabled
+        || root.app-profile-editor-wheel-enabled
+        || root.app-profile-editor-scroll-enabled
+        || root.app-profile-editor-thumb-wheel-enabled
+        || root.app-profile-editor-buttons-enabled;
 
     function mark-dirty() {
         root.settings-edited();
@@ -2409,6 +2492,38 @@ export component MainWindow inherits Window {
         SettingsTranslations.action(8),
         SettingsTranslations.action(9),
         SettingsTranslations.action(10),
+    ];
+    property <[string]> gesture-assignment-options: [
+        SettingsTranslations.action(0),
+        SettingsTranslations.action(1),
+        SettingsTranslations.action(2),
+        SettingsTranslations.action(3),
+        SettingsTranslations.action(4),
+        SettingsTranslations.action(5),
+        SettingsTranslations.action(6),
+        SettingsTranslations.action(7),
+        SettingsTranslations.action(8),
+        SettingsTranslations.action(9),
+        SettingsTranslations.action(10),
+        SettingsTranslations.action(11),
+    ];
+    property <[string]> gesture-action-options: [
+        SettingsTranslations.action(0),
+        SettingsTranslations.action(1),
+        SettingsTranslations.action(2),
+        SettingsTranslations.action(3),
+        SettingsTranslations.action(4),
+        SettingsTranslations.action(5),
+        SettingsTranslations.action(6),
+        SettingsTranslations.action(7),
+        SettingsTranslations.action(8),
+        SettingsTranslations.action(9),
+    ];
+    property <[string]> app-match-field-options: [
+        @tr("Any identity"),
+        @tr("Window title"),
+        @tr("Window class"),
+        @tr("Executable"),
     ];
     property <[string]> thumb-options: [
         SettingsTranslations.thumb-wheel(0),
@@ -2864,6 +2979,7 @@ export component MainWindow inherits Window {
                                             }
                                         }
                                     }
+
                                 }
                             }
                         }
@@ -2935,13 +3051,13 @@ export component MainWindow inherits Window {
 
                                             if root.selected-button-index == 0 : FormComboBox { height: 34px; accessible-label: @tr("Assigned action"); model: root.action-options; current-index <=> root.back-action-index; selected(value) => { root.mark-dirty(); } vertical-stretch: 0; }
                                             if root.selected-button-index == 1 : FormComboBox { height: 34px; accessible-label: @tr("Assigned action"); model: root.action-options; current-index <=> root.forward-action-index; selected(value) => { root.mark-dirty(); } vertical-stretch: 0; }
-                                            if root.selected-button-index == 2 : FormComboBox { height: 34px; accessible-label: @tr("Assigned action"); model: root.action-options; current-index <=> root.gesture-action-index; selected(value) => { root.mark-dirty(); } vertical-stretch: 0; }
+                                            if root.selected-button-index == 2 : FormComboBox { height: 34px; accessible-label: @tr("Assigned action"); model: root.gesture-assignment-options; current-index <=> root.gesture-action-index; selected(value) => { root.mark-dirty(); } vertical-stretch: 0; }
                                             if root.selected-button-index == 3 : FormComboBox { height: 34px; accessible-label: @tr("Assigned action"); model: root.action-options; current-index <=> root.mode-shift-action-index; selected(value) => { root.mark-dirty(); } vertical-stretch: 0; }
                                             if root.selected-button-index == 4 : FormComboBox { height: 34px; accessible-label: @tr("Assigned action"); model: root.action-options; current-index <=> root.middle-action-index; selected(value) => { root.mark-dirty(); } vertical-stretch: 0; }
                                         }
                                     }
 
-                                    Rectangle {
+                                    if root.selected-button-index != 2 || root.gesture-action-index != 11 : Rectangle {
                                         height: 244px;
                                         background: Theme.panel;
                                         border-width: 1px;
@@ -2962,6 +3078,39 @@ export component MainWindow inherits Window {
                                             AssignmentRow { height: 37px; number: "3"; title: SettingsTranslations.button(2); action: SettingsTranslations.button-action(2, root.gesture-action-index); selected: root.selected-button-index == 2; clicked => { root.selected-button-index = 2; } }
                                             AssignmentRow { height: 37px; number: "4"; title: SettingsTranslations.button(3); action: SettingsTranslations.button-action(3, root.mode-shift-action-index); selected: root.selected-button-index == 3; clicked => { root.selected-button-index = 3; } }
                                             AssignmentRow { height: 37px; number: "5"; title: SettingsTranslations.button(4); action: SettingsTranslations.button-action(4, root.middle-action-index); selected: root.selected-button-index == 4; clicked => { root.selected-button-index = 4; } }
+                                        }
+                                    }
+
+                                    if root.selected-button-index == 2 && root.gesture-action-index == 11 : Rectangle {
+                                        height: 244px;
+                                        background: Theme.panel;
+                                        border-width: 1px;
+                                        border-color: Theme.border;
+                                        border-radius: 7px;
+                                        vertical-stretch: 0;
+
+                                        VerticalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            padding-top: 6px;
+                                            padding-bottom: 6px;
+                                            spacing: 0px;
+
+                                            SelectRow { height: 36px; title: @tr("Click"); options: root.gesture-action-options; current-index <=> root.gesture-click-action-index; edited => { root.mark-dirty(); } }
+                                            SelectRow { height: 36px; title: @tr("Move up"); options: root.gesture-action-options; current-index <=> root.gesture-up-action-index; edited => { root.mark-dirty(); } }
+                                            SelectRow { height: 36px; title: @tr("Move down"); options: root.gesture-action-options; current-index <=> root.gesture-down-action-index; edited => { root.mark-dirty(); } }
+                                            SelectRow { height: 36px; title: @tr("Move left"); options: root.gesture-action-options; current-index <=> root.gesture-left-action-index; edited => { root.mark-dirty(); } }
+                                            SelectRow { height: 36px; title: @tr("Move right"); options: root.gesture-action-options; current-index <=> root.gesture-right-action-index; edited => { root.mark-dirty(); } }
+                                            GestureTestPad {
+                                                height: 46px;
+                                                actions: [
+                                                    root.gesture-action-options[root.gesture-click-action-index],
+                                                    root.gesture-action-options[root.gesture-up-action-index],
+                                                    root.gesture-action-options[root.gesture-down-action-index],
+                                                    root.gesture-action-options[root.gesture-left-action-index],
+                                                    root.gesture-action-options[root.gesture-right-action-index],
+                                                ];
+                                            }
                                         }
                                     }
 
@@ -3024,12 +3173,28 @@ export component MainWindow inherits Window {
                                                         width: parent.width;
                                                         height: 34px;
                                                         title: @tr("New");
-                                                        enabled: root.app-profiles-supported;
+                                                        enabled: true;
                                                         clicked => {
                                                             root.selected-app-profile-index = -1;
                                                             root.app-profile-editor-app = "";
+                                                            root.app-profile-editor-match-field-index = 0;
+                                                            root.app-profile-editor-pointer-enabled = false;
                                                             root.app-profile-editor-pointer-speed = 100;
+                                                            root.app-profile-editor-wheel-enabled = false;
+                                                            root.app-profile-editor-wheel-mode-index = 2;
+                                                            root.app-profile-editor-smart-shift-threshold = 45;
+                                                            root.app-profile-editor-scroll-enabled = false;
+                                                            root.app-profile-editor-high-resolution-scroll = true;
+                                                            root.app-profile-editor-scroll-direction-index = 0;
+                                                            root.app-profile-editor-thumb-wheel-enabled = false;
                                                             root.app-profile-editor-thumb-wheel-index = 0;
+                                                            root.app-profile-editor-thumb-wheel-speed = 100;
+                                                            root.app-profile-editor-buttons-enabled = false;
+                                                            root.app-profile-editor-back-action-index = 10;
+                                                            root.app-profile-editor-forward-action-index = 10;
+                                                            root.app-profile-editor-gesture-action-index = 10;
+                                                            root.app-profile-editor-mode-shift-action-index = 10;
+                                                            root.app-profile-editor-middle-action-index = 10;
                                                         }
                                                         vertical-stretch: 0;
                                                     }
@@ -3066,7 +3231,7 @@ export component MainWindow inherits Window {
                                                     for profile[i] in root.app-profile-rows : ProfileRow {
                                                         app: profile.app;
                                                         initial: profile.initial;
-                                                        summary: SettingsTranslations.profile-summary(profile.pointer-speed, profile.thumb-wheel-index);
+                                                        summary: SettingsTranslations.profile-summary(profile.override-count);
                                                         selected: root.selected-app-profile-index == i;
                                                         clicked => {
                                                             root.selected-app-profile-index = i;
@@ -3081,112 +3246,115 @@ export component MainWindow inherits Window {
                                     Rectangle {
                                         background: Theme.panel;
 
-                                        VerticalLayout {
-                                            padding-left: 26px;
-                                            padding-right: 26px;
-                                            padding-top: 12px;
-                                            padding-bottom: 12px;
-                                            spacing: 9px;
-
-                                            HorizontalLayout {
-                                                height: 34px;
-                                                spacing: 10px;
-                                                vertical-stretch: 0;
-
-                                                Text { text: root.selected-app-profile-index < 0 ? @tr("New profile") : root.app-profile-editor-app; color: Theme.text; font-size: 16px; font-weight: 650; vertical-alignment: center; overflow: elide; }
-                                                VerticalLayout {
-                                                    width: 66px;
-                                                    horizontal-stretch: 0;
-                                                    alignment: center;
-
-                                                    MetaBadge {
-                                                        width: parent.width;
-                                                        title: root.app-profiles-supported ? @tr("Dogi") : @tr("Unavailable");
-                                                        tone: root.app-profiles-supported ? BadgeTone.accent : BadgeTone.warning;
-                                                    }
-                                                }
-                                                ActionButton { width: 76px; height: 34px; title: @tr("Remove"); destructive: true; enabled: root.app-profiles-supported && root.selected-app-profile-index >= 0; clicked => { root.remove-app-profile(); } horizontal-stretch: 0; vertical-stretch: 0; }
-                                                ActionButton { width: 108px; height: 34px; title: root.selected-app-profile-index < 0 ? @tr("Add profile") : @tr("Update profile"); primary: true; enabled: root.app-profiles-supported && root.app-profile-editor-app != ""; clicked => { root.save-app-profile(); } horizontal-stretch: 0; vertical-stretch: 0; }
-                                            }
-
-                                            Divider {}
+                                        ScrollView {
+                                            viewport-width: self.width;
+                                            viewport-height: 1040px
+                                                + (root.app-profile-editor-buttons-enabled ? 260px : 0px)
+                                                + (root.app-profile-editor-buttons-enabled && root.app-profile-editor-gesture-action-index == 11 ? 250px : 0px);
 
                                             VerticalLayout {
-                                                height: 60px;
-                                                spacing: 3px;
-                                                vertical-stretch: 0;
-                                                Label { text: @tr("App name or ID"); }
-                                                FormLineEdit { height: 36px; accessible-label: @tr("App name or ID"); placeholder-text: @tr("For example: firefox"); text <=> root.app-profile-editor-app; enabled: root.app-profiles-supported; vertical-stretch: 0; }
-                                            }
-
-                                            Text { height: 20px; text: @tr("Overrides"); color: Theme.text; font-size: 12px; font-weight: 650; vertical-stretch: 0; }
-
-                                            Rectangle {
-                                                height: 112px;
-                                                background: Theme.surface;
-                                                border-width: 1px;
-                                                border-color: Theme.border;
-                                                border-radius: 7px;
-                                                vertical-stretch: 0;
-
-                                                VerticalLayout {
-                                                    padding: 0px;
-                                                    spacing: 0px;
-                                                    SliderRow { height: 60px; title: @tr("Pointer speed"); suffix: "%"; minimum: 50; maximum: 200; value <=> root.app-profile-editor-pointer-speed; enabled: root.app-profiles-supported; }
-                                                    Divider {}
-                                                    SelectRow { height: 51px; title: @tr("Thumb wheel"); options: root.thumb-options; current-index <=> root.app-profile-editor-thumb-wheel-index; enabled: root.app-profiles-supported; }
-                                                }
-                                            }
-
-                                            Text { height: 20px; text: @tr("Inherited from the device"); color: Theme.text; font-size: 12px; font-weight: 650; vertical-stretch: 0; }
-
-                                            Rectangle {
-                                                height: 60px;
-                                                background: Theme.surface;
-                                                border-width: 1px;
-                                                border-color: Theme.border;
-                                                border-radius: 7px;
-                                                vertical-stretch: 0;
+                                                width: parent.width;
+                                                padding-left: 26px;
+                                                padding-right: 26px;
+                                                padding-top: 12px;
+                                                padding-bottom: 18px;
+                                                spacing: 9px;
 
                                                 HorizontalLayout {
-                                                    padding-left: 16px;
-                                                    padding-right: 16px;
-                                                    spacing: 0px;
+                                                    height: 34px;
+                                                    spacing: 10px;
+                                                    vertical-stretch: 0;
+                                                    Text { text: root.selected-app-profile-index < 0 ? @tr("New profile") : root.app-profile-editor-app; color: Theme.text; font-size: 16px; font-weight: 650; vertical-alignment: center; overflow: elide; }
+                                                    MetaBadge { width: 72px; title: root.app-profiles-supported ? @tr("Dogi") : @tr("Unavailable"); tone: root.app-profiles-supported ? BadgeTone.accent : BadgeTone.warning; horizontal-stretch: 0; }
+                                                    ActionButton { width: 76px; height: 34px; title: @tr("Remove"); destructive: true; enabled: root.selected-app-profile-index >= 0; clicked => { root.remove-app-profile(); } horizontal-stretch: 0; }
+                                                    ActionButton { width: 108px; height: 34px; title: root.selected-app-profile-index < 0 ? @tr("Add profile") : @tr("Update profile"); primary: true; enabled: root.app-profile-editor-app != "" && root.app-profile-editor-has-overrides; clicked => { root.save-app-profile(); } horizontal-stretch: 0; }
+                                                }
 
+                                                Divider {}
+                                                Label { text: @tr("Application match"); }
+                                                SelectRow { height: 48px; title: @tr("Match field"); options: root.app-match-field-options; current-index <=> root.app-profile-editor-match-field-index; }
+                                                FormLineEdit { height: 36px; accessible-label: @tr("Application identifier"); placeholder-text: @tr("For example: firefox"); text <=> root.app-profile-editor-app; vertical-stretch: 0; }
+
+                                                Text { height: 22px; text: @tr("Overrides"); color: Theme.text; font-size: 12px; font-weight: 650; vertical-stretch: 0; }
+
+                                                Rectangle {
+                                                    height: root.app-profile-editor-pointer-enabled ? 112px : 52px;
+                                                    background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 7px; vertical-stretch: 0;
                                                     VerticalLayout {
-                                                        spacing: 1px;
-                                                        alignment: center;
-                                                        Text { height: 18px; text: root.wheel-options[root.wheel-mode-index]; color: Theme.text; font-size: 11px; font-weight: 650; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
-                                                        Text { height: 18px; text: @tr("Main wheel"); color: Theme.text-muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+                                                        spacing: 0px;
+                                                        ToggleRow { title: @tr("Pointer speed"); checked <=> root.app-profile-editor-pointer-enabled; enabled: true; }
+                                                        if root.app-profile-editor-pointer-enabled : Divider {}
+                                                        if root.app-profile-editor-pointer-enabled : SliderRow { height: 59px; title: @tr("Speed"); suffix: "%"; minimum: 50; maximum: 200; value <=> root.app-profile-editor-pointer-speed; enabled: true; }
                                                     }
+                                                }
+
+                                                Rectangle {
+                                                    height: root.app-profile-editor-wheel-enabled ? 156px : 52px;
+                                                    background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 7px; vertical-stretch: 0;
                                                     VerticalLayout {
-                                                        width: 1px;
-                                                        horizontal-stretch: 0;
-                                                        alignment: center;
-                                                        Rectangle { width: 1px; height: 34px; background: Theme.border; vertical-stretch: 0; }
+                                                        spacing: 0px;
+                                                        ToggleRow { title: @tr("Main wheel"); checked <=> root.app-profile-editor-wheel-enabled; enabled: true; }
+                                                        if root.app-profile-editor-wheel-enabled : Divider {}
+                                                        if root.app-profile-editor-wheel-enabled : SelectRow { height: 51px; title: @tr("Mode"); options: root.wheel-options; current-index <=> root.app-profile-editor-wheel-mode-index; enabled: true; }
+                                                        if root.app-profile-editor-wheel-enabled : Divider {}
+                                                        if root.app-profile-editor-wheel-enabled : SliderRow { height: 51px; title: @tr("SmartShift sensitivity"); suffix: ""; minimum: 1; maximum: 50; value <=> root.app-profile-editor-smart-shift-threshold; enabled: root.app-profile-editor-wheel-mode-index == 2; }
                                                     }
+                                                }
+
+                                                Rectangle {
+                                                    height: root.app-profile-editor-scroll-enabled ? 156px : 52px;
+                                                    background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 7px; vertical-stretch: 0;
                                                     VerticalLayout {
-                                                        spacing: 1px;
-                                                        alignment: center;
-                                                        Text { height: 18px; text: @tr("5 controls"); color: Theme.text; font-size: 11px; font-weight: 650; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
-                                                        Text { height: 18px; text: @tr("Button assignments"); color: Theme.text-muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+                                                        spacing: 0px;
+                                                        ToggleRow { title: @tr("Scroll behavior"); checked <=> root.app-profile-editor-scroll-enabled; enabled: true; }
+                                                        if root.app-profile-editor-scroll-enabled : Divider {}
+                                                        if root.app-profile-editor-scroll-enabled : ToggleRow { title: @tr("Smooth scrolling"); checked <=> root.app-profile-editor-high-resolution-scroll; enabled: true; }
+                                                        if root.app-profile-editor-scroll-enabled : Divider {}
+                                                        if root.app-profile-editor-scroll-enabled : SelectRow { height: 51px; title: @tr("Direction"); options: [@tr("Standard"), @tr("Natural")]; current-index <=> root.app-profile-editor-scroll-direction-index; enabled: true; }
                                                     }
+                                                }
+
+                                                Rectangle {
+                                                    height: root.app-profile-editor-thumb-wheel-enabled ? 164px : 52px;
+                                                    background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 7px; vertical-stretch: 0;
                                                     VerticalLayout {
-                                                        width: 1px;
-                                                        horizontal-stretch: 0;
-                                                        alignment: center;
-                                                        Rectangle { width: 1px; height: 34px; background: Theme.border; vertical-stretch: 0; }
+                                                        spacing: 0px;
+                                                        ToggleRow { title: @tr("Thumb wheel"); checked <=> root.app-profile-editor-thumb-wheel-enabled; enabled: true; }
+                                                        if root.app-profile-editor-thumb-wheel-enabled : Divider {}
+                                                        if root.app-profile-editor-thumb-wheel-enabled : SelectRow { height: 51px; title: @tr("Behavior"); options: root.thumb-options; current-index <=> root.app-profile-editor-thumb-wheel-index; enabled: true; }
+                                                        if root.app-profile-editor-thumb-wheel-enabled : Divider {}
+                                                        if root.app-profile-editor-thumb-wheel-enabled : SliderRow { height: 59px; title: @tr("Speed"); suffix: "%"; minimum: 25; maximum: 400; value <=> root.app-profile-editor-thumb-wheel-speed; enabled: root.app-profile-editor-thumb-wheel-index == 0; }
                                                     }
+                                                }
+
+                                                Rectangle {
+                                                    height: root.app-profile-editor-buttons-enabled ? 312px : 52px;
+                                                    background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 7px; vertical-stretch: 0;
                                                     VerticalLayout {
-                                                        spacing: 1px;
-                                                        alignment: center;
-                                                        Text { height: 18px; text: @tr("Device defaults"); color: Theme.text; font-size: 11px; font-weight: 650; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
-                                                        Text { height: 18px; text: @tr("When unmatched"); color: Theme.text-muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; vertical-stretch: 0; }
+                                                        spacing: 0px;
+                                                        ToggleRow { title: @tr("Button assignments"); checked <=> root.app-profile-editor-buttons-enabled; enabled: true; }
+                                                        if root.app-profile-editor-buttons-enabled : Divider {}
+                                                        if root.app-profile-editor-buttons-enabled : SelectRow { height: 51px; title: SettingsTranslations.button(0); options: root.action-options; current-index <=> root.app-profile-editor-back-action-index; enabled: true; }
+                                                        if root.app-profile-editor-buttons-enabled : SelectRow { height: 51px; title: SettingsTranslations.button(1); options: root.action-options; current-index <=> root.app-profile-editor-forward-action-index; enabled: true; }
+                                                        if root.app-profile-editor-buttons-enabled : SelectRow { height: 51px; title: SettingsTranslations.button(2); options: root.gesture-assignment-options; current-index <=> root.app-profile-editor-gesture-action-index; enabled: true; }
+                                                        if root.app-profile-editor-buttons-enabled : SelectRow { height: 51px; title: SettingsTranslations.button(3); options: root.action-options; current-index <=> root.app-profile-editor-mode-shift-action-index; enabled: true; }
+                                                        if root.app-profile-editor-buttons-enabled : SelectRow { height: 51px; title: SettingsTranslations.button(4); options: root.action-options; current-index <=> root.app-profile-editor-middle-action-index; enabled: true; }
+                                                    }
+                                                }
+
+                                                if root.app-profile-editor-buttons-enabled && root.app-profile-editor-gesture-action-index == 11 : Rectangle {
+                                                    height: 257px;
+                                                    background: Theme.surface; border-width: 1px; border-color: Theme.border; border-radius: 7px; vertical-stretch: 0;
+                                                    VerticalLayout {
+                                                        spacing: 0px;
+                                                        SelectRow { height: 51px; title: @tr("Click"); options: root.gesture-action-options; current-index <=> root.app-profile-editor-gesture-click-action-index; enabled: true; }
+                                                        SelectRow { height: 51px; title: @tr("Move up"); options: root.gesture-action-options; current-index <=> root.app-profile-editor-gesture-up-action-index; enabled: true; }
+                                                        SelectRow { height: 51px; title: @tr("Move down"); options: root.gesture-action-options; current-index <=> root.app-profile-editor-gesture-down-action-index; enabled: true; }
+                                                        SelectRow { height: 51px; title: @tr("Move left"); options: root.gesture-action-options; current-index <=> root.app-profile-editor-gesture-left-action-index; enabled: true; }
+                                                        SelectRow { height: 51px; title: @tr("Move right"); options: root.gesture-action-options; current-index <=> root.app-profile-editor-gesture-right-action-index; enabled: true; }
                                                     }
                                                 }
                                             }
-
-                                            Rectangle { vertical-stretch: 1; }
                                         }
                                     }
                                 }
