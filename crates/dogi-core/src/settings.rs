@@ -832,15 +832,27 @@ impl SettingsApplyScope {
 pub struct SettingsApplyReport {
     pub device_id: String,
     pub profile_name: String,
+    pub transaction: SettingsTransactionState,
     pub outcomes: Vec<SettingsApplyOutcome>,
 }
 
 impl SettingsApplyReport {
     pub fn has_failed_steps(&self) -> bool {
-        self.outcomes
-            .iter()
-            .any(|outcome| outcome.status == SettingsApplyStatus::Failed)
+        self.transaction != SettingsTransactionState::Committed
     }
+
+    pub fn committed(&self) -> bool {
+        self.transaction == SettingsTransactionState::Committed
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SettingsTransactionState {
+    Committed,
+    Rejected,
+    RolledBack,
+    RecoveryRequired,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -858,6 +870,47 @@ pub enum SettingsApplyStatus {
     Skipped,
     Unsupported,
     Failed,
+    RolledBack,
+    RollbackFailed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SettingsApplyPreview {
+    pub device_id: String,
+    pub profile_name: String,
+    pub steps: Vec<SettingsApplyPreviewStep>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SettingsApplyPreviewStep {
+    pub operation: SettingsApplyOperation,
+    pub feature: HidppFeature,
+    pub before: DeviceSettingValue,
+    pub after: DeviceSettingValue,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DeviceSettingValue {
+    PointerSpeed {
+        percent: u8,
+    },
+    WheelBehavior {
+        mode: WheelRatchetMode,
+        threshold: u8,
+    },
+    ScrollBehavior {
+        high_resolution: bool,
+        natural: bool,
+    },
+    ThumbWheelRouting {
+        diverted: bool,
+    },
+    ButtonRouting {
+        button: Master3sButton,
+        diverted: bool,
+        raw_xy: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

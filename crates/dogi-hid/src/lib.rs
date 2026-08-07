@@ -1,15 +1,85 @@
 use std::time::Duration;
 
 use dogi_core::{
-    DeviceInfo, DogiError, HidppFeatureInfo, Master3sRuntimeEvent, Master3sSettings, Result,
-    SettingsApplyPlan, SettingsApplyReport, build_master3s_apply_plan,
+    DeviceInfo, DeviceSettingValue, DogiError, HidppFeature, HidppFeatureInfo,
+    Master3sRuntimeEvent, Master3sSettings, Result, SettingsApplyOperation, SettingsApplyPlan,
+    SettingsApplyPreview, SettingsApplyPreviewStep, SettingsApplyReport, build_master3s_apply_plan,
     master3s_button_from_control_id,
 };
+use serde::{Deserialize, Serialize};
 
 const HIDPP_SHORT_REPORT_ID: u8 = 0x10;
 const HIDPP_LONG_REPORT_ID: u8 = 0x11;
 const HIDPP_FEATURE_REPROG_CONTROLS_V4: u16 = 0x1b04;
 const HIDPP_FEATURE_THUMB_WHEEL: u16 = 0x2150;
+
+const SETTINGS_TRANSACTION_FORMAT_VERSION: u8 = 1;
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PreparedSettingsTransaction {
+    version: u8,
+    device_id: String,
+    profile_name: String,
+    changes: Vec<PreparedHidChange>,
+}
+
+impl PreparedSettingsTransaction {
+    pub fn device_id(&self) -> &str {
+        &self.device_id
+    }
+
+    pub fn profile_name(&self) -> &str {
+        &self.profile_name
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.changes.is_empty()
+    }
+
+    pub fn preview(&self) -> SettingsApplyPreview {
+        SettingsApplyPreview {
+            device_id: self.device_id.clone(),
+            profile_name: self.profile_name.clone(),
+            steps: self
+                .changes
+                .iter()
+                .map(|change| SettingsApplyPreviewStep {
+                    operation: change.operation.clone(),
+                    feature: change.feature,
+                    before: change.before_value.clone(),
+                    after: change.after_value.clone(),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PreparedHidChange {
+    title: String,
+    operation: SettingsApplyOperation,
+    feature: HidppFeature,
+    feature_id: u16,
+    read_function: u8,
+    read_payload: Vec<u8>,
+    write_function: u8,
+    before_write: Vec<u8>,
+    after_write: Vec<u8>,
+    verification: Vec<VerificationByte>,
+    before_value: DeviceSettingValue,
+    after_value: DeviceSettingValue,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VerificationByte {
+    response_index: usize,
+    mask: u8,
+    before: u8,
+    after: u8,
+}
 
 pub fn parse_master3s_runtime_notification(
     report: &[u8],
@@ -213,7 +283,7 @@ pub fn apply_master3s_settings(
 ) -> Result<SettingsApplyReport> {
     let settings = settings.normalized();
     let plan = build_master3s_apply_plan(device_id, &settings);
-    platform::apply_master3s_settings_plan(device_id, &settings, &plan)
+    apply_master3s_settings_plan(device_id, &settings, &plan)
 }
 
 pub fn apply_master3s_settings_plan(
@@ -227,7 +297,46 @@ pub fn apply_master3s_settings_plan(
             plan.device_id
         )));
     }
-    platform::apply_master3s_settings_plan(device_id, &settings.normalized(), plan)
+    let prepared = prepare_master3s_settings_plan(device_id, settings, plan)?;
+    execute_prepared_master3s_settings_transaction(&prepared)
+}
+
+pub fn prepare_master3s_settings_plan(
+    device_id: &str,
+    settings: &Master3sSettings,
+    plan: &SettingsApplyPlan,
+) -> Result<PreparedSettingsTransaction> {
+    if plan.device_id != device_id {
+        return Err(DogiError::InvalidArgument(format!(
+            "apply plan targets {}, not {device_id}",
+            plan.device_id
+        )));
+    }
+    platform::prepare_master3s_settings_plan(device_id, &settings.normalized(), plan)
+}
+
+pub fn execute_prepared_master3s_settings_transaction(
+    transaction: &PreparedSettingsTransaction,
+) -> Result<SettingsApplyReport> {
+    if transaction.version != SETTINGS_TRANSACTION_FORMAT_VERSION {
+        return Err(DogiError::InvalidArgument(format!(
+            "unsupported settings transaction format {}",
+            transaction.version
+        )));
+    }
+    platform::execute_prepared_master3s_settings_transaction(transaction)
+}
+
+pub fn recover_prepared_master3s_settings_transaction(
+    transaction: &PreparedSettingsTransaction,
+) -> Result<SettingsApplyReport> {
+    if transaction.version != SETTINGS_TRANSACTION_FORMAT_VERSION {
+        return Err(DogiError::InvalidArgument(format!(
+            "unsupported settings transaction format {}",
+            transaction.version
+        )));
+    }
+    platform::recover_prepared_master3s_settings_transaction(transaction)
 }
 
 pub fn listen_master3s_runtime_events(
@@ -252,16 +361,19 @@ mod platform {
 
     use dogi_core::{
         BatteryInfo, BatterySource, BatteryStatus, ButtonBinding, CapabilityState, ConnectionKind,
-        DeviceAccess, DeviceCapabilities, DeviceInfo, DogiError, HidUsage, HidppFeature,
-        HidppFeatureInfo, HidppProtocolVersion, Master3sSettings, PairedDeviceInfo, ReceiverKind,
-        ReportDescriptorInfo, Result, SettingsApplyOperation, SettingsApplyOutcome,
-        SettingsApplyPlan, SettingsApplyReport, SettingsApplyStatus, ThumbWheelMode,
-        WheelRatchetMode, WritePolicy, bus_kind_from_linux_bus_id, button_action_requires_runtime,
-        infer_connection, infer_receiver_kind, is_logitech_vendor, master3s_button_control_id,
-        stable_device_id,
+        DeviceAccess, DeviceCapabilities, DeviceInfo, DeviceSettingValue, DogiError, HidUsage,
+        HidppFeature, HidppFeatureInfo, HidppProtocolVersion, Master3sSettings, PairedDeviceInfo,
+        ReceiverKind, ReportDescriptorInfo, Result, SettingsApplyOperation, SettingsApplyOutcome,
+        SettingsApplyPlan, SettingsApplyReport, SettingsApplyStatus, SettingsTransactionState,
+        ThumbWheelMode, WheelRatchetMode, WritePolicy, bus_kind_from_linux_bus_id,
+        button_action_requires_runtime, infer_connection, infer_receiver_kind, is_logitech_vendor,
+        master3s_button_control_id, stable_device_id,
     };
 
-    use crate::{HidBackend, Master3sRuntimeEvent, parse_master3s_runtime_notification};
+    use crate::{
+        HidBackend, Master3sRuntimeEvent, PreparedHidChange, PreparedSettingsTransaction,
+        SETTINGS_TRANSACTION_FORMAT_VERSION, VerificationByte, parse_master3s_runtime_notification,
+    };
 
     const HIDRAW_CLASS: &str = "/sys/class/hidraw";
     const HIDPP_USAGE_PAGE: u16 = 0xff00;
@@ -430,13 +542,27 @@ mod platform {
         SysfsHidBackend.find(id)
     }
 
-    pub fn apply_master3s_settings_plan(
+    pub fn prepare_master3s_settings_plan(
         device_id: &str,
         settings: &Master3sSettings,
         plan: &SettingsApplyPlan,
-    ) -> Result<SettingsApplyReport> {
+    ) -> Result<PreparedSettingsTransaction> {
         let device = find_device(device_id)?;
-        apply_master3s_settings_to_device(&device, settings, plan)
+        prepare_master3s_settings_for_device(&device, settings, plan)
+    }
+
+    pub fn execute_prepared_master3s_settings_transaction(
+        transaction: &PreparedSettingsTransaction,
+    ) -> Result<SettingsApplyReport> {
+        let device = find_device(transaction.device_id())?;
+        execute_prepared_transaction_for_device(&device, transaction)
+    }
+
+    pub fn recover_prepared_master3s_settings_transaction(
+        transaction: &PreparedSettingsTransaction,
+    ) -> Result<SettingsApplyReport> {
+        let device = find_device(transaction.device_id())?;
+        recover_prepared_transaction_for_device(&device, transaction)
     }
 
     pub fn listen_master3s_runtime_events(
@@ -707,105 +833,295 @@ mod platform {
         }))
     }
 
-    fn apply_master3s_settings_to_device(
+    fn prepare_master3s_settings_for_device(
         device: &DeviceInfo,
         settings: &Master3sSettings,
         plan: &SettingsApplyPlan,
+    ) -> Result<PreparedSettingsTransaction> {
+        let (mut client, slot, features) = open_settings_device(device)?;
+        let settings = settings.normalized();
+        let mut changes = Vec::with_capacity(plan.steps.len());
+        let button_controls = if plan.steps.iter().any(|step| {
+            step.requires_device_write
+                && matches!(step.operation, SettingsApplyOperation::ButtonMapping { .. })
+        }) {
+            let index = require_feature(
+                &features,
+                HIDPP_FEATURE_REPROG_CONTROLS_V4,
+                "REPROG_CONTROLS_V4",
+            )?;
+            read_reprog_controls(&mut client, slot, index)
+                .map_err(|error| DogiError::Transport(error.to_string()))?
+        } else {
+            HashMap::new()
+        };
+
+        for step in plan.steps.iter().filter(|step| step.requires_device_write) {
+            let change = match &step.operation {
+                SettingsApplyOperation::PointerSpeed { .. } => {
+                    prepare_pointer_speed(&mut client, slot, &features, &settings)?
+                }
+                SettingsApplyOperation::WheelBehavior { .. } => {
+                    prepare_smart_shift(&mut client, slot, &features, &settings)?
+                }
+                SettingsApplyOperation::ScrollBehavior {
+                    high_resolution,
+                    natural,
+                } => prepare_hires_wheel(&mut client, slot, &features, *high_resolution, *natural)?,
+                SettingsApplyOperation::ThumbWheel { .. } => {
+                    prepare_thumb_wheel(&mut client, slot, &features, &settings)?
+                }
+                SettingsApplyOperation::ButtonMapping { button, .. } => prepare_button_diversion(
+                    &mut client,
+                    slot,
+                    &features,
+                    &ButtonBinding {
+                        button: *button,
+                        action: settings.button_action(*button),
+                    },
+                    &button_controls,
+                )?,
+                SettingsApplyOperation::LocalRuntime { .. }
+                | SettingsApplyOperation::AppProfile { .. } => continue,
+            };
+            if !change_is_noop(&change) {
+                changes.push(change);
+            }
+        }
+
+        Ok(PreparedSettingsTransaction {
+            version: SETTINGS_TRANSACTION_FORMAT_VERSION,
+            device_id: device.id.clone(),
+            profile_name: settings.profile_name,
+            changes,
+        })
+    }
+
+    fn execute_prepared_transaction_for_device(
+        device: &DeviceInfo,
+        transaction: &PreparedSettingsTransaction,
     ) -> Result<SettingsApplyReport> {
+        let (mut client, slot, features) = open_settings_device(device)?;
+        let mut io = HidppSettingsIo {
+            client: &mut client,
+            slot,
+            features: &features,
+        };
+        execute_prepared_transaction(&mut io, transaction)
+    }
+
+    fn execute_prepared_transaction(
+        io: &mut impl SettingsTransactionIo,
+        transaction: &PreparedSettingsTransaction,
+    ) -> Result<SettingsApplyReport> {
+        let mut already_applied = Vec::with_capacity(transaction.changes.len());
+
+        for change in &transaction.changes {
+            let current = io.read(change)?;
+            if change_matches(&current, change, false) {
+                already_applied.push(false);
+            } else if change_matches(&current, change, true) {
+                already_applied.push(true);
+            } else {
+                return Ok(rejected_report(
+                    transaction,
+                    change,
+                    "device state changed after the transaction was prepared",
+                ));
+            }
+        }
+
+        let mut outcomes = Vec::with_capacity(transaction.changes.len());
+        let mut attempted = Vec::new();
+        for (index, change) in transaction.changes.iter().enumerate() {
+            if already_applied[index] {
+                outcomes.push(SettingsApplyOutcome {
+                    title: change.title.clone(),
+                    feature: change.feature,
+                    status: SettingsApplyStatus::Skipped,
+                    detail: Some("device already has the requested value".to_owned()),
+                });
+                continue;
+            }
+
+            attempted.push(index);
+            let result = write_and_verify(io, change, true);
+            match result {
+                Ok(()) => outcomes.push(SettingsApplyOutcome {
+                    title: change.title.clone(),
+                    feature: change.feature,
+                    status: SettingsApplyStatus::Applied,
+                    detail: Some("written and verified from the device".to_owned()),
+                }),
+                Err(error) => {
+                    outcomes.push(failed_outcome(
+                        change.title.clone(),
+                        change.feature,
+                        error.to_string(),
+                    ));
+                    append_unattempted_outcomes(transaction, index + 1, &mut outcomes);
+                    let recovered = rollback_attempted(io, transaction, &attempted, &mut outcomes);
+                    return Ok(SettingsApplyReport {
+                        device_id: transaction.device_id.clone(),
+                        profile_name: transaction.profile_name.clone(),
+                        transaction: if recovered {
+                            SettingsTransactionState::RolledBack
+                        } else {
+                            SettingsTransactionState::RecoveryRequired
+                        },
+                        outcomes,
+                    });
+                }
+            }
+        }
+
+        Ok(SettingsApplyReport {
+            device_id: transaction.device_id.clone(),
+            profile_name: transaction.profile_name.clone(),
+            transaction: SettingsTransactionState::Committed,
+            outcomes,
+        })
+    }
+
+    fn recover_prepared_transaction_for_device(
+        device: &DeviceInfo,
+        transaction: &PreparedSettingsTransaction,
+    ) -> Result<SettingsApplyReport> {
+        let (mut client, slot, features) = open_settings_device(device)?;
+        let mut io = HidppSettingsIo {
+            client: &mut client,
+            slot,
+            features: &features,
+        };
+        recover_prepared_transaction(&mut io, transaction)
+    }
+
+    fn recover_prepared_transaction(
+        io: &mut impl SettingsTransactionIo,
+        transaction: &PreparedSettingsTransaction,
+    ) -> Result<SettingsApplyReport> {
+        let mut outcomes = Vec::with_capacity(transaction.changes.len());
+        let mut recovered = true;
+
+        for change in transaction.changes.iter().rev() {
+            let result = io.read(change).and_then(|current| {
+                if change_matches(&current, change, false) {
+                    Ok(false)
+                } else if change_matches(&current, change, true) {
+                    write_and_verify(io, change, false).map(|()| true)
+                } else {
+                    Err(DogiError::Protocol(
+                        "device state matches neither side of the interrupted transaction"
+                            .to_owned(),
+                    ))
+                }
+            });
+            match result {
+                Ok(was_restored) => outcomes.push(SettingsApplyOutcome {
+                    title: change.title.clone(),
+                    feature: change.feature,
+                    status: if was_restored {
+                        SettingsApplyStatus::RolledBack
+                    } else {
+                        SettingsApplyStatus::Skipped
+                    },
+                    detail: Some(
+                        if was_restored {
+                            "restored and verified from the device"
+                        } else {
+                            "device already has the original value"
+                        }
+                        .to_owned(),
+                    ),
+                }),
+                Err(error) => {
+                    recovered = false;
+                    outcomes.push(SettingsApplyOutcome {
+                        title: change.title.clone(),
+                        feature: change.feature,
+                        status: SettingsApplyStatus::RollbackFailed,
+                        detail: Some(error.to_string()),
+                    });
+                }
+            }
+        }
+        outcomes.reverse();
+
+        Ok(SettingsApplyReport {
+            device_id: transaction.device_id.clone(),
+            profile_name: transaction.profile_name.clone(),
+            transaction: if recovered {
+                SettingsTransactionState::RolledBack
+            } else {
+                SettingsTransactionState::RecoveryRequired
+            },
+            outcomes,
+        })
+    }
+
+    fn open_settings_device(
+        device: &DeviceInfo,
+    ) -> Result<(HidppClient, u8, Vec<HidppFeatureInfo>)> {
         if !device.access.hidraw_readwrite {
             return Err(DogiError::Transport(format!(
-                "{} needs read/write hidraw permission for HID++ apply",
+                "{} needs read/write hidraw permission for HID++ settings",
                 device.path
             )));
         }
-
         let paired = device.paired_device.as_ref().ok_or_else(|| {
             DogiError::Protocol(
                 "HID++ paired-device information is unavailable; cannot choose target slot"
                     .to_owned(),
             )
         })?;
-        let mut client = HidppClient::open(&device.path)
+        let client = HidppClient::open(&device.path)
             .map_err(|error| DogiError::Transport(error.to_string()))?;
-        let settings = settings.normalized();
-        let slot = paired.slot;
-        let features = &paired.features;
-        let mut outcomes = Vec::with_capacity(plan.steps.len());
+        Ok((client, paired.slot, paired.features.clone()))
+    }
 
-        for step in plan.steps.iter().filter(|step| step.requires_device_write) {
-            let outcome = match &step.operation {
-                SettingsApplyOperation::PointerSpeed { .. } => {
-                    apply_pointer_speed(&mut client, slot, features, &settings)
-                }
-                SettingsApplyOperation::WheelBehavior { .. } => {
-                    apply_smart_shift(&mut client, slot, features, &settings)
-                }
-                SettingsApplyOperation::ScrollBehavior {
-                    high_resolution,
-                    natural,
-                } => apply_hires_wheel(&mut client, slot, features, *high_resolution, *natural),
-                SettingsApplyOperation::ThumbWheel { .. } => {
-                    apply_thumb_wheel(&mut client, slot, features, &settings)
-                }
-                SettingsApplyOperation::ButtonMapping { button, .. } => apply_button_diversion(
-                    &mut client,
-                    slot,
-                    features,
-                    &ButtonBinding {
-                        button: *button,
-                        action: settings.button_action(*button),
-                    },
-                ),
-                SettingsApplyOperation::LocalRuntime { .. }
-                | SettingsApplyOperation::AppProfile { .. } => continue,
-            };
-            outcomes.push(outcome);
-        }
-
-        Ok(SettingsApplyReport {
-            device_id: device.id.clone(),
-            profile_name: settings.profile_name,
-            outcomes,
+    fn prepare_pointer_speed(
+        client: &mut HidppClient,
+        slot: u8,
+        features: &[HidppFeatureInfo],
+        settings: &Master3sSettings,
+    ) -> Result<PreparedHidChange> {
+        let title = format!("Set pointer speed to {}%", settings.pointer_speed_percent);
+        let index = require_feature(features, HIDPP_FEATURE_POINTER_SPEED, "POINTER_SPEED")?;
+        let current = read_feature(client, slot, index, 0x00, &[], "POINTER_SPEED")?;
+        let before = current.get(..2).ok_or_else(|| {
+            DogiError::Protocol("POINTER_SPEED reply did not contain its multiplier".to_owned())
+        })?;
+        let before_raw = u16::from_be_bytes([before[0], before[1]]);
+        let value = pointer_speed_hidpp_value(settings.pointer_speed_percent);
+        let after = value.to_be_bytes();
+        Ok(PreparedHidChange {
+            title,
+            operation: SettingsApplyOperation::PointerSpeed {
+                percent: settings.pointer_speed_percent,
+            },
+            feature: HidppFeature::PointerSpeed,
+            feature_id: HIDPP_FEATURE_POINTER_SPEED,
+            read_function: 0x00,
+            read_payload: Vec::new(),
+            write_function: 0x10,
+            before_write: before.to_vec(),
+            after_write: after.to_vec(),
+            verification: verification_bytes(before, &after, 0xff),
+            before_value: DeviceSettingValue::PointerSpeed {
+                percent: pointer_speed_percent(before_raw),
+            },
+            after_value: DeviceSettingValue::PointerSpeed {
+                percent: settings.pointer_speed_percent,
+            },
         })
     }
 
-    fn apply_pointer_speed(
+    fn prepare_smart_shift(
         client: &mut HidppClient,
         slot: u8,
         features: &[HidppFeatureInfo],
         settings: &Master3sSettings,
-    ) -> SettingsApplyOutcome {
-        let title = format!("Set pointer speed to {}%", settings.pointer_speed_percent);
-        let Some(index) = feature_index_in(features, HIDPP_FEATURE_POINTER_SPEED) else {
-            return unsupported_outcome(
-                title,
-                HidppFeature::PointerSpeed,
-                "POINTER_SPEED feature is not available",
-            );
-        };
-        let value = pointer_speed_hidpp_value(settings.pointer_speed_percent);
-        let payload = value.to_be_bytes();
-
-        write_outcome(
-            client,
-            slot,
-            WriteRequest {
-                feature_index: index,
-                function: 0x10,
-                payload: &payload,
-                title,
-                feature: HidppFeature::PointerSpeed,
-                detail: format!("raw multiplier {value}"),
-            },
-        )
-    }
-
-    fn apply_smart_shift(
-        client: &mut HidppClient,
-        slot: u8,
-        features: &[HidppFeatureInfo],
-        settings: &Master3sSettings,
-    ) -> SettingsApplyOutcome {
+    ) -> Result<PreparedHidChange> {
         let title = if settings.smart_shift_enabled
             && settings.ratchet_mode == WheelRatchetMode::SmartShift
         {
@@ -816,36 +1132,48 @@ mod platform {
         } else {
             format!("Set wheel mode to {}", settings.ratchet_mode.label())
         };
-        let Some((index, function)) = smart_shift_feature_index(features) else {
-            return unsupported_outcome(
-                title,
-                HidppFeature::SmartShift,
-                "SMART_SHIFT feature is not available",
-            );
-        };
-        let payload = smart_shift_payload(settings);
-
-        write_outcome(
-            client,
-            slot,
-            WriteRequest {
-                feature_index: index,
-                function,
-                payload: &payload,
-                title,
-                feature: HidppFeature::SmartShift,
-                detail: format!("payload {}", format_hex_bytes(&payload)),
+        let (feature_id, index, read_function, write_function) =
+            smart_shift_feature_access(features).ok_or_else(|| {
+                DogiError::Protocol("SMART_SHIFT feature is not available".to_owned())
+            })?;
+        let current = read_feature(client, slot, index, read_function, &[], "SMART_SHIFT")?;
+        let before = current.get(..2).ok_or_else(|| {
+            DogiError::Protocol("SMART_SHIFT reply did not contain mode and threshold".to_owned())
+        })?;
+        let after = smart_shift_payload(settings);
+        let (before_mode, before_threshold) = decode_smart_shift(before);
+        Ok(PreparedHidChange {
+            title,
+            operation: SettingsApplyOperation::WheelBehavior {
+                mode: settings.ratchet_mode,
+                threshold: settings.smart_shift_threshold,
             },
-        )
+            feature: HidppFeature::SmartShift,
+            feature_id,
+            read_function,
+            read_payload: Vec::new(),
+            write_function,
+            before_write: before.to_vec(),
+            after_write: after.clone(),
+            verification: verification_bytes(before, &after, 0xff),
+            before_value: DeviceSettingValue::WheelBehavior {
+                mode: before_mode,
+                threshold: before_threshold,
+            },
+            after_value: DeviceSettingValue::WheelBehavior {
+                mode: settings.ratchet_mode,
+                threshold: settings.smart_shift_threshold,
+            },
+        })
     }
 
-    fn apply_hires_wheel(
+    fn prepare_hires_wheel(
         client: &mut HidppClient,
         slot: u8,
         features: &[HidppFeatureInfo],
         high_resolution: Option<bool>,
         natural: Option<bool>,
-    ) -> SettingsApplyOutcome {
+    ) -> Result<PreparedHidChange> {
         let title = match (high_resolution, natural) {
             (Some(high_resolution), Some(natural)) => format!(
                 "{} smooth scrolling and use the {} direction",
@@ -858,60 +1186,52 @@ mod platform {
             (None, Some(false)) => "Use the standard scroll direction".to_owned(),
             (None, None) => "Keep the current scroll behavior".to_owned(),
         };
-        let Some(index) = feature_index_in(features, HIDPP_FEATURE_HIRES_WHEEL) else {
-            return unsupported_outcome(
-                title,
-                HidppFeature::HiresWheel,
-                "HIRES_WHEEL feature is not available",
-            );
-        };
-        let current = match client.feature_request(slot, index, 0x10, &[]) {
-            Ok(Some(reply)) => reply,
-            Ok(None) => {
-                return failed_outcome(
-                    title,
-                    HidppFeature::HiresWheel,
-                    "HIRES_WHEEL mode read did not return a reply",
-                );
-            }
-            Err(error) => {
-                return failed_outcome(
-                    title,
-                    HidppFeature::HiresWheel,
-                    format!("HIRES_WHEEL mode read failed: {error}"),
-                );
-            }
-        };
+        let index = require_feature(features, HIDPP_FEATURE_HIRES_WHEEL, "HIRES_WHEEL")?;
+        let current = read_feature(client, slot, index, 0x10, &[], "HIRES_WHEEL")?;
         let Some(current_mode) = current.first().copied() else {
-            return failed_outcome(
-                title,
-                HidppFeature::HiresWheel,
-                "HIRES_WHEEL mode reply was empty",
-            );
+            return Err(DogiError::Protocol(
+                "HIRES_WHEEL mode reply was empty".to_owned(),
+            ));
         };
         let new_mode = merge_hires_wheel_flags(current_mode, high_resolution, natural);
-        let payload = [new_mode];
-
-        write_outcome(
-            client,
-            slot,
-            WriteRequest {
-                feature_index: index,
-                function: 0x20,
-                payload: &payload,
-                title,
-                feature: HidppFeature::HiresWheel,
-                detail: format!("mode 0x{current_mode:02X} -> 0x{new_mode:02X}"),
+        let mask = (if high_resolution.is_some() { 0x02 } else { 0 })
+            | if natural.is_some() { 0x04 } else { 0 };
+        Ok(PreparedHidChange {
+            title,
+            operation: SettingsApplyOperation::ScrollBehavior {
+                high_resolution,
+                natural,
             },
-        )
+            feature: HidppFeature::HiresWheel,
+            feature_id: HIDPP_FEATURE_HIRES_WHEEL,
+            read_function: 0x10,
+            read_payload: Vec::new(),
+            write_function: 0x20,
+            before_write: vec![current_mode],
+            after_write: vec![new_mode],
+            verification: vec![VerificationByte {
+                response_index: 0,
+                mask,
+                before: current_mode,
+                after: new_mode,
+            }],
+            before_value: DeviceSettingValue::ScrollBehavior {
+                high_resolution: current_mode & 0x02 != 0,
+                natural: current_mode & 0x04 != 0,
+            },
+            after_value: DeviceSettingValue::ScrollBehavior {
+                high_resolution: high_resolution.unwrap_or(current_mode & 0x02 != 0),
+                natural: natural.unwrap_or(current_mode & 0x04 != 0),
+            },
+        })
     }
 
-    fn apply_thumb_wheel(
+    fn prepare_thumb_wheel(
         client: &mut HidppClient,
         slot: u8,
         features: &[HidppFeatureInfo],
         settings: &Master3sSettings,
-    ) -> SettingsApplyOutcome {
+    ) -> Result<PreparedHidChange> {
         let title = if settings.thumb_wheel == ThumbWheelMode::HorizontalScroll
             && settings.thumb_wheel_speed_percent == dogi_core::DEFAULT_THUMB_WHEEL_SPEED_PERCENT
         {
@@ -929,58 +1249,49 @@ mod platform {
         };
         let target_diverted =
             thumb_wheel_diversion_target(settings.thumb_wheel, settings.thumb_wheel_speed_percent);
-        let Some(index) = feature_index_in(features, HIDPP_FEATURE_THUMB_WHEEL) else {
-            return unsupported_outcome(
-                title,
-                HidppFeature::ThumbWheel,
-                "THUMB_WHEEL feature is not available",
-            );
-        };
-        let current = match client.feature_request(slot, index, 0x10, &[]) {
-            Ok(Some(reply)) => reply,
-            Ok(None) => {
-                return failed_outcome(
-                    title,
-                    HidppFeature::ThumbWheel,
-                    "THUMB_WHEEL mode read did not return a reply",
-                );
-            }
-            Err(error) => {
-                return failed_outcome(
-                    title,
-                    HidppFeature::ThumbWheel,
-                    format!("THUMB_WHEEL mode read failed: {error}"),
-                );
-            }
-        };
-        let Some(payload) = merge_thumb_wheel_diversion(&current, target_diverted) else {
-            return failed_outcome(
-                title,
-                HidppFeature::ThumbWheel,
-                "THUMB_WHEEL mode reply did not include two state bytes",
-            );
-        };
-
-        write_outcome(
-            client,
-            slot,
-            WriteRequest {
-                feature_index: index,
-                function: 0x20,
-                payload: &payload,
-                title,
-                feature: HidppFeature::ThumbWheel,
-                detail: format!("mode {}", format_hex_bytes(&payload)),
+        let index = require_feature(features, HIDPP_FEATURE_THUMB_WHEEL, "THUMB_WHEEL")?;
+        let current = read_feature(client, slot, index, 0x10, &[], "THUMB_WHEEL")?;
+        let before = current.get(..2).ok_or_else(|| {
+            DogiError::Protocol("THUMB_WHEEL reply did not include two state bytes".to_owned())
+        })?;
+        let after = merge_thumb_wheel_diversion(before, target_diverted).ok_or_else(|| {
+            DogiError::Protocol("THUMB_WHEEL reply did not include two state bytes".to_owned())
+        })?;
+        Ok(PreparedHidChange {
+            title,
+            operation: SettingsApplyOperation::ThumbWheel {
+                mode: settings.thumb_wheel,
+                speed_percent: settings.thumb_wheel_speed_percent,
             },
-        )
+            feature: HidppFeature::ThumbWheel,
+            feature_id: HIDPP_FEATURE_THUMB_WHEEL,
+            read_function: 0x10,
+            read_payload: Vec::new(),
+            write_function: 0x20,
+            before_write: before.to_vec(),
+            after_write: after.clone(),
+            verification: vec![VerificationByte {
+                response_index: 0,
+                mask: 0x01,
+                before: before[0],
+                after: after[0],
+            }],
+            before_value: DeviceSettingValue::ThumbWheelRouting {
+                diverted: before[0] & 0x01 != 0,
+            },
+            after_value: DeviceSettingValue::ThumbWheelRouting {
+                diverted: target_diverted,
+            },
+        })
     }
 
-    fn apply_button_diversion(
+    fn prepare_button_diversion(
         client: &mut HidppClient,
         slot: u8,
         features: &[HidppFeatureInfo],
         binding: &ButtonBinding,
-    ) -> SettingsApplyOutcome {
+        controls: &HashMap<u16, ReprogControlInfo>,
+    ) -> Result<PreparedHidChange> {
         let should_divert = button_action_requires_runtime(binding.button, binding.action);
         let raw_xy = binding.action == dogi_core::ButtonAction::Gestures;
         let title = if should_divert {
@@ -992,71 +1303,94 @@ mod platform {
         } else {
             format!("Use native reporting for {}", binding.button.label())
         };
-        let Some(index) = feature_index_in(features, HIDPP_FEATURE_REPROG_CONTROLS_V4) else {
-            return unsupported_outcome(
-                title,
-                HidppFeature::ReprogrammableControls,
-                "REPROG_CONTROLS_V4 feature is not available",
-            );
-        };
+        let index = require_feature(
+            features,
+            HIDPP_FEATURE_REPROG_CONTROLS_V4,
+            "REPROG_CONTROLS_V4",
+        )?;
         let control_id = master3s_button_control_id(binding.button);
-        let control = match read_reprog_control_info(client, slot, index, control_id) {
-            Ok(Some(control)) => control,
-            Ok(None) => {
-                return unsupported_outcome(
-                    title,
-                    HidppFeature::ReprogrammableControls,
-                    format!("control 0x{control_id:04X} is not reported by REPROG_CONTROLS_V4"),
-                );
-            }
-            Err(error) => {
-                return failed_outcome(
-                    title,
-                    HidppFeature::ReprogrammableControls,
-                    format!("REPROG_CONTROLS_V4 query failed: {error}"),
-                );
-            }
-        };
+        let control = controls.get(&control_id).copied().ok_or_else(|| {
+            DogiError::Protocol(format!(
+                "control 0x{control_id:04X} is not reported by REPROG_CONTROLS_V4"
+            ))
+        })?;
 
         if should_divert
             && (control.flags & REPROG_KEY_FLAG_DIVERTABLE == 0
                 || control.flags & REPROG_KEY_FLAG_VIRTUAL != 0)
         {
-            return unsupported_outcome(
-                title,
-                HidppFeature::ReprogrammableControls,
-                format!("control 0x{control_id:04X} is not a physical divertable control"),
-            );
+            return Err(DogiError::Protocol(format!(
+                "control 0x{control_id:04X} is not a physical divertable control"
+            )));
         }
 
         if raw_xy && control.flags & REPROG_KEY_FLAG_RAW_XY == 0 {
-            return unsupported_outcome(
-                title,
-                HidppFeature::ReprogrammableControls,
-                format!("control 0x{control_id:04X} does not support raw movement reporting"),
-            );
+            return Err(DogiError::Protocol(format!(
+                "control 0x{control_id:04X} does not support raw movement reporting"
+            )));
         }
 
-        let payload = reprogrammable_control_diversion_payload(control_id, should_divert, raw_xy);
-        write_outcome(
+        let read_payload = control_id.to_be_bytes().to_vec();
+        let current = read_feature(
             client,
             slot,
-            WriteRequest {
-                feature_index: index,
-                function: 0x30,
-                payload: &payload,
-                title,
-                feature: HidppFeature::ReprogrammableControls,
-                detail: format!(
-                    "control 0x{control_id:04X} {}",
-                    if should_divert {
-                        "diverted to HID++ runtime"
-                    } else {
-                        "restored to native reporting"
-                    }
-                ),
+            index,
+            0x20,
+            &read_payload,
+            "REPROG_CONTROLS_V4 reporting",
+        )?;
+        if current.get(..2) != Some(read_payload.as_slice()) {
+            return Err(DogiError::Protocol(format!(
+                "REPROG_CONTROLS_V4 returned a different control for 0x{control_id:04X}"
+            )));
+        }
+        let current_flags = *current.get(2).ok_or_else(|| {
+            DogiError::Protocol("REPROG_CONTROLS_V4 reporting reply was incomplete".to_owned())
+        })?;
+        let mapped = [
+            current.get(3).copied().unwrap_or_default(),
+            current.get(4).copied().unwrap_or_default(),
+        ];
+        let before_diverted = current_flags & REPROG_MAPPING_FLAG_DIVERTED != 0;
+        let before_raw_xy = current_flags & REPROG_MAPPING_FLAG_RAW_XY != 0;
+        let before_write = reprogrammable_control_diversion_payload(
+            control_id,
+            before_diverted,
+            before_raw_xy,
+            mapped,
+        );
+        let after_write =
+            reprogrammable_control_diversion_payload(control_id, should_divert, raw_xy, mapped);
+        Ok(PreparedHidChange {
+            title,
+            operation: SettingsApplyOperation::ButtonMapping {
+                button: binding.button,
+                action: binding.action,
             },
-        )
+            feature: HidppFeature::ReprogrammableControls,
+            feature_id: HIDPP_FEATURE_REPROG_CONTROLS_V4,
+            read_function: 0x20,
+            read_payload,
+            write_function: 0x30,
+            before_write: before_write.to_vec(),
+            after_write: after_write.to_vec(),
+            verification: vec![VerificationByte {
+                response_index: 2,
+                mask: REPROG_MAPPING_FLAG_DIVERTED | REPROG_MAPPING_FLAG_RAW_XY,
+                before: current_flags,
+                after: after_write[2],
+            }],
+            before_value: DeviceSettingValue::ButtonRouting {
+                button: binding.button,
+                diverted: before_diverted,
+                raw_xy: before_raw_xy,
+            },
+            after_value: DeviceSettingValue::ButtonRouting {
+                button: binding.button,
+                diverted: should_divert,
+                raw_xy,
+            },
+        })
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1065,18 +1399,18 @@ mod platform {
         flags: u16,
     }
 
-    fn read_reprog_control_info(
+    fn read_reprog_controls(
         client: &mut HidppClient,
         slot: u8,
         feature_index: u8,
-        control_id: u16,
-    ) -> io::Result<Option<ReprogControlInfo>> {
+    ) -> io::Result<HashMap<u16, ReprogControlInfo>> {
         let Some(count_reply) = client.feature_request(slot, feature_index, 0x00, &[])? else {
-            return Ok(None);
+            return Ok(HashMap::new());
         };
         let Some(count) = count_reply.first().copied() else {
-            return Ok(None);
+            return Ok(HashMap::new());
         };
+        let mut controls = HashMap::with_capacity(usize::from(count));
 
         for control_index in 0..count {
             let Some(reply) =
@@ -1087,12 +1421,10 @@ mod platform {
             let Some(info) = parse_reprog_control_info(&reply) else {
                 continue;
             };
-            if info.control_id == control_id {
-                return Ok(Some(info));
-            }
+            controls.insert(info.control_id, info);
         }
 
-        Ok(None)
+        Ok(controls)
     }
 
     fn parse_reprog_control_info(reply: &[u8]) -> Option<ReprogControlInfo> {
@@ -1109,6 +1441,7 @@ mod platform {
         control_id: u16,
         diverted: bool,
         raw_xy: bool,
+        mapped_control: [u8; 2],
     ) -> [u8; 5] {
         let [high, low] = control_id.to_be_bytes();
         let flags = REPROG_MAPPING_FLAG_DIVERTED_VALID
@@ -1123,59 +1456,202 @@ mod platform {
             } else {
                 0
             };
-        [high, low, flags, 0x00, 0x00]
+        [high, low, flags, mapped_control[0], mapped_control[1]]
     }
 
-    struct WriteRequest<'a> {
-        feature_index: u8,
-        function: u8,
-        payload: &'a [u8],
-        title: String,
-        feature: HidppFeature,
-        detail: String,
+    fn require_feature(features: &[HidppFeatureInfo], feature_id: u16, name: &str) -> Result<u8> {
+        feature_index_in(features, feature_id)
+            .ok_or_else(|| DogiError::Protocol(format!("{name} feature is not available")))
     }
 
-    fn write_outcome(
+    fn read_feature(
         client: &mut HidppClient,
         slot: u8,
-        request: WriteRequest<'_>,
-    ) -> SettingsApplyOutcome {
-        match client.feature_request(
-            slot,
-            request.feature_index,
-            request.function,
-            request.payload,
-        ) {
-            Ok(Some(_)) => SettingsApplyOutcome {
-                title: request.title,
-                feature: request.feature,
-                status: SettingsApplyStatus::Applied,
-                detail: Some(request.detail),
-            },
-            Ok(None) => failed_outcome(
-                request.title,
-                request.feature,
-                "HID++ write did not return a reply",
-            ),
-            Err(error) => failed_outcome(
-                request.title,
-                request.feature,
-                format!("HID++ write failed: {error}"),
-            ),
+        feature_index: u8,
+        function: u8,
+        payload: &[u8],
+        name: &str,
+    ) -> Result<Vec<u8>> {
+        client
+            .feature_request(slot, feature_index, function, payload)
+            .map_err(|error| DogiError::Transport(format!("{name} read failed: {error}")))?
+            .ok_or_else(|| DogiError::Protocol(format!("{name} read did not return a reply")))
+    }
+
+    trait SettingsTransactionIo {
+        fn read(&mut self, change: &PreparedHidChange) -> Result<Vec<u8>>;
+        fn write(&mut self, change: &PreparedHidChange, payload: &[u8]) -> Result<()>;
+    }
+
+    struct HidppSettingsIo<'a> {
+        client: &'a mut HidppClient,
+        slot: u8,
+        features: &'a [HidppFeatureInfo],
+    }
+
+    impl SettingsTransactionIo for HidppSettingsIo<'_> {
+        fn read(&mut self, change: &PreparedHidChange) -> Result<Vec<u8>> {
+            let index = require_feature(self.features, change.feature_id, &change.title)?;
+            read_feature(
+                self.client,
+                self.slot,
+                index,
+                change.read_function,
+                &change.read_payload,
+                &change.title,
+            )
+        }
+
+        fn write(&mut self, change: &PreparedHidChange, payload: &[u8]) -> Result<()> {
+            let index = require_feature(self.features, change.feature_id, &change.title)?;
+            self.client
+                .feature_request(self.slot, index, change.write_function, payload)
+                .map_err(|error| {
+                    DogiError::Transport(format!("{} write failed: {error}", change.title))
+                })?
+                .ok_or_else(|| {
+                    DogiError::Protocol(format!("{} write did not return a reply", change.title))
+                })?;
+            Ok(())
         }
     }
 
-    fn unsupported_outcome(
-        title: String,
-        feature: HidppFeature,
-        detail: impl Into<String>,
-    ) -> SettingsApplyOutcome {
-        SettingsApplyOutcome {
-            title,
-            feature,
-            status: SettingsApplyStatus::Unsupported,
-            detail: Some(detail.into()),
+    fn change_is_noop(change: &PreparedHidChange) -> bool {
+        change
+            .verification
+            .iter()
+            .all(|byte| byte.before & byte.mask == byte.after & byte.mask)
+    }
+
+    fn change_matches(response: &[u8], change: &PreparedHidChange, after: bool) -> bool {
+        change.verification.iter().all(|byte| {
+            let Some(actual) = response.get(byte.response_index) else {
+                return false;
+            };
+            let expected = if after { byte.after } else { byte.before };
+            actual & byte.mask == expected & byte.mask
+        })
+    }
+
+    fn write_and_verify(
+        io: &mut impl SettingsTransactionIo,
+        change: &PreparedHidChange,
+        after: bool,
+    ) -> Result<()> {
+        let payload = if after {
+            &change.after_write
+        } else {
+            &change.before_write
+        };
+        io.write(change, payload)?;
+        let current = io.read(change)?;
+        if !change_matches(&current, change, after) {
+            return Err(DogiError::Protocol(format!(
+                "{} read-back verification failed",
+                change.title
+            )));
         }
+        Ok(())
+    }
+
+    fn rollback_attempted(
+        io: &mut impl SettingsTransactionIo,
+        transaction: &PreparedSettingsTransaction,
+        attempted: &[usize],
+        outcomes: &mut [SettingsApplyOutcome],
+    ) -> bool {
+        let mut recovered = true;
+        for &index in attempted.iter().rev() {
+            let change = &transaction.changes[index];
+            let result = io.read(change).and_then(|current| {
+                if change_matches(&current, change, false) {
+                    Ok(())
+                } else if change_matches(&current, change, true) {
+                    write_and_verify(io, change, false)
+                } else {
+                    Err(DogiError::Protocol(
+                        "state after the failed write is indeterminate".to_owned(),
+                    ))
+                }
+            });
+            match result {
+                Ok(()) => {
+                    if outcomes[index].status == SettingsApplyStatus::Applied {
+                        outcomes[index].status = SettingsApplyStatus::RolledBack;
+                        outcomes[index].detail = Some(
+                            "write failed later; original value restored and verified".to_owned(),
+                        );
+                    }
+                }
+                Err(error) => {
+                    recovered = false;
+                    outcomes[index].status = SettingsApplyStatus::RollbackFailed;
+                    outcomes[index].detail = Some(error.to_string());
+                }
+            }
+        }
+        recovered
+    }
+
+    fn rejected_report(
+        transaction: &PreparedSettingsTransaction,
+        rejected: &PreparedHidChange,
+        detail: &str,
+    ) -> SettingsApplyReport {
+        SettingsApplyReport {
+            device_id: transaction.device_id.clone(),
+            profile_name: transaction.profile_name.clone(),
+            transaction: SettingsTransactionState::Rejected,
+            outcomes: transaction
+                .changes
+                .iter()
+                .map(|change| SettingsApplyOutcome {
+                    title: change.title.clone(),
+                    feature: change.feature,
+                    status: if std::ptr::eq(change, rejected) {
+                        SettingsApplyStatus::Failed
+                    } else {
+                        SettingsApplyStatus::Skipped
+                    },
+                    detail: Some(if std::ptr::eq(change, rejected) {
+                        detail.to_owned()
+                    } else {
+                        "transaction was rejected before writing".to_owned()
+                    }),
+                })
+                .collect(),
+        }
+    }
+
+    fn append_unattempted_outcomes(
+        transaction: &PreparedSettingsTransaction,
+        start: usize,
+        outcomes: &mut Vec<SettingsApplyOutcome>,
+    ) {
+        outcomes.extend(
+            transaction.changes[start..]
+                .iter()
+                .map(|change| SettingsApplyOutcome {
+                    title: change.title.clone(),
+                    feature: change.feature,
+                    status: SettingsApplyStatus::Skipped,
+                    detail: Some("transaction stopped after an earlier write failed".to_owned()),
+                }),
+        );
+    }
+
+    fn verification_bytes(before: &[u8], after: &[u8], mask: u8) -> Vec<VerificationByte> {
+        before
+            .iter()
+            .zip(after)
+            .enumerate()
+            .map(|(response_index, (&before, &after))| VerificationByte {
+                response_index,
+                mask,
+                before,
+                after,
+            })
+            .collect()
     }
 
     fn failed_outcome(
@@ -1196,21 +1672,26 @@ mod platform {
         scaled.clamp(0x002e, 0x01ff) as u16
     }
 
-    fn smart_shift_feature_index(features: &[HidppFeatureInfo]) -> Option<(u8, u8)> {
+    fn pointer_speed_percent(value: u16) -> u8 {
+        ((u32::from(value) * 100 + 128) / 256).clamp(1, u32::from(u8::MAX)) as u8
+    }
+
+    fn smart_shift_feature_access(features: &[HidppFeatureInfo]) -> Option<(u16, u8, u8, u8)> {
         feature_index_in(features, HIDPP_FEATURE_SMART_SHIFT_ENHANCED)
-            .map(|index| (index, 0x20))
+            .map(|index| (HIDPP_FEATURE_SMART_SHIFT_ENHANCED, index, 0x10, 0x20))
             .or_else(|| {
-                feature_index_in(features, HIDPP_FEATURE_SMART_SHIFT).map(|index| (index, 0x10))
+                feature_index_in(features, HIDPP_FEATURE_SMART_SHIFT)
+                    .map(|index| (HIDPP_FEATURE_SMART_SHIFT, index, 0x00, 0x10))
             })
     }
 
     fn smart_shift_payload(settings: &Master3sSettings) -> Vec<u8> {
         if !settings.smart_shift_enabled || settings.ratchet_mode == WheelRatchetMode::Ratchet {
-            return vec![2];
+            return vec![2, 255];
         }
 
         if settings.ratchet_mode == WheelRatchetMode::FreeSpin {
-            return vec![1];
+            return vec![1, 0];
         }
 
         let threshold = if settings.smart_shift_threshold >= 50 {
@@ -1218,7 +1699,22 @@ mod platform {
         } else {
             settings.smart_shift_threshold
         };
-        vec![0, threshold]
+        vec![2, threshold]
+    }
+
+    fn decode_smart_shift(value: &[u8]) -> (WheelRatchetMode, u8) {
+        let mode = if value.first().copied() == Some(1) {
+            WheelRatchetMode::FreeSpin
+        } else if value.get(1).copied() == Some(255) {
+            WheelRatchetMode::Ratchet
+        } else {
+            WheelRatchetMode::SmartShift
+        };
+        let threshold = match value.get(1).copied().unwrap_or(45) {
+            255 => 50,
+            value => value.clamp(1, 50),
+        };
+        (mode, threshold)
     }
 
     fn merge_hires_wheel_flags(
@@ -1262,14 +1758,6 @@ mod platform {
         } else {
             *value &= !mask;
         }
-    }
-
-    fn format_hex_bytes(bytes: &[u8]) -> String {
-        bytes
-            .iter()
-            .map(|byte| format!("{byte:02X}"))
-            .collect::<Vec<_>>()
-            .join(" ")
     }
 
     fn read_uevent(path: &Path) -> Result<HashMap<String, String>> {
@@ -2834,9 +3322,67 @@ mod platform {
 
     #[cfg(test)]
     mod tests {
-        use std::collections::VecDeque;
+        use std::collections::{BTreeMap, VecDeque};
 
         use super::*;
+
+        #[derive(Default)]
+        struct FakeSettingsIo {
+            states: BTreeMap<u16, Vec<u8>>,
+            writes: Vec<(u16, Vec<u8>)>,
+            fail_after_write: Option<usize>,
+        }
+
+        impl SettingsTransactionIo for FakeSettingsIo {
+            fn read(&mut self, change: &PreparedHidChange) -> Result<Vec<u8>> {
+                self.states.get(&change.feature_id).cloned().ok_or_else(|| {
+                    DogiError::Protocol(format!("missing fake feature {:04x}", change.feature_id))
+                })
+            }
+
+            fn write(&mut self, change: &PreparedHidChange, payload: &[u8]) -> Result<()> {
+                self.writes.push((change.feature_id, payload.to_vec()));
+                self.states.insert(change.feature_id, payload.to_vec());
+                if self.fail_after_write == Some(self.writes.len()) {
+                    return Err(DogiError::Transport("injected write failure".to_owned()));
+                }
+                Ok(())
+            }
+        }
+
+        fn transaction_change(feature_id: u16, before: u8, after: u8) -> PreparedHidChange {
+            PreparedHidChange {
+                title: format!("feature {feature_id:04x}"),
+                operation: SettingsApplyOperation::PointerSpeed { percent: after },
+                feature: HidppFeature::PointerSpeed,
+                feature_id,
+                read_function: 0,
+                read_payload: Vec::new(),
+                write_function: 0x10,
+                before_write: vec![before],
+                after_write: vec![after],
+                verification: vec![VerificationByte {
+                    response_index: 0,
+                    mask: 0xff,
+                    before,
+                    after,
+                }],
+                before_value: DeviceSettingValue::PointerSpeed { percent: before },
+                after_value: DeviceSettingValue::PointerSpeed { percent: after },
+            }
+        }
+
+        fn test_transaction() -> PreparedSettingsTransaction {
+            PreparedSettingsTransaction {
+                version: SETTINGS_TRANSACTION_FORMAT_VERSION,
+                device_id: "device-1".to_owned(),
+                profile_name: "Default".to_owned(),
+                changes: vec![
+                    transaction_change(0x2205, 10, 11),
+                    transaction_change(0x2121, 20, 21),
+                ],
+            }
+        }
 
         struct FakeProbeClient {
             pairing: ReceiverPairingInfo,
@@ -3334,9 +3880,9 @@ mod platform {
                 ..Master3sSettings::default()
             };
 
-            assert_eq!(smart_shift_payload(&smart), vec![0, 45]);
-            assert_eq!(smart_shift_payload(&ratchet), vec![2]);
-            assert_eq!(smart_shift_payload(&free_spin), vec![1]);
+            assert_eq!(smart_shift_payload(&smart), vec![2, 45]);
+            assert_eq!(smart_shift_payload(&ratchet), vec![2, 255]);
+            assert_eq!(smart_shift_payload(&free_spin), vec![1, 0]);
         }
 
         #[test]
@@ -3421,17 +3967,86 @@ mod platform {
         #[test]
         fn encodes_reprogrammable_control_diversion_payloads() {
             assert_eq!(
-                reprogrammable_control_diversion_payload(0x0053, true, false),
+                reprogrammable_control_diversion_payload(0x0053, true, false, [0, 0]),
                 [0x00, 0x53, 0x23, 0x00, 0x00]
             );
             assert_eq!(
-                reprogrammable_control_diversion_payload(0x0053, false, false),
+                reprogrammable_control_diversion_payload(0x0053, false, false, [0, 0]),
                 [0x00, 0x53, 0x22, 0x00, 0x00]
             );
             assert_eq!(
-                reprogrammable_control_diversion_payload(0x00c3, true, true),
-                [0x00, 0xc3, 0x33, 0x00, 0x00]
+                reprogrammable_control_diversion_payload(0x00c3, true, true, [0x12, 0x34]),
+                [0x00, 0xc3, 0x33, 0x12, 0x34]
             );
+        }
+
+        #[test]
+        fn settings_transaction_commits_only_after_verified_writes() {
+            let transaction = test_transaction();
+            let mut io = FakeSettingsIo::default();
+            io.states.insert(0x2205, vec![10]);
+            io.states.insert(0x2121, vec![20]);
+
+            let report = execute_prepared_transaction(&mut io, &transaction).unwrap();
+
+            assert_eq!(report.transaction, SettingsTransactionState::Committed);
+            assert_eq!(io.states.get(&0x2205), Some(&vec![11]));
+            assert_eq!(io.states.get(&0x2121), Some(&vec![21]));
+            assert_eq!(io.writes, vec![(0x2205, vec![11]), (0x2121, vec![21])]);
+        }
+
+        #[test]
+        fn settings_transaction_stops_and_rolls_back_in_reverse_order() {
+            let transaction = test_transaction();
+            let mut io = FakeSettingsIo {
+                fail_after_write: Some(2),
+                ..FakeSettingsIo::default()
+            };
+            io.states.insert(0x2205, vec![10]);
+            io.states.insert(0x2121, vec![20]);
+
+            let report = execute_prepared_transaction(&mut io, &transaction).unwrap();
+
+            assert_eq!(report.transaction, SettingsTransactionState::RolledBack);
+            assert_eq!(io.states.get(&0x2205), Some(&vec![10]));
+            assert_eq!(io.states.get(&0x2121), Some(&vec![20]));
+            assert_eq!(
+                io.writes,
+                vec![
+                    (0x2205, vec![11]),
+                    (0x2121, vec![21]),
+                    (0x2121, vec![20]),
+                    (0x2205, vec![10]),
+                ]
+            );
+            assert_eq!(report.outcomes[0].status, SettingsApplyStatus::RolledBack);
+            assert_eq!(report.outcomes[1].status, SettingsApplyStatus::Failed);
+        }
+
+        #[test]
+        fn settings_transaction_rejects_drift_before_any_write() {
+            let transaction = test_transaction();
+            let mut io = FakeSettingsIo::default();
+            io.states.insert(0x2205, vec![99]);
+            io.states.insert(0x2121, vec![20]);
+
+            let report = execute_prepared_transaction(&mut io, &transaction).unwrap();
+
+            assert_eq!(report.transaction, SettingsTransactionState::Rejected);
+            assert!(io.writes.is_empty());
+        }
+
+        #[test]
+        fn interrupted_settings_transaction_recovers_in_reverse_order() {
+            let transaction = test_transaction();
+            let mut io = FakeSettingsIo::default();
+            io.states.insert(0x2205, vec![11]);
+            io.states.insert(0x2121, vec![21]);
+
+            let report = recover_prepared_transaction(&mut io, &transaction).unwrap();
+
+            assert_eq!(report.transaction, SettingsTransactionState::RolledBack);
+            assert_eq!(io.writes, vec![(0x2121, vec![20]), (0x2205, vec![10])]);
         }
 
         #[test]
@@ -3453,7 +4068,7 @@ mod platform {
         DeviceInfo, DogiError, Master3sSettings, Result, SettingsApplyPlan, SettingsApplyReport,
     };
 
-    use crate::Master3sRuntimeEvent;
+    use crate::{Master3sRuntimeEvent, PreparedSettingsTransaction};
 
     pub fn scan_devices() -> Result<Vec<DeviceInfo>> {
         Err(DogiError::BackendUnavailable(
@@ -3479,13 +4094,29 @@ mod platform {
         ))
     }
 
-    pub fn apply_master3s_settings_plan(
+    pub fn prepare_master3s_settings_plan(
         _device_id: &str,
         _settings: &Master3sSettings,
         _plan: &SettingsApplyPlan,
+    ) -> Result<PreparedSettingsTransaction> {
+        Err(DogiError::BackendUnavailable(
+            "only Linux hidraw HID++ settings are implemented".to_owned(),
+        ))
+    }
+
+    pub fn execute_prepared_master3s_settings_transaction(
+        _transaction: &PreparedSettingsTransaction,
     ) -> Result<SettingsApplyReport> {
         Err(DogiError::BackendUnavailable(
-            "only Linux hidraw HID++ apply is implemented".to_owned(),
+            "only Linux hidraw HID++ settings are implemented".to_owned(),
+        ))
+    }
+
+    pub fn recover_prepared_master3s_settings_transaction(
+        _transaction: &PreparedSettingsTransaction,
+    ) -> Result<SettingsApplyReport> {
+        Err(DogiError::BackendUnavailable(
+            "only Linux hidraw HID++ settings are implemented".to_owned(),
         ))
     }
 

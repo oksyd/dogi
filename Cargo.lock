@@ -1382,6 +1382,7 @@ version = "0.1.9"
 dependencies = [
  "dogi-core",
  "libc",
+ "serde",
 ]
 
 [[package]]

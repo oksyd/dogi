@@ -16,6 +16,10 @@ pub(crate) fn launch_gui(environment: &AppEnvironment) -> Result<()> {
     }
     let _instance_lock = ProcessLock::acquire(&environment.paths.gui_instance_lock(), "window")?;
     let devices = DeviceService::for_environment(environment);
+    let settings_recovery_error = devices
+        .recover_interrupted_settings_transaction()
+        .err()
+        .map(|error| error.to_string());
     let application_store = ApplicationConfigStore::for_environment(environment);
     let update_store = application_store.clone();
     let network_service = crate::network::NetworkService::new(application_store.clone());
@@ -26,7 +30,8 @@ pub(crate) fn launch_gui(environment: &AppEnvironment) -> Result<()> {
     let scan_devices = devices.clone();
     let load_settings = devices.clone();
     let save_settings = devices.clone();
-    let apply_settings = devices;
+    let prepare_settings = devices.clone();
+    let commit_settings = devices;
     let preview_client =
         RuntimeControlClient::for_environment(environment).map_err(|error| error.to_string());
     let runtime_environment = environment.clone();
@@ -58,9 +63,23 @@ pub(crate) fn launch_gui(environment: &AppEnvironment) -> Result<()> {
                     }?;
                     Ok(path.display().to_string())
                 }),
-                apply: Rc::new(move |device_id, settings, plan| {
-                    apply_settings.apply_master3s_settings_plan(device_id, settings, plan)
+                prepare: Arc::new(move |device_id, settings, plan| {
+                    prepare_settings
+                        .prepare_master3s_settings_transaction(device_id, settings, plan)
                 }),
+                commit: Arc::new(move |device_id, settings_id, settings, plan| {
+                    let (report, path) = commit_settings.commit_prepared_master3s_settings(
+                        device_id,
+                        settings_id,
+                        settings,
+                        plan,
+                    )?;
+                    Ok(dogi_ui::SettingsCommitResult {
+                        report,
+                        saved_path: path.display().to_string(),
+                    })
+                }),
+                recovery_error: settings_recovery_error,
             },
             runtime: dogi_ui::DesktopRuntimeManager {
                 supported: runtime_supported,

@@ -102,6 +102,14 @@ impl AppPaths {
         self.config.join("master3s.json")
     }
 
+    pub(crate) fn device_transaction(&self) -> PathBuf {
+        self.config.join("device-transaction.json")
+    }
+
+    pub(crate) fn device_transaction_lock(&self) -> PathBuf {
+        self.runtime.join("device-transaction.lock")
+    }
+
     pub(crate) fn update_cache(&self) -> PathBuf {
         self.cache.join("updates")
     }

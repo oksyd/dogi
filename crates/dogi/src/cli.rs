@@ -1843,7 +1843,10 @@ fn print_apply_plan(plan: &SettingsApplyPlan, settings: &Master3sSettings) {
 fn print_apply_report(report: &SettingsApplyReport) {
     println!("Apply report for {}", report.device_id);
     println!("  profile: {}", report.profile_name);
-    println!("  failed steps: {}", report.has_failed_steps());
+    println!(
+        "  transaction: {}",
+        transaction_status_label(report.transaction)
+    );
 
     for outcome in &report.outcomes {
         println!(
@@ -1859,12 +1862,23 @@ fn print_apply_report(report: &SettingsApplyReport) {
     }
 }
 
+fn transaction_status_label(status: dogi_core::SettingsTransactionState) -> &'static str {
+    match status {
+        dogi_core::SettingsTransactionState::Committed => "committed",
+        dogi_core::SettingsTransactionState::Rejected => "rejected before write",
+        dogi_core::SettingsTransactionState::RolledBack => "rolled back",
+        dogi_core::SettingsTransactionState::RecoveryRequired => "recovery required",
+    }
+}
+
 fn apply_status_label(status: SettingsApplyStatus) -> &'static str {
     match status {
         SettingsApplyStatus::Applied => "applied",
         SettingsApplyStatus::Skipped => "skipped",
         SettingsApplyStatus::Unsupported => "unsupported",
         SettingsApplyStatus::Failed => "failed",
+        SettingsApplyStatus::RolledBack => "rolled back",
+        SettingsApplyStatus::RollbackFailed => "rollback failed",
     }
 }
 
@@ -1872,7 +1886,12 @@ fn count_failed_apply_steps(report: &SettingsApplyReport) -> usize {
     report
         .outcomes
         .iter()
-        .filter(|outcome| outcome.status == SettingsApplyStatus::Failed)
+        .filter(|outcome| {
+            matches!(
+                outcome.status,
+                SettingsApplyStatus::Failed | SettingsApplyStatus::RollbackFailed
+            )
+        })
         .count()
 }
 

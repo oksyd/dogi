@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 dogi-core.workspace = true
 libc.workspace = true
+serde.workspace = true

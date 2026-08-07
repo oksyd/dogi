@@ -1609,8 +1609,9 @@ component ProfileRow inherits Rectangle {
 component ChangeRow inherits Rectangle {
     in property <PlanScope> scope;
     in property <string> title;
+    in property <string> detail;
 
-    height: 44px;
+    height: 52px;
     background: transparent;
 
     HorizontalLayout {
@@ -1632,7 +1633,12 @@ component ChangeRow inherits Rectangle {
             }
         }
 
-        Text { text: root.title; color: Theme.text; font-size: 10px; overflow: elide; vertical-alignment: center; }
+        VerticalLayout {
+            spacing: 0px;
+            alignment: center;
+            Text { height: 18px; text: root.title; color: Theme.text; font-size: 10px; overflow: elide; vertical-stretch: 0; }
+            Text { height: 17px; text: root.detail; color: Theme.text-muted; font-size: 9px; overflow: elide; vertical-stretch: 0; }
+        }
     }
 
     Rectangle { x: 12px; y: parent.height - 1px; width: parent.width - 24px; height: 1px; background: Theme.border; }
@@ -2308,6 +2314,7 @@ export component MainWindow inherits Window {
     in property <bool> rescan-enabled: false;
     in property <bool> rescan-in-progress: false;
     in-out property <bool> confirm-visible: false;
+    in-out property <bool> apply-busy: false;
     in-out property <bool> revert-confirm-visible: false;
     in-out property <bool> quit-confirm-visible: false;
     in-out property <bool> update-install-confirm-visible: false;
@@ -3626,9 +3633,9 @@ export component MainWindow inherits Window {
 
                         if root.page-index != 3 && root.selected-device-ready : ActionButton {
                             width: 136px;
-                            title: @tr("Apply Changes…");
+                            title: root.apply-busy ? @tr("Working…") : @tr("Apply Changes…");
                             primary: true;
-                            enabled: root.draft-dirty && !root.device-discovering;
+                            enabled: root.draft-dirty && !root.device-discovering && !root.apply-busy;
                             clicked => { root.apply-requested(); }
                             horizontal-stretch: 0;
                             vertical-stretch: 0;
@@ -3637,7 +3644,7 @@ export component MainWindow inherits Window {
                             width: 126px;
                             title: @tr("Save Changes");
                             primary: true;
-                            enabled: root.draft-dirty && !root.device-discovering;
+                            enabled: root.draft-dirty && !root.device-discovering && !root.apply-busy;
                             clicked => { root.save-for-later(); }
                             horizontal-stretch: 0;
                             vertical-stretch: 0;
@@ -3646,6 +3653,13 @@ export component MainWindow inherits Window {
                 }
             }
         }
+    }
+
+    if root.apply-busy : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+        TouchArea { width: parent.width; height: parent.height; }
     }
 
     if root.confirm-visible : Rectangle {
@@ -3658,7 +3672,7 @@ export component MainWindow inherits Window {
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
             width: 560px;
-            height: 246px + min(188px, max(44px, root.plan-rows.length * 44px));
+            height: 246px + min(208px, max(52px, root.plan-rows.length * 52px));
             background: Theme.panel;
             border-width: 1px;
             border-color: Theme.control-border;
@@ -3748,7 +3762,7 @@ export component MainWindow inherits Window {
                 }
 
                 Rectangle {
-                    height: min(188px, max(44px, root.plan-rows.length * 44px));
+                    height: min(208px, max(52px, root.plan-rows.length * 52px));
                     background: transparent;
 
                     ListView {
@@ -3758,6 +3772,7 @@ export component MainWindow inherits Window {
                         for step[i] in root.plan-rows : ChangeRow {
                             scope: step.scope;
                             title: SettingsTranslations.plan(step);
+                            detail: SettingsTranslations.transition(step);
                         }
                     }
                 }
@@ -3774,8 +3789,8 @@ export component MainWindow inherits Window {
                     vertical-stretch: 0;
 
                     Rectangle { horizontal-stretch: 1; }
-                    ActionButton { width: 84px; height: 36px; title: @tr("Cancel"); clicked => { root.cancel-apply(); } horizontal-stretch: 0; vertical-stretch: 0; }
-                    ActionButton { width: 96px; height: 36px; title: @tr("Apply"); primary: true; clicked => { root.apply-requested(); } horizontal-stretch: 0; vertical-stretch: 0; }
+                    ActionButton { width: 84px; height: 36px; title: @tr("Cancel"); enabled: !root.apply-busy; clicked => { root.cancel-apply(); } horizontal-stretch: 0; vertical-stretch: 0; }
+                    ActionButton { width: 96px; height: 36px; title: @tr("Apply"); primary: true; enabled: !root.apply-busy; clicked => { root.apply-requested(); } horizontal-stretch: 0; vertical-stretch: 0; }
                 }
             }
         }

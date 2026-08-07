@@ -7,13 +7,13 @@ use std::time::Duration;
 use dogi_core::{
     Action, AppProfile, AppProfileOverrides, ApplicationMatchField, ApplicationMatcher,
     BatteryStatus, ButtonAction, ButtonBinding, CapabilityState, ConnectionKind,
-    DEFAULT_THUMB_WHEEL_SPEED_PERCENT, DeviceInfo, DogiError, GestureBindings,
+    DEFAULT_THUMB_WHEEL_SPEED_PERCENT, DeviceInfo, DeviceSettingValue, DogiError, GestureBindings,
     MAX_THUMB_WHEEL_SPEED_PERCENT, MIN_THUMB_WHEEL_SPEED_PERCENT, Master3sButton, Master3sSettings,
-    Result, SettingsApplyOperation, SettingsApplyPlan, SettingsApplyReport, SettingsApplyScope,
-    SettingsApplyStatus, SettingsApplyStep, ThumbWheelMode, WheelRatchetMode,
-    build_master3s_apply_plan, build_master3s_device_diff_plan, device_settings_id,
-    known_logitech_model_name, known_logitech_product_name, known_logitech_wpid_name,
-    resolved_logitech_device_name, settings_apply_step_scope,
+    Result, SettingsApplyOperation, SettingsApplyPlan, SettingsApplyPreview, SettingsApplyReport,
+    SettingsApplyScope, SettingsApplyStatus, SettingsApplyStep, SettingsTransactionState,
+    ThumbWheelMode, WheelRatchetMode, build_master3s_apply_plan, build_master3s_device_diff_plan,
+    device_settings_id, known_logitech_model_name, known_logitech_product_name,
+    known_logitech_wpid_name, resolved_logitech_device_name, settings_apply_step_scope,
 };
 
 slint::include_modules!();
@@ -33,15 +33,31 @@ pub use preferences::{
 
 pub type SettingsLoader = Rc<dyn Fn(&str) -> Result<Master3sSettings>>;
 pub type SettingsSaver = Rc<dyn Fn(Option<&str>, &Master3sSettings) -> Result<String>>;
-pub type SettingsApplier =
-    Rc<dyn Fn(&str, &Master3sSettings, &SettingsApplyPlan) -> Result<SettingsApplyReport>>;
+pub type SettingsTransactionPreparer = Arc<
+    dyn Fn(&str, &Master3sSettings, &SettingsApplyPlan) -> Result<SettingsApplyPreview>
+        + Send
+        + Sync,
+>;
+pub type SettingsTransactionCommitter = Arc<
+    dyn Fn(&str, &str, &Master3sSettings, &SettingsApplyPlan) -> Result<SettingsCommitResult>
+        + Send
+        + Sync,
+>;
 pub type DeviceScanner = Arc<dyn Fn() -> Result<Vec<DeviceInfo>> + Send + Sync>;
+
+#[derive(Clone, Debug)]
+pub struct SettingsCommitResult {
+    pub report: SettingsApplyReport,
+    pub saved_path: String,
+}
 
 #[derive(Clone)]
 pub struct DeviceSettingsIntegration {
     pub load: SettingsLoader,
     pub save: SettingsSaver,
-    pub apply: SettingsApplier,
+    pub prepare: SettingsTransactionPreparer,
+    pub commit: SettingsTransactionCommitter,
+    pub recovery_error: Option<String>,
 }
 
 #[derive(Clone)]
@@ -205,7 +221,9 @@ struct LaunchIntegrations {
     discovery: Option<DeviceDiscovery>,
     loader: Option<SettingsLoader>,
     saver: Option<SettingsSaver>,
-    applier: Option<SettingsApplier>,
+    preparer: Option<SettingsTransactionPreparer>,
+    committer: Option<SettingsTransactionCommitter>,
+    settings_recovery_error: Option<String>,
     runtime: Option<DesktopRuntimeManager>,
     preferences: ApplicationPreferencesIntegration,
     network: NetworkPreferencesIntegration,
@@ -252,6 +270,34 @@ struct HorizontalScrollPreviewCompletion {
     sequence: u64,
     command: HorizontalScrollPreviewCommand,
     result: Result<()>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SettingsTransactionWorkKind {
+    Prepare,
+    Commit,
+}
+
+#[derive(Clone, Debug)]
+struct SettingsTransactionWork {
+    sequence: u64,
+    kind: SettingsTransactionWorkKind,
+    device_id: String,
+    settings_id: String,
+    settings: Master3sSettings,
+    plan: SettingsApplyPlan,
+}
+
+#[derive(Debug)]
+enum SettingsTransactionCompletionResult {
+    Prepared(Result<SettingsApplyPreview>),
+    Committed(Result<SettingsCommitResult>),
+}
+
+#[derive(Debug)]
+struct SettingsTransactionCompletion {
+    work: SettingsTransactionWork,
+    result: SettingsTransactionCompletionResult,
 }
 
 impl UiStatus {
@@ -345,6 +391,32 @@ fn dispatch_horizontal_scroll_preview(
         .is_ok()
 }
 
+fn dispatch_settings_transaction(
+    sender: Option<&mpsc::Sender<SettingsTransactionWork>>,
+    sequence: &Cell<u64>,
+    kind: SettingsTransactionWorkKind,
+    device_id: String,
+    settings_id: String,
+    settings: Master3sSettings,
+    plan: SettingsApplyPlan,
+) -> bool {
+    let Some(sender) = sender else {
+        return false;
+    };
+    let next = sequence.get().wrapping_add(1).max(1);
+    sequence.set(next);
+    sender
+        .send(SettingsTransactionWork {
+            sequence: next,
+            kind,
+            device_id,
+            settings_id,
+            settings,
+            plan,
+        })
+        .is_ok()
+}
+
 fn persist_application_setting(
     window: &MainWindow,
     save: &ApplicationPreferenceSaver,
@@ -363,6 +435,69 @@ fn persist_application_setting(
             );
             false
         }
+    }
+}
+
+fn present_settings_commit(
+    window: &MainWindow,
+    session: &Rc<RefCell<DeviceUiSession>>,
+    devices: &[LogicalDevice],
+    settings_id: &str,
+    settings: &Master3sSettings,
+    result: Result<SettingsCommitResult>,
+) {
+    match result {
+        Ok(result) if result.report.committed() => {
+            let mut session = session.borrow_mut();
+            session.mark_device_saved(settings_id, settings, devices);
+            window.set_draft_dirty(session.current_dirty());
+            drop(session);
+            if result.report.outcomes.is_empty() {
+                set_window_status(
+                    window,
+                    UiStatus::presentation(UiStatusKind::Success, UiMessage::ChangesSaved),
+                );
+                return;
+            }
+            let failed = count_apply_status(&result.report, SettingsApplyStatus::Failed)
+                + count_apply_status(&result.report, SettingsApplyStatus::RollbackFailed);
+            let applied = count_apply_status(&result.report, SettingsApplyStatus::Applied);
+            let unsupported = count_apply_status(&result.report, SettingsApplyStatus::Unsupported);
+            set_window_status(
+                window,
+                UiStatus::presentation(UiStatusKind::Success, UiMessage::ApplySummary)
+                    .with_apply_counts(failed, applied, unsupported)
+                    .with_path(result.saved_path),
+            );
+        }
+        Ok(result) => {
+            let failed = count_apply_status(&result.report, SettingsApplyStatus::Failed)
+                + count_apply_status(&result.report, SettingsApplyStatus::RollbackFailed);
+            let unsupported = count_apply_status(&result.report, SettingsApplyStatus::Unsupported);
+            let (kind, message) = match result.report.transaction {
+                SettingsTransactionState::Rejected => {
+                    (UiStatusKind::Warning, UiMessage::ApplyRejected)
+                }
+                SettingsTransactionState::RolledBack => {
+                    (UiStatusKind::Warning, UiMessage::ApplyRolledBack)
+                }
+                SettingsTransactionState::RecoveryRequired => {
+                    (UiStatusKind::Error, UiMessage::ApplyRecoveryRequired)
+                }
+                SettingsTransactionState::Committed => {
+                    (UiStatusKind::Success, UiMessage::ApplySummary)
+                }
+            };
+            set_window_status(
+                window,
+                UiStatus::presentation(kind, message).with_apply_counts(failed, 0, unsupported),
+            );
+        }
+        Err(error) => set_window_status(
+            window,
+            UiStatus::presentation(UiStatusKind::Error, UiMessage::ApplyFailed)
+                .with_detail(error.to_string()),
+        ),
     }
 }
 
@@ -705,6 +840,33 @@ impl DeviceUiSession {
         }
     }
 
+    fn mark_device_saved(
+        &mut self,
+        settings_id: &str,
+        settings: &Master3sSettings,
+        devices: &[LogicalDevice],
+    ) {
+        let settings = settings.normalized();
+        if let Some((_, draft)) = self.drafts.iter_mut().enumerate().find(|(index, draft)| {
+            draft.strong_key.as_deref().map_or_else(
+                || {
+                    devices
+                        .get(*index)
+                        .map(|device| device_settings_id(&device.primary))
+                        .as_deref()
+                        == Some(settings_id)
+                },
+                |key| key == settings_id,
+            )
+        }) {
+            draft.saved_settings = settings;
+            draft.dirty = draft.settings != draft.saved_settings;
+        } else if let Some(draft) = self.detached_drafts.get_mut(settings_id) {
+            draft.saved_settings = settings;
+            draft.dirty = draft.settings != draft.saved_settings;
+        }
+    }
+
     fn mark_all_saved(&mut self) {
         self.fallback_saved = self.fallback.clone();
         self.fallback_dirty = false;
@@ -845,14 +1007,16 @@ pub fn launch_with_settings_io(
     state: UiState,
     loader: SettingsLoader,
     saver: SettingsSaver,
-    applier: SettingsApplier,
+    preparer: SettingsTransactionPreparer,
+    committer: SettingsTransactionCommitter,
 ) -> Result<()> {
     launch_internal(
         state,
         LaunchIntegrations {
             loader: Some(loader),
             saver: Some(saver),
-            applier: Some(applier),
+            preparer: Some(preparer),
+            committer: Some(committer),
             ..LaunchIntegrations::default()
         },
     )
@@ -863,7 +1027,8 @@ pub fn launch_with_device_io(
     scanner: DeviceScanner,
     loader: SettingsLoader,
     saver: SettingsSaver,
-    applier: SettingsApplier,
+    preparer: SettingsTransactionPreparer,
+    committer: SettingsTransactionCommitter,
 ) -> Result<()> {
     launch_internal(
         state,
@@ -871,7 +1036,8 @@ pub fn launch_with_device_io(
             discovery: Some(DeviceDiscovery::single(scanner)),
             loader: Some(loader),
             saver: Some(saver),
-            applier: Some(applier),
+            preparer: Some(preparer),
+            committer: Some(committer),
             ..LaunchIntegrations::default()
         },
     )
@@ -894,7 +1060,9 @@ pub fn launch_with_integrations(state: UiState, integrations: UiIntegrations) ->
             discovery: Some(discovery),
             loader: Some(settings.load),
             saver: Some(settings.save),
-            applier: Some(settings.apply),
+            preparer: Some(settings.prepare),
+            committer: Some(settings.commit),
+            settings_recovery_error: settings.recovery_error,
             runtime: Some(runtime),
             preferences,
             network,
@@ -909,7 +1077,9 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         discovery,
         loader,
         saver,
-        applier,
+        preparer,
+        committer,
+        settings_recovery_error,
         runtime,
         preferences,
         network,
@@ -1002,6 +1172,56 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         drafts,
         fallback_settings,
     )));
+    let (settings_work_sender, settings_work_receiver) = mpsc::channel::<SettingsTransactionWork>();
+    let (settings_completion_sender, settings_completion_receiver) =
+        mpsc::channel::<SettingsTransactionCompletion>();
+    let settings_worker_available = match (preparer, committer) {
+        (Some(preparer), Some(committer)) => std::thread::Builder::new()
+            .name("dogi-settings-transaction".to_owned())
+            .spawn(move || {
+                while let Ok(work) = settings_work_receiver.recv() {
+                    let result =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            match work.kind {
+                                SettingsTransactionWorkKind::Prepare => {
+                                    SettingsTransactionCompletionResult::Prepared(preparer(
+                                        &work.device_id,
+                                        &work.settings,
+                                        &work.plan,
+                                    ))
+                                }
+                                SettingsTransactionWorkKind::Commit => {
+                                    SettingsTransactionCompletionResult::Committed(committer(
+                                        &work.device_id,
+                                        &work.settings_id,
+                                        &work.settings,
+                                        &work.plan,
+                                    ))
+                                }
+                            }
+                        }))
+                        .unwrap_or_else(|_| match work.kind {
+                            SettingsTransactionWorkKind::Prepare => {
+                                SettingsTransactionCompletionResult::Prepared(Err(DogiError::Ui(
+                                    "settings transaction worker panicked during preparation"
+                                        .to_owned(),
+                                )))
+                            }
+                            SettingsTransactionWorkKind::Commit => {
+                                SettingsTransactionCompletionResult::Committed(Err(DogiError::Ui(
+                                    "settings transaction worker panicked during commit".to_owned(),
+                                )))
+                            }
+                        });
+                    let _ = settings_completion_sender
+                        .send(SettingsTransactionCompletion { work, result });
+                }
+            })
+            .is_ok(),
+        _ => false,
+    };
+    let settings_work_sender = settings_worker_available.then_some(settings_work_sender);
+    let settings_sequence = Rc::new(Cell::new(0_u64));
     let runtime_supported = runtime.as_ref().is_some_and(|runtime| runtime.supported);
     let runtime_detail = runtime
         .as_ref()
@@ -1047,6 +1267,13 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let confirm_quit_window = window.as_weak();
     let confirm_quit_tray = tray.as_ref().map(|tray| tray.as_weak());
     window.on_confirm_quit(move || {
+        if let Some(window) = confirm_quit_window.upgrade()
+            && window.get_apply_busy()
+        {
+            window.set_quit_confirm_visible(false);
+            let _ = window.show();
+            return;
+        }
         if let Some(tray) = confirm_quit_tray.as_ref().and_then(|tray| tray.upgrade()) {
             tray.set_enabled(false);
         }
@@ -1076,6 +1303,10 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
             let Some(window) = tray_quit_window.upgrade() else {
                 return;
             };
+            if window.get_apply_busy() {
+                let _ = window.show();
+                return;
+            }
             if tray_quit_session.borrow().any_dirty() {
                 let _ = window.show();
                 window.set_quit_confirm_visible(true);
@@ -1109,6 +1340,9 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         let Some(window) = close_request_window.upgrade() else {
             return slint::CloseRequestResponse::HideWindow;
         };
+        if window.get_apply_busy() {
+            return slint::CloseRequestResponse::KeepWindowShown;
+        }
         if close_request_session.borrow().any_dirty() {
             window.set_quit_confirm_visible(true);
             slint::CloseRequestResponse::KeepWindowShown
@@ -1125,6 +1359,11 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     window.set_rescan_in_progress(false);
     refresh_selected_device_view(&window, &logical_devices.borrow(), &session.borrow());
     window.set_selected_button_index(2);
+    if let Some(error) = settings_recovery_error {
+        startup_status =
+            UiStatus::presentation(UiStatusKind::Error, UiMessage::ApplyRecoveryRequired)
+                .with_detail(error);
+    }
     set_window_status(&window, startup_status);
 
     window.set_runtime_enabled(background_operations_enabled && runtime_supported);
@@ -2541,7 +2780,8 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let apply_devices = logical_devices.clone();
     let apply_window = window.as_weak();
     let apply_saver = saver;
-    let apply_applier = applier;
+    let apply_settings_sender = settings_work_sender.clone();
+    let apply_settings_sequence = settings_sequence.clone();
     let apply_pending_apply = pending_apply.clone();
     window.on_apply_requested(move || {
         if let Some(window) = apply_window.upgrade() {
@@ -2551,7 +2791,6 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
             }
             let target = capture_settings_target(&window, &apply_session, &apply_devices);
             let saved_settings = apply_session.borrow().current_saved().clone();
-            let has_unsaved_changes = target.settings != saved_settings;
             if target
                 .device
                 .as_ref()
@@ -2571,9 +2810,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                 &saved_settings,
                 &target.settings,
             );
-            let plan_rows = device_plan_rows_from_plan(&plan, &target.settings);
-            let step_count = plan_rows.len();
-            window.set_plan_rows(Rc::new(slint::VecModel::from(plan_rows)).into());
+            let planned_step_count = plan.steps.len();
 
             let Some(device_id) = device_id else {
                 apply_pending_apply.borrow_mut().take();
@@ -2581,110 +2818,210 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                 set_window_status(
                     &window,
                     UiStatus::presentation(UiStatusKind::Error, UiMessage::NoDevice)
-                        .with_count(step_count),
+                        .with_count(planned_step_count),
                 );
                 return;
             };
-
-            if !plan.steps.is_empty() {
-                if apply_applier.is_none() {
-                    apply_pending_apply.borrow_mut().take();
-                    window.set_confirm_visible(false);
-                    set_window_status(
-                        &window,
-                        UiStatus::presentation(
-                            UiStatusKind::Error,
-                            UiMessage::ApplyBackendUnavailable,
-                        )
-                        .with_count(step_count),
-                    );
-                    return;
-                }
-
-                let confirmation = PendingApplyConfirmation::new(
-                    Some(device_id.to_owned()),
-                    target.settings.clone(),
-                );
-                if !pending_apply_matches(&apply_pending_apply.borrow(), &confirmation) {
-                    *apply_pending_apply.borrow_mut() = Some(confirmation);
-                    window.set_confirm_change_count(i32::try_from(step_count).unwrap_or(i32::MAX));
-                    window.set_confirm_visible(true);
-                    set_window_status(
-                        &window,
-                        UiStatus::presentation(UiStatusKind::Info, UiMessage::ReviewPlan)
-                            .with_count(step_count),
-                    );
-                    return;
-                }
-            }
-
-            apply_pending_apply.borrow_mut().take();
-            window.set_confirm_visible(false);
-            let saved_path = if !has_unsaved_changes {
-                None
-            } else {
-                match &apply_saver {
-                    Some(saver) => match saver(target.settings_id.as_deref(), &target.settings) {
-                        Ok(path) => Some(path),
-                        Err(error) => {
-                            window.set_confirm_visible(false);
-                            set_window_status(
-                                &window,
-                                UiStatus::presentation(UiStatusKind::Error, UiMessage::SaveFailed)
-                                    .with_detail(error.to_string()),
-                            );
-                            return;
-                        }
-                    },
-                    None => None,
-                }
-            };
-
-            apply_session.borrow_mut().mark_current_saved();
-            window.set_draft_dirty(false);
 
             if plan.steps.is_empty() {
+                apply_pending_apply.borrow_mut().take();
+                window.set_confirm_visible(false);
+                match &apply_saver {
+                    Some(saver) => match saver(target.settings_id.as_deref(), &target.settings) {
+                        Ok(_) => {
+                            apply_session.borrow_mut().mark_current_saved();
+                            window.set_draft_dirty(false);
+                            set_window_status(
+                                &window,
+                                UiStatus::presentation(
+                                    UiStatusKind::Success,
+                                    UiMessage::ChangesSaved,
+                                ),
+                            );
+                        }
+                        Err(error) => set_window_status(
+                            &window,
+                            UiStatus::presentation(UiStatusKind::Error, UiMessage::SaveFailed)
+                                .with_detail(error.to_string()),
+                        ),
+                    },
+                    None => set_window_status(
+                        &window,
+                        UiStatus::presentation(UiStatusKind::Error, UiMessage::SaveFailed),
+                    ),
+                }
+                return;
+            }
+
+            if apply_settings_sender.is_none() {
+                apply_pending_apply.borrow_mut().take();
+                window.set_confirm_visible(false);
                 set_window_status(
                     &window,
-                    UiStatus::presentation(UiStatusKind::Success, UiMessage::ChangesSaved),
+                    UiStatus::presentation(UiStatusKind::Error, UiMessage::ApplyBackendUnavailable)
+                        .with_count(planned_step_count),
                 );
                 return;
             }
 
-            let applier = apply_applier
-                .as_ref()
-                .expect("device apply backend checked before confirmation");
-            match applier(device_id, &target.settings, &plan) {
-                Ok(report) => {
-                    let failed = count_apply_status(&report, SettingsApplyStatus::Failed);
-                    let applied = count_apply_status(&report, SettingsApplyStatus::Applied);
-                    let unsupported = count_apply_status(&report, SettingsApplyStatus::Unsupported);
-                    let status_kind = if failed > 0 {
-                        UiStatusKind::Error
-                    } else if unsupported > 0 {
-                        UiStatusKind::Warning
-                    } else {
-                        UiStatusKind::Success
-                    };
-                    let mut status = UiStatus::presentation(status_kind, UiMessage::ApplySummary)
-                        .with_apply_counts(failed, applied, unsupported);
-                    if let Some(path) = saved_path {
-                        status = status.with_path(path);
-                    }
-                    set_window_status(&window, status);
-                }
-                Err(error) => {
-                    let mut status =
-                        UiStatus::presentation(UiStatusKind::Error, UiMessage::ApplyFailed)
-                            .with_detail(error.to_string());
-                    if let Some(path) = saved_path {
-                        status = status.with_path(path);
-                    }
-                    set_window_status(&window, status);
-                }
+            let confirmation =
+                PendingApplyConfirmation::new(Some(device_id.to_owned()), target.settings.clone());
+            let confirmed = pending_apply_matches(&apply_pending_apply.borrow(), &confirmation);
+            let (work_kind, message) = if confirmed {
+                window.set_confirm_visible(false);
+                (
+                    SettingsTransactionWorkKind::Commit,
+                    UiMessage::CommittingSettings,
+                )
+            } else {
+                (
+                    SettingsTransactionWorkKind::Prepare,
+                    UiMessage::PreparingSettings,
+                )
+            };
+            window.set_apply_busy(true);
+            set_window_status(&window, UiStatus::presentation(UiStatusKind::Info, message));
+            let settings_id = target
+                .settings_id
+                .clone()
+                .unwrap_or_else(|| device_id.to_owned());
+            if !dispatch_settings_transaction(
+                apply_settings_sender.as_ref(),
+                &apply_settings_sequence,
+                work_kind,
+                device_id.to_owned(),
+                settings_id,
+                target.settings,
+                plan,
+            ) {
+                window.set_apply_busy(false);
+                set_window_status(
+                    &window,
+                    UiStatus::presentation(UiStatusKind::Error, UiMessage::ApplyBackendUnavailable)
+                        .with_count(planned_step_count),
+                );
             }
         }
     });
+
+    let settings_poll_timer = Rc::new(slint::Timer::default());
+    let settings_poll_window = window.as_weak();
+    let settings_poll_session = session.clone();
+    let settings_poll_devices = logical_devices.clone();
+    let settings_poll_pending = pending_apply.clone();
+    let settings_poll_sender = settings_work_sender.clone();
+    let settings_poll_sequence = settings_sequence.clone();
+    settings_poll_timer.start(
+        slint::TimerMode::Repeated,
+        Duration::from_millis(40),
+        move || {
+            let Some(window) = settings_poll_window.upgrade() else {
+                return;
+            };
+            while let Ok(completion) = settings_completion_receiver.try_recv() {
+                if completion.work.sequence != settings_poll_sequence.get() {
+                    continue;
+                }
+                if matches!(
+                    &completion.result,
+                    SettingsTransactionCompletionResult::Prepared(_)
+                ) {
+                    let current = capture_settings_target(
+                        &window,
+                        &settings_poll_session,
+                        &settings_poll_devices,
+                    );
+                    if current.device_id() != Some(completion.work.device_id.as_str())
+                        || current.settings != completion.work.settings
+                    {
+                        settings_poll_pending.borrow_mut().take();
+                        window.set_apply_busy(false);
+                        window.set_confirm_visible(false);
+                        set_window_status(
+                            &window,
+                            UiStatus::presentation(UiStatusKind::Warning, UiMessage::ApplyRejected),
+                        );
+                        continue;
+                    }
+                }
+
+                match completion.result {
+                    SettingsTransactionCompletionResult::Prepared(Ok(preview)) => {
+                        let plan_rows =
+                            device_plan_rows_from_preview(&preview, &completion.work.settings);
+                        let step_count = plan_rows.len();
+                        window.set_plan_rows(Rc::new(slint::VecModel::from(plan_rows)).into());
+                        *settings_poll_pending.borrow_mut() = Some(PendingApplyConfirmation::new(
+                            Some(completion.work.device_id.clone()),
+                            completion.work.settings.clone(),
+                        ));
+                        if step_count == 0 {
+                            set_window_status(
+                                &window,
+                                UiStatus::presentation(
+                                    UiStatusKind::Info,
+                                    UiMessage::CommittingSettings,
+                                ),
+                            );
+                            if !dispatch_settings_transaction(
+                                settings_poll_sender.as_ref(),
+                                &settings_poll_sequence,
+                                SettingsTransactionWorkKind::Commit,
+                                completion.work.device_id,
+                                completion.work.settings_id,
+                                completion.work.settings,
+                                completion.work.plan,
+                            ) {
+                                settings_poll_pending.borrow_mut().take();
+                                window.set_apply_busy(false);
+                                set_window_status(
+                                    &window,
+                                    UiStatus::presentation(
+                                        UiStatusKind::Error,
+                                        UiMessage::ApplyBackendUnavailable,
+                                    ),
+                                );
+                            }
+                        } else {
+                            window.set_apply_busy(false);
+                            window.set_confirm_change_count(
+                                i32::try_from(step_count).unwrap_or(i32::MAX),
+                            );
+                            window.set_confirm_visible(true);
+                            set_window_status(
+                                &window,
+                                UiStatus::presentation(UiStatusKind::Info, UiMessage::ReviewPlan)
+                                    .with_count(step_count),
+                            );
+                        }
+                    }
+                    SettingsTransactionCompletionResult::Prepared(Err(error)) => {
+                        settings_poll_pending.borrow_mut().take();
+                        window.set_apply_busy(false);
+                        window.set_confirm_visible(false);
+                        set_window_status(
+                            &window,
+                            UiStatus::presentation(UiStatusKind::Error, UiMessage::ApplyFailed)
+                                .with_detail(error.to_string()),
+                        );
+                    }
+                    SettingsTransactionCompletionResult::Committed(result) => {
+                        settings_poll_pending.borrow_mut().take();
+                        window.set_apply_busy(false);
+                        window.set_confirm_visible(false);
+                        present_settings_commit(
+                            &window,
+                            &settings_poll_session,
+                            &settings_poll_devices.borrow(),
+                            &completion.work.settings_id,
+                            &completion.work.settings,
+                            result,
+                        );
+                    }
+                }
+            }
+        },
+    );
 
     let cancel_pending_apply = pending_apply;
     let cancel_window = window.as_weak();
@@ -2710,6 +3047,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     preview_poll_timer.stop();
     preview_speed_timer.stop();
     preview_heartbeat_timer.stop();
+    settings_poll_timer.stop();
     rescan_timer.stop();
     result
 }
@@ -3355,6 +3693,73 @@ fn device_plan_rows_from_plan(
         .iter()
         .filter(|step| settings_apply_step_scope(step, settings) == SettingsApplyScope::Device)
         .map(|step| plan_row_from_step(step, settings))
+        .collect()
+}
+
+fn device_plan_rows_from_preview(
+    preview: &SettingsApplyPreview,
+    settings: &Master3sSettings,
+) -> Vec<PlanRow> {
+    preview
+        .steps
+        .iter()
+        .map(|step| {
+            let mut row = plan_row_from_step(
+                &SettingsApplyStep {
+                    operation: step.operation.clone(),
+                    feature: step.feature,
+                    requires_device_write: true,
+                },
+                settings,
+            );
+            row.has_before = true;
+            match (&step.before, &step.after) {
+                (
+                    DeviceSettingValue::PointerSpeed { percent: before },
+                    DeviceSettingValue::PointerSpeed { .. },
+                ) => row.before_value = i32::from(*before),
+                (
+                    DeviceSettingValue::WheelBehavior {
+                        mode: before_mode,
+                        threshold: before_threshold,
+                    },
+                    DeviceSettingValue::WheelBehavior { .. },
+                ) => {
+                    row.before_primary_index = wheel_mode_index(*before_mode);
+                    row.before_value = i32::from(*before_threshold);
+                }
+                (
+                    DeviceSettingValue::ScrollBehavior {
+                        high_resolution,
+                        natural,
+                    },
+                    DeviceSettingValue::ScrollBehavior { .. },
+                ) => {
+                    row.before_enabled = *high_resolution;
+                    row.before_secondary_enabled = *natural;
+                }
+                (
+                    DeviceSettingValue::ThumbWheelRouting { diverted: before },
+                    DeviceSettingValue::ThumbWheelRouting { diverted: after },
+                ) => {
+                    row.before_enabled = *before;
+                    row.enabled = *after;
+                }
+                (
+                    DeviceSettingValue::ButtonRouting {
+                        diverted: before, ..
+                    },
+                    DeviceSettingValue::ButtonRouting {
+                        diverted: after, ..
+                    },
+                ) => {
+                    row.before_enabled = *before;
+                    row.enabled = *after;
+                }
+                _ => row.has_before = false,
+            }
+            row
+        })
         .collect()
 }
 
@@ -4112,6 +4517,50 @@ mod tests {
     }
 
     #[test]
+    fn committed_settings_mark_the_stable_device_draft_saved() {
+        let devices = logical_devices(&[make_paired_device(
+            "/dev/hidraw2",
+            "usb-0000:06:00.0-3/input2",
+            "AABBCCDD",
+        )]);
+        let saved = Master3sSettings::default();
+        let mut session = DeviceUiSession::new(&devices, vec![saved.clone()], saved);
+        let target = Master3sSettings {
+            pointer_speed_percent: 130,
+            ..Master3sSettings::default()
+        };
+        session.replace_current(target.clone());
+        let settings_id = device_settings_id(&devices[0].primary);
+
+        session.mark_device_saved(&settings_id, &target, &devices);
+
+        assert!(!session.current_dirty());
+        assert_eq!(session.current_saved().pointer_speed_percent, 130);
+    }
+
+    #[test]
+    fn settings_transaction_dispatch_preserves_both_device_identifiers() {
+        let (sender, receiver) = mpsc::channel();
+        let sequence = Cell::new(0);
+        let plan = build_master3s_apply_plan("transport-id", &Master3sSettings::default());
+
+        assert!(dispatch_settings_transaction(
+            Some(&sender),
+            &sequence,
+            SettingsTransactionWorkKind::Prepare,
+            "transport-id".to_owned(),
+            "unit-id".to_owned(),
+            Master3sSettings::default(),
+            plan,
+        ));
+
+        let work = receiver.recv().unwrap();
+        assert_eq!(work.sequence, 1);
+        assert_eq!(work.device_id, "transport-id");
+        assert_eq!(work.settings_id, "unit-id");
+    }
+
+    #[test]
     fn device_session_can_save_all_dirty_drafts_before_restart() {
         let devices = logical_devices(&[
             make_paired_device("/dev/hidraw2", "usb-0000:06:00.0-3/input2", "AABBCCDD"),
@@ -4397,6 +4846,7 @@ mod tests {
         let report = SettingsApplyReport {
             device_id: "device-1".to_owned(),
             profile_name: "Default".to_owned(),
+            transaction: dogi_core::SettingsTransactionState::Committed,
             outcomes: vec![
                 apply_outcome("pointer", SettingsApplyStatus::Applied),
                 apply_outcome("wheel", SettingsApplyStatus::Applied),
@@ -4974,7 +5424,7 @@ mod tests {
             ]
         };
         window.set_app_profile_rows(Rc::new(slint::VecModel::from(app_profile_rows)).into());
-        let plan_rows = if diff_only_preview {
+        let mut plan_rows = if diff_only_preview {
             vec![PlanRow {
                 kind: PlanKind::PointerSpeed,
                 scope: PlanScope::Device,
@@ -5055,6 +5505,27 @@ mod tests {
                 },
             ]
         };
+        if std::env::var_os("DOGI_UI_SNAPSHOT_CONFIRM").is_some() {
+            for row in &mut plan_rows {
+                row.has_before = true;
+                match row.kind {
+                    PlanKind::PointerSpeed => row.before_value = 100,
+                    PlanKind::WheelBehavior => {
+                        row.before_primary_index = 0;
+                        row.before_value = 50;
+                    }
+                    PlanKind::ScrollBehavior => {
+                        row.before_enabled = false;
+                        row.before_secondary_enabled = false;
+                    }
+                    PlanKind::ThumbWheel | PlanKind::ButtonRouting => {
+                        row.before_enabled = false;
+                        row.enabled = true;
+                    }
+                    _ => row.has_before = false,
+                }
+            }
+        }
         let plan_row_count = plan_rows.len();
         window.set_plan_rows(Rc::new(slint::VecModel::from(plan_rows)).into());
         set_window_status(&window, UiStatus::default());
