@@ -1,8 +1,18 @@
+## [0.1.10] - 2026-08-07
+
+### 🚀 Features
+
+- [**breaking**] Add five-way gestures and full app profiles
+- Apply device settings transactionally
 ## [0.1.9] - 2026-08-06
 
 ### 🚀 Features
 
 - *(network)* Add configurable proxy support
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.1.9
 ## [0.1.8] - 2026-08-06
 
 ### 🐛 Bug Fixes
