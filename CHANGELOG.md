@@ -1,9 +1,18 @@
+## [0.1.11] - 2026-08-10
+
+### 🚀 Features
+
+- *(runtime)* Add session safeguards and battery notifications
 ## [0.1.10] - 2026-08-07
 
 ### 🚀 Features
 
 - [**breaking**] Add five-way gestures and full app profiles
 - Apply device settings transactionally
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.1.10
 ## [0.1.9] - 2026-08-06
 
 ### 🚀 Features
