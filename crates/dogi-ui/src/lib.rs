@@ -355,7 +355,14 @@ fn set_window_status(window: &MainWindow, status: UiStatus) {
 }
 
 fn set_desktop_runtime_status(window: &MainWindow, status: &DesktopRuntimeStatus) {
-    window.set_runtime_state(if !status.enabled && !status.active {
+    window.set_runtime_state(desktop_runtime_state(status));
+    window.set_runtime_pause_reason(runtime_pause_reason(status.pause_reason));
+    window.set_runtime_detail(status.detail.clone().into());
+    window.set_app_profiles_supported(status.app_profiles_supported);
+}
+
+fn desktop_runtime_state(status: &DesktopRuntimeStatus) -> DesktopRuntimeState {
+    if !status.enabled && !status.active {
         DesktopRuntimeState::Stopped
     } else if status.paused {
         DesktopRuntimeState::Paused
@@ -363,10 +370,7 @@ fn set_desktop_runtime_status(window: &MainWindow, status: &DesktopRuntimeStatus
         DesktopRuntimeState::Running
     } else {
         DesktopRuntimeState::Degraded
-    });
-    window.set_runtime_pause_reason(runtime_pause_reason(status.pause_reason));
-    window.set_runtime_detail(status.detail.clone().into());
-    window.set_app_profiles_supported(status.app_profiles_supported);
+    }
 }
 
 fn runtime_pause_reason(reason: DesktopRuntimePauseReason) -> RuntimePauseReason {
@@ -4267,23 +4271,19 @@ mod tests {
 
     #[test]
     fn expected_runtime_pause_is_presented_as_a_pause_not_a_failure() {
-        let window = MainWindow::new().unwrap();
-        set_desktop_runtime_status(
-            &window,
-            &DesktopRuntimeStatus {
-                enabled: true,
-                active: true,
-                ready: false,
-                paused: true,
-                pause_reason: DesktopRuntimePauseReason::RemoteLogin,
-                app_profiles_supported: false,
-                detail: "remote session".to_owned(),
-            },
-        );
+        let status = DesktopRuntimeStatus {
+            enabled: true,
+            active: true,
+            ready: false,
+            paused: true,
+            pause_reason: DesktopRuntimePauseReason::RemoteLogin,
+            app_profiles_supported: false,
+            detail: "remote session".to_owned(),
+        };
 
-        assert_eq!(window.get_runtime_state(), DesktopRuntimeState::Paused);
+        assert_eq!(desktop_runtime_state(&status), DesktopRuntimeState::Paused);
         assert_eq!(
-            window.get_runtime_pause_reason(),
+            runtime_pause_reason(status.pause_reason),
             RuntimePauseReason::RemoteLogin
         );
     }
