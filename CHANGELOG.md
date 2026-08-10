@@ -1,8 +1,17 @@
+## [0.1.12] - 2026-08-10
+
+### 🐛 Bug Fixes
+
+- Ci
 ## [0.1.11] - 2026-08-10
 
 ### 🚀 Features
 
 - *(runtime)* Add session safeguards and battery notifications
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.1.11
 ## [0.1.10] - 2026-08-07
 
 ### 🚀 Features
