@@ -29,7 +29,7 @@ impl ApplicationLanguage {
         }
     }
 
-    pub(crate) fn locale(self) -> &'static str {
+    pub fn locale(self) -> &'static str {
         match self {
             Self::System => system_locale(),
             Self::English => "en",
@@ -93,6 +93,8 @@ pub struct ApplicationPreferences {
     pub theme: ApplicationTheme,
     pub close_behavior: CloseBehavior,
     pub background_operations_enabled: bool,
+    pub low_battery_notifications_enabled: bool,
+    pub full_battery_notifications_enabled: bool,
     pub automatic_update_checks_enabled: bool,
 }
 
@@ -103,6 +105,8 @@ impl Default for ApplicationPreferences {
             theme: ApplicationTheme::System,
             close_behavior: CloseBehavior::Quit,
             background_operations_enabled: true,
+            low_battery_notifications_enabled: true,
+            full_battery_notifications_enabled: true,
             automatic_update_checks_enabled: true,
         }
     }
@@ -114,6 +118,8 @@ pub enum ApplicationPreferenceChange {
     Theme(ApplicationTheme),
     CloseBehavior(CloseBehavior),
     BackgroundOperationsEnabled(bool),
+    LowBatteryNotificationsEnabled(bool),
+    FullBatteryNotificationsEnabled(bool),
     AutomaticUpdateChecksEnabled(bool),
 }
 

@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: dogi-ui 0.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-07 02:06+0000\n"
+"POT-Creation-Date: 2026-08-07 10:02+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: zh_CN\n"
@@ -27,12 +27,12 @@ msgstr "基准 · 100%"
 msgid "Current · {}%"
 msgstr "当前 · {}%"
 
-#: crates/dogi-ui/ui/app.slint:622 crates/dogi-ui/ui/app.slint:1693
-#: crates/dogi-ui/ui/app.slint:3268
+#: crates/dogi-ui/ui/app.slint:622 crates/dogi-ui/ui/app.slint:1753
+#: crates/dogi-ui/ui/app.slint:3331
 msgid "Unavailable"
 msgstr "不可用"
 
-#: crates/dogi-ui/ui/app.slint:623 crates/dogi-ui/ui/app.slint:1694
+#: crates/dogi-ui/ui/app.slint:623 crates/dogi-ui/ui/app.slint:1754
 msgid "Starting…"
 msgstr "正在启动…"
 
@@ -88,11 +88,11 @@ msgstr "预览"
 msgid "Pointer"
 msgstr "指针"
 
-#: crates/dogi-ui/ui/app.slint:1252 crates/dogi-ui/ui/app.slint:3296
+#: crates/dogi-ui/ui/app.slint:1252 crates/dogi-ui/ui/app.slint:3359
 msgid "Main wheel"
 msgstr "主滚轮"
 
-#: crates/dogi-ui/ui/app.slint:1264 crates/dogi-ui/ui/app.slint:2930
+#: crates/dogi-ui/ui/app.slint:1264 crates/dogi-ui/ui/app.slint:2993
 msgid "Thumb wheel"
 msgstr "拇指滚轮"
 
@@ -120,7 +120,7 @@ msgstr "选择鼠标上的按键"
 msgid "Test gesture"
 msgstr "测试手势"
 
-#: crates/dogi-ui/ui/app.slint:1531 crates/dogi-ui/ui/app.slint:3099
+#: crates/dogi-ui/ui/app.slint:1531 crates/dogi-ui/ui/app.slint:3162
 msgid "Click"
 msgstr "点击"
 
@@ -140,610 +140,656 @@ msgstr "左"
 msgid "Right"
 msgstr "右"
 
-#: crates/dogi-ui/ui/app.slint:1695
+#: crates/dogi-ui/ui/app.slint:1755
 msgid "Running"
 msgstr "运行中"
 
-#: crates/dogi-ui/ui/app.slint:1696
+#: crates/dogi-ui/ui/app.slint:1756
+msgid "Paused"
+msgstr "已暂停"
+
+#: crates/dogi-ui/ui/app.slint:1757
 msgid "Off"
 msgstr "已关闭"
 
-#: crates/dogi-ui/ui/app.slint:1697 crates/dogi-ui/ui/app.slint:1805
+#: crates/dogi-ui/ui/app.slint:1757 crates/dogi-ui/ui/app.slint:1865
 msgid "Needs attention"
 msgstr "需要处理"
 
-#: crates/dogi-ui/ui/app.slint:1704
+#: crates/dogi-ui/ui/app.slint:1764
 msgid "Development builds do not manage the installed background service"
 msgstr "开发版本不会管理已安装版本的后台服务"
 
-#: crates/dogi-ui/ui/app.slint:1706
+#: crates/dogi-ui/ui/app.slint:1766
 msgid "This binary has no persistent background integration"
 msgstr "当前程序不包含持久后台集成"
 
-#: crates/dogi-ui/ui/app.slint:1724 crates/dogi-ui/ui/app.slint:1778
+#: crates/dogi-ui/ui/app.slint:1784 crates/dogi-ui/ui/app.slint:1838
 msgid "Background operations"
 msgstr "后台操作"
 
-#: crates/dogi-ui/ui/app.slint:1762 crates/dogi-ui/ui/app.slint:1874
+#: crates/dogi-ui/ui/app.slint:1822 crates/dogi-ui/ui/app.slint:1934
 msgid "Retry"
 msgstr "重试"
 
-#: crates/dogi-ui/ui/app.slint:1762
+#: crates/dogi-ui/ui/app.slint:1822
 msgid "Restart"
 msgstr "重新启动"
 
-#: crates/dogi-ui/ui/app.slint:1801 crates/dogi-ui/ui/app.slint:1875
+#: crates/dogi-ui/ui/app.slint:1861 crates/dogi-ui/ui/app.slint:1935
 msgid "Checking…"
 msgstr "正在检查…"
 
-#: crates/dogi-ui/ui/app.slint:1802
+#: crates/dogi-ui/ui/app.slint:1862
 msgid "Up to date"
 msgstr "已是最新"
 
-#: crates/dogi-ui/ui/app.slint:1803
+#: crates/dogi-ui/ui/app.slint:1863
 msgid "Ready"
 msgstr "可以更新"
 
-#: crates/dogi-ui/ui/app.slint:1804 crates/dogi-ui/ui/app.slint:1876
+#: crates/dogi-ui/ui/app.slint:1864 crates/dogi-ui/ui/app.slint:1936
 msgid "Installing…"
 msgstr "正在安装…"
 
-#: crates/dogi-ui/ui/app.slint:1807
+#: crates/dogi-ui/ui/app.slint:1867
 msgid "Automatic"
 msgstr "自动更新"
 
-#: crates/dogi-ui/ui/app.slint:1814
+#: crates/dogi-ui/ui/app.slint:1874
 #, python-brace-format
 msgid "Version {} is ready to install"
 msgstr "{} 版本已可安装"
 
-#: crates/dogi-ui/ui/app.slint:1817 crates/dogi-ui/ui/app.slint:1818
+#: crates/dogi-ui/ui/app.slint:1877 crates/dogi-ui/ui/app.slint:1878
 #, python-brace-format
 msgid "Version {}"
 msgstr "版本 {}"
 
-#: crates/dogi-ui/ui/app.slint:1835
+#: crates/dogi-ui/ui/app.slint:1895
 msgid "Dogi updates"
 msgstr "Dogi 更新"
 
-#: crates/dogi-ui/ui/app.slint:1873
+#: crates/dogi-ui/ui/app.slint:1933
 msgid "Install & Restart"
 msgstr "安装并重启"
 
-#: crates/dogi-ui/ui/app.slint:1877
+#: crates/dogi-ui/ui/app.slint:1937
 msgid "Check now"
 msgstr "检查更新"
 
-#: crates/dogi-ui/ui/app.slint:1900
+#: crates/dogi-ui/ui/app.slint:1960
 msgid "Check and download updates automatically"
 msgstr "自动检查并下载更新"
 
-#: crates/dogi-ui/ui/app.slint:1920 crates/dogi-ui/ui/app.slint:1987
+#: crates/dogi-ui/ui/app.slint:1980 crates/dogi-ui/ui/app.slint:2047
 msgid "Follow system settings"
 msgstr "跟随系统设置"
 
-#: crates/dogi-ui/ui/app.slint:1921 crates/dogi-ui/ui/app.slint:1988
+#: crates/dogi-ui/ui/app.slint:1981 crates/dogi-ui/ui/app.slint:2048
 msgid "Direct connection"
 msgstr "直接连接"
 
-#: crates/dogi-ui/ui/app.slint:1922 crates/dogi-ui/ui/app.slint:1989
+#: crates/dogi-ui/ui/app.slint:1982 crates/dogi-ui/ui/app.slint:2049
 msgid "Manual proxy"
 msgstr "手动代理"
 
-#: crates/dogi-ui/ui/app.slint:1937 crates/dogi-ui/ui/app.slint:2022
+#: crates/dogi-ui/ui/app.slint:1997 crates/dogi-ui/ui/app.slint:2082
 msgid "Network proxy"
 msgstr "网络代理"
 
-#: crates/dogi-ui/ui/app.slint:1948
+#: crates/dogi-ui/ui/app.slint:2008
 msgid "Configure"
 msgstr "配置"
 
-#: crates/dogi-ui/ui/app.slint:2037
+#: crates/dogi-ui/ui/app.slint:2097
 msgid "Controls network access for Dogi updates."
 msgstr "控制 Dogi 更新的网络连接。"
 
-#: crates/dogi-ui/ui/app.slint:2053
+#: crates/dogi-ui/ui/app.slint:2113
 msgid "Connection"
 msgstr "连接方式"
 
-#: crates/dogi-ui/ui/app.slint:2073
+#: crates/dogi-ui/ui/app.slint:2133
 msgid "Protocol"
 msgstr "协议"
 
-#: crates/dogi-ui/ui/app.slint:2074
+#: crates/dogi-ui/ui/app.slint:2134
 msgid "Host"
 msgstr "主机"
 
-#: crates/dogi-ui/ui/app.slint:2075
+#: crates/dogi-ui/ui/app.slint:2135
 msgid "Port"
 msgstr "端口"
 
-#: crates/dogi-ui/ui/app.slint:2099 crates/dogi-ui/ui/app.slint:2108
+#: crates/dogi-ui/ui/app.slint:2159 crates/dogi-ui/ui/app.slint:2168
 msgid "Proxy authentication"
 msgstr "代理认证"
 
-#: crates/dogi-ui/ui/app.slint:2100
+#: crates/dogi-ui/ui/app.slint:2160
 msgid "Store credentials in the desktop keyring"
 msgstr "将凭据存储在桌面密钥环中"
 
-#: crates/dogi-ui/ui/app.slint:2126
+#: crates/dogi-ui/ui/app.slint:2186
 msgid "Username"
 msgstr "用户名"
 
-#: crates/dogi-ui/ui/app.slint:2127 crates/dogi-ui/ui/app.slint:2137
+#: crates/dogi-ui/ui/app.slint:2187 crates/dogi-ui/ui/app.slint:2197
 msgid "Password"
 msgstr "密码"
 
-#: crates/dogi-ui/ui/app.slint:2137
+#: crates/dogi-ui/ui/app.slint:2197
 msgid "Saved password"
 msgstr "已保存的密码"
 
-#: crates/dogi-ui/ui/app.slint:2156
+#: crates/dogi-ui/ui/app.slint:2216
 msgid "Testing connection…"
 msgstr "正在测试连接…"
 
-#: crates/dogi-ui/ui/app.slint:2157
+#: crates/dogi-ui/ui/app.slint:2217
 msgid "Saving proxy settings…"
 msgstr "正在保存代理设置…"
 
-#: crates/dogi-ui/ui/app.slint:2158
+#: crates/dogi-ui/ui/app.slint:2218
 msgid "Connected directly"
 msgstr "已直接连接"
 
-#: crates/dogi-ui/ui/app.slint:2159
+#: crates/dogi-ui/ui/app.slint:2219
 #, python-brace-format
 msgid "Connected through {}"
 msgstr "已通过 {} 连接"
 
-#: crates/dogi-ui/ui/app.slint:2161
+#: crates/dogi-ui/ui/app.slint:2221
 msgid "Test access to GitHub before saving."
 msgstr "保存前测试 GitHub 连接。"
 
-#: crates/dogi-ui/ui/app.slint:2183 crates/dogi-ui/ui/app.slint:2277
+#: crates/dogi-ui/ui/app.slint:2243 crates/dogi-ui/ui/app.slint:2337
 msgid "Cancel"
 msgstr "取消"
 
-#: crates/dogi-ui/ui/app.slint:2184
+#: crates/dogi-ui/ui/app.slint:2244
 msgid "Test connection"
 msgstr "测试连接"
 
-#: crates/dogi-ui/ui/app.slint:2185
+#: crates/dogi-ui/ui/app.slint:2245
 msgid "Save"
 msgstr "保存"
 
-#: crates/dogi-ui/ui/app.slint:2345 crates/dogi-ui/ui/app.slint:3850
+#: crates/dogi-ui/ui/app.slint:2396
+msgid "The desktop is locked; local input enhancements are paused"
+msgstr "桌面已锁定，本机输入增强已暂停"
+
+#: crates/dogi-ui/ui/app.slint:2398
+msgid "Remote login is active; local input enhancements are paused"
+msgstr "当前为远程登录，本机输入增强已暂停"
+
+#: crates/dogi-ui/ui/app.slint:2400
+msgid "No active local desktop; local input enhancements are paused"
+msgstr "没有活动的本地桌面，本机输入增强已暂停"
+
+#: crates/dogi-ui/ui/app.slint:2401
+msgid ""
+"Desktop session ownership could not be verified; local input enhancements "
+"are paused"
+msgstr "无法确认桌面会话归属，本机输入增强已暂停"
+
+#: crates/dogi-ui/ui/app.slint:2407 crates/dogi-ui/ui/app.slint:3925
 #, python-brace-format
 msgid "Dogi {} is ready"
 msgstr "Dogi {} 已可安装"
 
-#: crates/dogi-ui/ui/app.slint:2346
+#: crates/dogi-ui/ui/app.slint:2408
 msgid "Install the update when you are ready to restart Dogi."
 msgstr "准备好重启 Dogi 时即可安装更新。"
 
-#: crates/dogi-ui/ui/app.slint:2523
+#: crates/dogi-ui/ui/app.slint:2586
 msgid "Any identity"
 msgstr "任意标识"
 
-#: crates/dogi-ui/ui/app.slint:2524
+#: crates/dogi-ui/ui/app.slint:2587
 msgid "Window title"
 msgstr "窗口标题"
 
-#: crates/dogi-ui/ui/app.slint:2525
+#: crates/dogi-ui/ui/app.slint:2588
 msgid "Window class"
 msgstr "窗口类"
 
-#: crates/dogi-ui/ui/app.slint:2526
+#: crates/dogi-ui/ui/app.slint:2589
 msgid "Executable"
 msgstr "可执行文件"
 
-#: crates/dogi-ui/ui/app.slint:2541
+#: crates/dogi-ui/ui/app.slint:2604
 msgid "System language"
 msgstr "跟随系统"
 
-#: crates/dogi-ui/ui/app.slint:2546
+#: crates/dogi-ui/ui/app.slint:2609
 msgid "System theme"
 msgstr "跟随系统"
 
-#: crates/dogi-ui/ui/app.slint:2547
+#: crates/dogi-ui/ui/app.slint:2610
 msgid "Light"
 msgstr "浅色"
 
-#: crates/dogi-ui/ui/app.slint:2548
+#: crates/dogi-ui/ui/app.slint:2611
 msgid "Dark"
 msgstr "深色"
 
-#: crates/dogi-ui/ui/app.slint:2551 crates/dogi-ui/ui/app.slint:3870
+#: crates/dogi-ui/ui/app.slint:2614 crates/dogi-ui/ui/app.slint:3945
 msgid "Quit dogi"
 msgstr "退出 dogi"
 
-#: crates/dogi-ui/ui/app.slint:2552
+#: crates/dogi-ui/ui/app.slint:2615
 msgid "Keep running in tray"
 msgstr "在托盘中继续运行"
 
-#: crates/dogi-ui/ui/app.slint:2619
+#: crates/dogi-ui/ui/app.slint:2682
 msgid "Devices"
 msgstr "设备"
 
-#: crates/dogi-ui/ui/app.slint:2627
+#: crates/dogi-ui/ui/app.slint:2690
 msgid "No mouse found"
 msgstr "未发现鼠标"
 
-#: crates/dogi-ui/ui/app.slint:2634 crates/dogi-ui/ui/app.slint:2710
+#: crates/dogi-ui/ui/app.slint:2697 crates/dogi-ui/ui/app.slint:2773
 msgid "Logitech device"
 msgstr "罗技设备"
 
-#: crates/dogi-ui/ui/app.slint:2655 crates/dogi-ui/ui/app.slint:2706
+#: crates/dogi-ui/ui/app.slint:2718 crates/dogi-ui/ui/app.slint:2769
 msgid "Settings"
 msgstr "设置"
 
-#: crates/dogi-ui/ui/app.slint:2708
+#: crates/dogi-ui/ui/app.slint:2771
 msgid "No mouse connected"
 msgstr "未连接鼠标"
 
-#: crates/dogi-ui/ui/app.slint:2722
+#: crates/dogi-ui/ui/app.slint:2785
 msgid "Supported"
 msgstr "已支持"
 
-#: crates/dogi-ui/ui/app.slint:2751
+#: crates/dogi-ui/ui/app.slint:2814
 msgid "Editing default settings"
 msgstr "正在编辑默认设置"
 
-#: crates/dogi-ui/ui/app.slint:2753
+#: crates/dogi-ui/ui/app.slint:2816
 #, python-brace-format
 msgid "{} · Identifying…"
 msgstr "{} · 正在识别…"
 
-#: crates/dogi-ui/ui/app.slint:2756
+#: crates/dogi-ui/ui/app.slint:2819
 #, python-brace-format
 msgid "{} · {} · {}"
 msgstr "{} · {} · {}"
 
-#: crates/dogi-ui/ui/app.slint:2760
+#: crates/dogi-ui/ui/app.slint:2823
 #, python-brace-format
 msgid "{} · {}"
 msgstr "{} · {}"
 
-#: crates/dogi-ui/ui/app.slint:2779
+#: crates/dogi-ui/ui/app.slint:2842
 msgid "Scanning…"
 msgstr "正在扫描…"
 
-#: crates/dogi-ui/ui/app.slint:2779
+#: crates/dogi-ui/ui/app.slint:2842
 msgid "Rescan"
 msgstr "重新扫描"
 
-#: crates/dogi-ui/ui/app.slint:2794 crates/dogi-ui/ui/app.slint:3808
+#: crates/dogi-ui/ui/app.slint:2857 crates/dogi-ui/ui/app.slint:3883
 msgid "Revert Changes"
 msgstr "撤销更改"
 
-#: crates/dogi-ui/ui/app.slint:2808 crates/dogi-ui/ui/app.slint:2856
+#: crates/dogi-ui/ui/app.slint:2871 crates/dogi-ui/ui/app.slint:2919
 msgid "Pointer & Wheel"
 msgstr "指针与滚轮"
 
-#: crates/dogi-ui/ui/app.slint:2809
+#: crates/dogi-ui/ui/app.slint:2872
 msgid "Buttons"
 msgstr "按键"
 
-#: crates/dogi-ui/ui/app.slint:2810 crates/dogi-ui/ui/app.slint:3125
+#: crates/dogi-ui/ui/app.slint:2873 crates/dogi-ui/ui/app.slint:3188
 msgid "App Profiles"
 msgstr "应用配置"
 
-#: crates/dogi-ui/ui/app.slint:2846
+#: crates/dogi-ui/ui/app.slint:2909
 msgid "Preparing custom actions…"
 msgstr "正在准备自定义操作…"
 
-#: crates/dogi-ui/ui/app.slint:2848
+#: crates/dogi-ui/ui/app.slint:2911
 msgid "Background operations are off"
 msgstr "后台操作已关闭"
 
-#: crates/dogi-ui/ui/app.slint:2849
+#: crates/dogi-ui/ui/app.slint:2912
 #, python-brace-format
 msgid "Custom actions are unavailable: {}"
 msgstr "自定义操作暂不可用：{}"
 
-#: crates/dogi-ui/ui/app.slint:2873
+#: crates/dogi-ui/ui/app.slint:2936
 #, python-brace-format
 msgid "{} · {}%"
 msgstr "{} · {}%"
 
-#: crates/dogi-ui/ui/app.slint:2890 crates/dogi-ui/ui/app.slint:3285
+#: crates/dogi-ui/ui/app.slint:2953 crates/dogi-ui/ui/app.slint:3348
 msgid "Pointer speed"
 msgstr "指针速度"
 
-#: crates/dogi-ui/ui/app.slint:2909
+#: crates/dogi-ui/ui/app.slint:2972
 msgid "Scroll wheel"
 msgstr "滚轮"
 
-#: crates/dogi-ui/ui/app.slint:2912 crates/dogi-ui/ui/app.slint:3300
+#: crates/dogi-ui/ui/app.slint:2975 crates/dogi-ui/ui/app.slint:3363
 msgid "SmartShift sensitivity"
 msgstr "SmartShift 灵敏度"
 
-#: crates/dogi-ui/ui/app.slint:2916 crates/dogi-ui/ui/app.slint:3311
+#: crates/dogi-ui/ui/app.slint:2979 crates/dogi-ui/ui/app.slint:3374
 msgid "Smooth scrolling"
 msgstr "平滑滚动"
 
-#: crates/dogi-ui/ui/app.slint:2921
+#: crates/dogi-ui/ui/app.slint:2984
 msgid "Scroll direction"
 msgstr "滚动方向"
 
-#: crates/dogi-ui/ui/app.slint:2922 crates/dogi-ui/ui/app.slint:3313
+#: crates/dogi-ui/ui/app.slint:2985 crates/dogi-ui/ui/app.slint:3376
 msgid "Standard"
 msgstr "标准"
 
-#: crates/dogi-ui/ui/app.slint:2922 crates/dogi-ui/ui/app.slint:3313
+#: crates/dogi-ui/ui/app.slint:2985 crates/dogi-ui/ui/app.slint:3376
 msgid "Natural"
 msgstr "自然"
 
-#: crates/dogi-ui/ui/app.slint:2933 crates/dogi-ui/ui/app.slint:3035
+#: crates/dogi-ui/ui/app.slint:2996 crates/dogi-ui/ui/app.slint:3098
 msgid "Dogi"
 msgstr "Dogi"
 
-#: crates/dogi-ui/ui/app.slint:2951
+#: crates/dogi-ui/ui/app.slint:3014
 msgid "Horizontal scroll speed"
 msgstr "横向滚动速度"
 
-#: crates/dogi-ui/ui/app.slint:2992 crates/dogi-ui/ui/app.slint:3335
+#: crates/dogi-ui/ui/app.slint:3055 crates/dogi-ui/ui/app.slint:3398
 msgid "Button assignments"
 msgstr "按键分配"
 
-#: crates/dogi-ui/ui/app.slint:3040
+#: crates/dogi-ui/ui/app.slint:3103
 msgid "Thumb · rear"
 msgstr "拇指区 · 后键"
 
-#: crates/dogi-ui/ui/app.slint:3041
+#: crates/dogi-ui/ui/app.slint:3104
 msgid "Thumb · front"
 msgstr "拇指区 · 前键"
 
-#: crates/dogi-ui/ui/app.slint:3042
+#: crates/dogi-ui/ui/app.slint:3105
 msgid "Thumb rest"
 msgstr "拇指托"
 
-#: crates/dogi-ui/ui/app.slint:3043
+#: crates/dogi-ui/ui/app.slint:3106
 msgid "Behind the wheel"
 msgstr "滚轮后方"
 
-#: crates/dogi-ui/ui/app.slint:3044
+#: crates/dogi-ui/ui/app.slint:3107
 msgid "Wheel press"
 msgstr "滚轮按下"
 
-#: crates/dogi-ui/ui/app.slint:3050 crates/dogi-ui/ui/app.slint:3052
-#: crates/dogi-ui/ui/app.slint:3054 crates/dogi-ui/ui/app.slint:3056
+#: crates/dogi-ui/ui/app.slint:3113 crates/dogi-ui/ui/app.slint:3115
+#: crates/dogi-ui/ui/app.slint:3117 crates/dogi-ui/ui/app.slint:3119
 msgid "Assigned action"
 msgstr "已分配操作"
 
-#: crates/dogi-ui/ui/app.slint:3075
+#: crates/dogi-ui/ui/app.slint:3138
 msgid "All controls"
 msgstr "全部按键"
 
-#: crates/dogi-ui/ui/app.slint:3100 crates/dogi-ui/ui/app.slint:3351
+#: crates/dogi-ui/ui/app.slint:3163 crates/dogi-ui/ui/app.slint:3414
 msgid "Move up"
 msgstr "向上移动"
 
-#: crates/dogi-ui/ui/app.slint:3101 crates/dogi-ui/ui/app.slint:3352
+#: crates/dogi-ui/ui/app.slint:3164 crates/dogi-ui/ui/app.slint:3415
 msgid "Move down"
 msgstr "向下移动"
 
-#: crates/dogi-ui/ui/app.slint:3102 crates/dogi-ui/ui/app.slint:3353
+#: crates/dogi-ui/ui/app.slint:3165 crates/dogi-ui/ui/app.slint:3416
 msgid "Move left"
 msgstr "向左移动"
 
-#: crates/dogi-ui/ui/app.slint:3103 crates/dogi-ui/ui/app.slint:3354
+#: crates/dogi-ui/ui/app.slint:3166 crates/dogi-ui/ui/app.slint:3417
 msgid "Move right"
 msgstr "向右移动"
 
-#: crates/dogi-ui/ui/app.slint:3128
+#: crates/dogi-ui/ui/app.slint:3191
 msgid "Automatic app switching is unavailable in this Wayland session."
 msgstr "当前 Wayland 会话无法自动切换应用配置。"
 
-#: crates/dogi-ui/ui/app.slint:3163
+#: crates/dogi-ui/ui/app.slint:3226
 msgid "Profiles"
 msgstr "配置"
 
-#: crates/dogi-ui/ui/app.slint:3164
+#: crates/dogi-ui/ui/app.slint:3227
 #, python-brace-format
 msgid "{n} profile configured"
 msgid_plural "{n} profiles configured"
 msgstr[0] "已配置 {n} 个应用"
 
-#: crates/dogi-ui/ui/app.slint:3175
+#: crates/dogi-ui/ui/app.slint:3238
 msgid "New"
 msgstr "新建"
 
-#: crates/dogi-ui/ui/app.slint:3211
+#: crates/dogi-ui/ui/app.slint:3274
 msgid "No profiles yet"
 msgstr "尚无配置"
 
-#: crates/dogi-ui/ui/app.slint:3214
+#: crates/dogi-ui/ui/app.slint:3277
 msgid "Create one to override settings for an application."
 msgstr "新建配置可为指定应用覆盖设置。"
 
-#: crates/dogi-ui/ui/app.slint:3215
+#: crates/dogi-ui/ui/app.slint:3278
 msgid "Profiles switch pointer and thumb wheel settings for the active app."
 msgstr "应用配置可随当前应用切换指针速度和拇指滚轮。"
 
-#: crates/dogi-ui/ui/app.slint:3267
+#: crates/dogi-ui/ui/app.slint:3330
 msgid "New profile"
 msgstr "新配置"
 
-#: crates/dogi-ui/ui/app.slint:3269
+#: crates/dogi-ui/ui/app.slint:3332
 msgid "Remove"
 msgstr "移除"
 
-#: crates/dogi-ui/ui/app.slint:3270
+#: crates/dogi-ui/ui/app.slint:3333
 msgid "Add profile"
 msgstr "添加配置"
 
-#: crates/dogi-ui/ui/app.slint:3270
+#: crates/dogi-ui/ui/app.slint:3333
 msgid "Update profile"
 msgstr "更新配置"
 
-#: crates/dogi-ui/ui/app.slint:3274
+#: crates/dogi-ui/ui/app.slint:3337
 msgid "Application match"
 msgstr "应用匹配"
 
-#: crates/dogi-ui/ui/app.slint:3275
+#: crates/dogi-ui/ui/app.slint:3338
 msgid "Match field"
 msgstr "匹配字段"
 
-#: crates/dogi-ui/ui/app.slint:3276
+#: crates/dogi-ui/ui/app.slint:3339
 msgid "Application identifier"
 msgstr "应用标识"
 
-#: crates/dogi-ui/ui/app.slint:3276
+#: crates/dogi-ui/ui/app.slint:3339
 msgid "For example: firefox"
 msgstr "例如：firefox"
 
-#: crates/dogi-ui/ui/app.slint:3278
+#: crates/dogi-ui/ui/app.slint:3341
 msgid "Overrides"
 msgstr "覆盖项"
 
-#: crates/dogi-ui/ui/app.slint:3287 crates/dogi-ui/ui/app.slint:3326
+#: crates/dogi-ui/ui/app.slint:3350 crates/dogi-ui/ui/app.slint:3389
 msgid "Speed"
 msgstr "速度"
 
-#: crates/dogi-ui/ui/app.slint:3298
+#: crates/dogi-ui/ui/app.slint:3361
 msgid "Mode"
 msgstr "模式"
 
-#: crates/dogi-ui/ui/app.slint:3309
+#: crates/dogi-ui/ui/app.slint:3372
 msgid "Scroll behavior"
 msgstr "滚动行为"
 
-#: crates/dogi-ui/ui/app.slint:3313
+#: crates/dogi-ui/ui/app.slint:3376
 msgid "Direction"
 msgstr "方向"
 
-#: crates/dogi-ui/ui/app.slint:3324
+#: crates/dogi-ui/ui/app.slint:3387
 msgid "Behavior"
 msgstr "行为"
 
-#: crates/dogi-ui/ui/app.slint:3373
+#: crates/dogi-ui/ui/app.slint:3436
 msgid "Appearance"
 msgstr "外观"
 
-#: crates/dogi-ui/ui/app.slint:3391
+#: crates/dogi-ui/ui/app.slint:3454
 msgid "Language"
 msgstr "语言"
 
-#: crates/dogi-ui/ui/app.slint:3398
+#: crates/dogi-ui/ui/app.slint:3461
 msgid "Theme"
 msgstr "主题"
 
-#: crates/dogi-ui/ui/app.slint:3408
+#: crates/dogi-ui/ui/app.slint:3469
 msgid "Window"
 msgstr "窗口"
 
-#: crates/dogi-ui/ui/app.slint:3422
+#: crates/dogi-ui/ui/app.slint:3483
 msgid "When closing the window"
 msgstr "关闭窗口时"
 
-#: crates/dogi-ui/ui/app.slint:3431
+#: crates/dogi-ui/ui/app.slint:3490
 msgid "Background"
 msgstr "后台"
 
-#: crates/dogi-ui/ui/app.slint:3459
+#: crates/dogi-ui/ui/app.slint:3520
+msgid "Low battery notifications"
+msgstr "低电量通知"
+
+#: crates/dogi-ui/ui/app.slint:3521
+msgid "Alerts at 20% and 10%"
+msgstr "在 20% 和 10% 时提醒"
+
+#: crates/dogi-ui/ui/app.slint:3546
+msgid "Fully charged notifications"
+msgstr "充满电通知"
+
+#: crates/dogi-ui/ui/app.slint:3547
+msgid "Alerts when charging is complete"
+msgstr "充电完成时提醒"
+
+#: crates/dogi-ui/ui/app.slint:3528
 msgid "Network"
 msgstr "网络"
 
-#: crates/dogi-ui/ui/app.slint:3484
+#: crates/dogi-ui/ui/app.slint:3551
 msgid "Updates"
 msgstr "更新"
 
-#: crates/dogi-ui/ui/app.slint:3613 crates/dogi-ui/ui/loading.slint:50
+#: crates/dogi-ui/ui/app.slint:3680 crates/dogi-ui/ui/loading.slint:50
 msgid "Identifying device…"
 msgstr "正在识别设备…"
 
-#: crates/dogi-ui/ui/app.slint:3615
+#: crates/dogi-ui/ui/app.slint:3682
 msgid "Ready to apply"
 msgstr "可以应用"
 
-#: crates/dogi-ui/ui/app.slint:3615
+#: crates/dogi-ui/ui/app.slint:3682
 msgid "Changes not saved"
 msgstr "更改尚未保存"
 
-#: crates/dogi-ui/ui/app.slint:3616
+#: crates/dogi-ui/ui/app.slint:3683
 msgid "Settings saved"
 msgstr "设置已保存"
 
-#: crates/dogi-ui/ui/app.slint:3629
+#: crates/dogi-ui/ui/app.slint:3696
+msgid "Working…"
+msgstr ""
+
+#: crates/dogi-ui/ui/app.slint:3696
 msgid "Apply Changes…"
 msgstr "应用更改…"
 
-#: crates/dogi-ui/ui/app.slint:3638
+#: crates/dogi-ui/ui/app.slint:3705
 msgid "Save Changes"
 msgstr "保存更改"
 
-#: crates/dogi-ui/ui/app.slint:3682
+#: crates/dogi-ui/ui/app.slint:3756
 msgid "Apply Changes"
 msgstr "应用更改"
 
-#: crates/dogi-ui/ui/app.slint:3685
+#: crates/dogi-ui/ui/app.slint:3759
 #, python-brace-format
 msgid "{n} setting · {}"
 msgid_plural "{n} settings · {}"
 msgstr[0] "{n} 项鼠标设置 · {}"
 
-#: crates/dogi-ui/ui/app.slint:3721
+#: crates/dogi-ui/ui/app.slint:3795
 msgid ""
-"Dogi adjusts active settings only; it does not update firmware or manage "
-"onboard profiles."
+"You are signed in remotely. Applying changes the mouse connected to this "
+"computer."
+msgstr "当前为远程登录。应用更改将修改这台电脑所连接的鼠标。"
+
+#: crates/dogi-ui/ui/app.slint:3795
+msgid "Dogi adjusts active settings only; it does not update firmware or manage onboard profiles."
 msgstr "Dogi 仅调整当前设置，不会更新固件或管理板载配置。"
 
-#: crates/dogi-ui/ui/app.slint:3737
+#: crates/dogi-ui/ui/app.slint:3811
 msgid "Settings to apply"
 msgstr "即将应用的设置"
 
-#: crates/dogi-ui/ui/app.slint:3740
+#: crates/dogi-ui/ui/app.slint:3814
 #, python-brace-format
 msgid "{n} setting"
 msgid_plural "{n} settings"
 msgstr[0] "{n} 项设置"
 
-#: crates/dogi-ui/ui/app.slint:3778
+#: crates/dogi-ui/ui/app.slint:3853
 msgid "Apply"
 msgstr "应用"
 
-#: crates/dogi-ui/ui/app.slint:3806
+#: crates/dogi-ui/ui/app.slint:3881
 msgid "Revert Unsaved Changes?"
 msgstr "撤销未保存的更改？"
 
-#: crates/dogi-ui/ui/app.slint:3807
+#: crates/dogi-ui/ui/app.slint:3882
 msgid "The saved configuration for this mouse will be restored."
 msgstr "将恢复此鼠标已保存的配置。"
 
-#: crates/dogi-ui/ui/app.slint:3820
+#: crates/dogi-ui/ui/app.slint:3895
 msgid "Unsaved Changes"
 msgstr "未保存的更改"
 
-#: crates/dogi-ui/ui/app.slint:3821
+#: crates/dogi-ui/ui/app.slint:3896
 #, python-brace-format
 msgid "Save your mouse changes before installing Dogi {}? Dogi will restart."
 msgstr "安装 Dogi {} 前保存鼠标更改？Dogi 将重启。"
 
-#: crates/dogi-ui/ui/app.slint:3822
+#: crates/dogi-ui/ui/app.slint:3897
 msgid "Save & Restart"
 msgstr "保存并重启"
 
-#: crates/dogi-ui/ui/app.slint:3823
+#: crates/dogi-ui/ui/app.slint:3898
 msgid "Restart Without Saving"
 msgstr "不保存并重启"
 
-#: crates/dogi-ui/ui/app.slint:3833
+#: crates/dogi-ui/ui/app.slint:3908
 msgid "Quit Without Saving?"
 msgstr "不保存并退出？"
 
-#: crates/dogi-ui/ui/app.slint:3834
+#: crates/dogi-ui/ui/app.slint:3909
 msgid "Unsaved mouse configuration changes will be lost."
 msgstr "未保存的鼠标配置更改将会丢失。"
 
-#: crates/dogi-ui/ui/app.slint:3835
+#: crates/dogi-ui/ui/app.slint:3910
 msgid "Quit Without Saving"
 msgstr "不保存并退出"
 
-#: crates/dogi-ui/ui/app.slint:3861
+#: crates/dogi-ui/ui/app.slint:3936
 msgid "Open dogi"
 msgstr "打开 dogi"
 
-#: crates/dogi-ui/ui/app.slint:3865
+#: crates/dogi-ui/ui/app.slint:3940
 #, python-brace-format
 msgid "Update available · {}"
 msgstr "有可用更新 · {}"
@@ -984,211 +1030,275 @@ msgid "{n} override"
 msgid_plural "{n} overrides"
 msgstr[0] "{n} 项覆盖"
 
-#: crates/dogi-ui/ui/i18n.slint:133
+#: crates/dogi-ui/ui/i18n.slint:132
+#, python-brace-format
+msgid "SmartShift {}"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:136
+msgid "Smooth · Natural"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:137
+msgid "Smooth · Standard"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:138
+msgid "Normal · Natural"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:139
+msgid "Normal · Standard"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:143
+msgid "Dogi routing"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:143
+msgid "Native routing"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:149
+#, python-brace-format
+msgid "{}% → {}%"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:151 crates/dogi-ui/ui/i18n.slint:153
+#, python-brace-format
+msgid "{} → {}"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:161
 #, python-brace-format
 msgid "Set pointer speed to {}%"
 msgstr "将指针速度设为 {}%"
 
-#: crates/dogi-ui/ui/i18n.slint:135
+#: crates/dogi-ui/ui/i18n.slint:163
 #, python-brace-format
 msgid "Use SmartShift with sensitivity {}"
 msgstr "使用 SmartShift，灵敏度为 {}"
 
-#: crates/dogi-ui/ui/i18n.slint:137
+#: crates/dogi-ui/ui/i18n.slint:165
 #, python-brace-format
 msgid "Use {} scrolling"
 msgstr "使用{}"
 
-#: crates/dogi-ui/ui/i18n.slint:139
+#: crates/dogi-ui/ui/i18n.slint:167
 msgid "Smooth scrolling · Natural direction"
 msgstr "平滑滚动 · 自然方向"
 
-#: crates/dogi-ui/ui/i18n.slint:141
+#: crates/dogi-ui/ui/i18n.slint:169
 msgid "Smooth scrolling · Standard direction"
 msgstr "平滑滚动 · 标准方向"
 
-#: crates/dogi-ui/ui/i18n.slint:143
+#: crates/dogi-ui/ui/i18n.slint:171
 msgid "Smooth scrolling off · Natural direction"
 msgstr "平滑滚动关闭 · 自然方向"
 
-#: crates/dogi-ui/ui/i18n.slint:145
+#: crates/dogi-ui/ui/i18n.slint:173
 msgid "Smooth scrolling off · Standard direction"
 msgstr "平滑滚动关闭 · 标准方向"
 
-#: crates/dogi-ui/ui/i18n.slint:147
+#: crates/dogi-ui/ui/i18n.slint:175
 msgid "Enable smooth scrolling"
 msgstr "开启平滑滚动"
 
-#: crates/dogi-ui/ui/i18n.slint:149
+#: crates/dogi-ui/ui/i18n.slint:177
 msgid "Disable smooth scrolling"
 msgstr "关闭平滑滚动"
 
-#: crates/dogi-ui/ui/i18n.slint:151
+#: crates/dogi-ui/ui/i18n.slint:179
 msgid "Use natural scroll direction"
 msgstr "使用自然方向"
 
-#: crates/dogi-ui/ui/i18n.slint:153
+#: crates/dogi-ui/ui/i18n.slint:181
 msgid "Use standard scroll direction"
 msgstr "使用标准方向"
 
-#: crates/dogi-ui/ui/i18n.slint:155
+#: crates/dogi-ui/ui/i18n.slint:183
 msgid "Use native horizontal scrolling"
 msgstr "使用原生横向滚动"
 
-#: crates/dogi-ui/ui/i18n.slint:157
+#: crates/dogi-ui/ui/i18n.slint:185
 #, python-brace-format
 msgid "Use horizontal scrolling at {}% through Dogi"
 msgstr "通过 Dogi 使用横向滚动，速度 {}%"
 
-#: crates/dogi-ui/ui/i18n.slint:159
+#: crates/dogi-ui/ui/i18n.slint:187
 #, python-brace-format
 msgid "Route thumb wheel through Dogi for {}"
 msgstr "由 Dogi 接管拇指滚轮并用于{}"
 
-#: crates/dogi-ui/ui/i18n.slint:161
+#: crates/dogi-ui/ui/i18n.slint:189
 #, python-brace-format
 msgid "Route {} through dogi for {}"
 msgstr "由 Dogi 接管{}并执行{}"
 
-#: crates/dogi-ui/ui/i18n.slint:163
+#: crates/dogi-ui/ui/i18n.slint:191
 #, python-brace-format
 msgid "Use native behavior for {}"
 msgstr "{}使用鼠标默认行为"
 
-#: crates/dogi-ui/ui/i18n.slint:165
+#: crates/dogi-ui/ui/i18n.slint:193
 msgid "Run the local runtime listener"
 msgstr "运行本地操作监听器"
 
-#: crates/dogi-ui/ui/i18n.slint:166
+#: crates/dogi-ui/ui/i18n.slint:194
 #, python-brace-format
 msgid "Save local app profile {}"
 msgstr "保存本地应用配置 {}"
 
-#: crates/dogi-ui/ui/i18n.slint:173
+#: crates/dogi-ui/ui/i18n.slint:201
 #, python-brace-format
 msgid "Applied with {} failed, {} successful, {} unsupported"
 msgstr "应用完成：{} 项失败，{} 项成功，{} 项不受支持"
 
-#: crates/dogi-ui/ui/i18n.slint:175
+#: crates/dogi-ui/ui/i18n.slint:203
 #, python-brace-format
 msgid "Applied {} settings, {} unsupported"
 msgstr "已应用 {} 项设置，{} 项不受支持"
 
-#: crates/dogi-ui/ui/i18n.slint:176
+#: crates/dogi-ui/ui/i18n.slint:204
 #, python-brace-format
 msgid "Applied {} settings"
 msgstr "已应用 {} 项设置"
 
-#: crates/dogi-ui/ui/i18n.slint:180
+#: crates/dogi-ui/ui/i18n.slint:208
 msgid "Device scanner stopped unexpectedly"
 msgstr "设备扫描器意外停止"
 
-#: crates/dogi-ui/ui/i18n.slint:181
+#: crates/dogi-ui/ui/i18n.slint:209
 #, python-brace-format
 msgid "Scan failed: {}"
 msgstr "扫描失败：{}"
 
-#: crates/dogi-ui/ui/i18n.slint:182
+#: crates/dogi-ui/ui/i18n.slint:210
 msgid "No Logitech devices found"
 msgstr "未发现 Logitech 设备"
 
-#: crates/dogi-ui/ui/i18n.slint:183
+#: crates/dogi-ui/ui/i18n.slint:211
 msgid "Scanning devices…"
 msgstr "正在扫描设备…"
 
-#: crates/dogi-ui/ui/i18n.slint:184
+#: crates/dogi-ui/ui/i18n.slint:212
 #, python-brace-format
 msgid "Scan failed to start: {}"
 msgstr "无法启动扫描：{}"
 
-#: crates/dogi-ui/ui/i18n.slint:185
+#: crates/dogi-ui/ui/i18n.slint:213
 #, python-brace-format
 msgid "Editing {}"
 msgstr "正在配置 {}"
 
-#: crates/dogi-ui/ui/i18n.slint:186
+#: crates/dogi-ui/ui/i18n.slint:214
 msgid "Changes reverted"
 msgstr "已撤销更改"
 
-#: crates/dogi-ui/ui/i18n.slint:187
+#: crates/dogi-ui/ui/i18n.slint:215
 msgid "Changes saved"
 msgstr "更改已保存"
 
-#: crates/dogi-ui/ui/i18n.slint:189
+#: crates/dogi-ui/ui/i18n.slint:217
 msgid "Changes saved. Apply them when the mouse is available."
 msgstr "更改已保存，可在鼠标可用时应用。"
 
-#: crates/dogi-ui/ui/i18n.slint:190
+#: crates/dogi-ui/ui/i18n.slint:218
 #, python-brace-format
 msgid "Save failed: {}"
 msgstr "保存失败：{}"
 
-#: crates/dogi-ui/ui/i18n.slint:191
+#: crates/dogi-ui/ui/i18n.slint:219
 msgid "Enter an app name"
 msgstr "请输入应用名称"
 
-#: crates/dogi-ui/ui/i18n.slint:192
+#: crates/dogi-ui/ui/i18n.slint:220
 #, python-brace-format
 msgid "App profile {} was not found"
 msgstr "未找到应用配置 {}"
 
-#: crates/dogi-ui/ui/i18n.slint:193
+#: crates/dogi-ui/ui/i18n.slint:221
 msgid "Connect a supported mouse with full HID access to apply settings"
 msgstr "请连接受支持且具备完整 HID 访问权限的鼠标"
 
-#: crates/dogi-ui/ui/i18n.slint:194
+#: crates/dogi-ui/ui/i18n.slint:222
 #, python-brace-format
 msgid "Connect the mouse to apply {n} setting"
 msgid_plural "Connect the mouse to apply {n} settings"
 msgstr[0] "连接鼠标后可应用这 {n} 项设置"
 
-#: crates/dogi-ui/ui/i18n.slint:195
+#: crates/dogi-ui/ui/i18n.slint:223
 #, python-brace-format
 msgid "Applying {n} setting is unavailable"
 msgid_plural "Applying {n} settings is unavailable"
 msgstr[0] "暂时无法应用这 {n} 项设置"
 
-#: crates/dogi-ui/ui/i18n.slint:196
+#: crates/dogi-ui/ui/i18n.slint:224
+msgid "Reading current mouse settings…"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:225
+msgid "Applying and verifying mouse settings…"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:226
 #, python-brace-format
 msgid "Review {n} mouse setting"
 msgid_plural "Review {n} mouse settings"
 msgstr[0] "请检查 {n} 项鼠标设置"
 
-#: crates/dogi-ui/ui/i18n.slint:198
+#: crates/dogi-ui/ui/i18n.slint:228
 #, python-brace-format
 msgid "{} · Settings saved"
 msgstr "{} · 设置已保存"
 
-#: crates/dogi-ui/ui/i18n.slint:201
+#: crates/dogi-ui/ui/i18n.slint:231
 #, python-brace-format
 msgid "Could not apply settings: {}. Your changes were saved."
 msgstr "无法应用设置：{}。更改已保存。"
 
-#: crates/dogi-ui/ui/i18n.slint:203
+#: crates/dogi-ui/ui/i18n.slint:233
 #, python-brace-format
 msgid "Apply failed: {}"
 msgstr "应用失败：{}"
 
-#: crates/dogi-ui/ui/i18n.slint:205
+#: crates/dogi-ui/ui/i18n.slint:235
+msgid "The mouse changed after review. No settings were written; review and try again."
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:237
+msgid "The settings could not be applied. The original mouse settings were restored."
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:239
+#, python-brace-format
+msgid "Some mouse settings still need recovery: {}"
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:241
+msgid "Some mouse settings could not be restored. Keep the mouse connected and try again."
+msgstr ""
+
+#: crates/dogi-ui/ui/i18n.slint:243
 #, python-brace-format
 msgid "Could not save application settings: {}"
 msgstr "无法保存应用设置：{}"
 
-#: crates/dogi-ui/ui/i18n.slint:207
+#: crates/dogi-ui/ui/i18n.slint:245
 #, python-brace-format
 msgid "Could not load application settings: {}"
 msgstr "无法读取应用设置：{}"
 
-#: crates/dogi-ui/ui/i18n.slint:209
+#: crates/dogi-ui/ui/i18n.slint:247
 #, python-brace-format
 msgid "Could not switch language: {}"
 msgstr "无法切换语言：{}"
 
-#: crates/dogi-ui/ui/i18n.slint:211
+#: crates/dogi-ui/ui/i18n.slint:249
 #, python-brace-format
 msgid "System tray is unavailable: {}"
 msgstr "系统托盘不可用：{}"
 
-#: crates/dogi-ui/ui/i18n.slint:213
+#: crates/dogi-ui/ui/i18n.slint:251
 msgid "System tray is unavailable"
 msgstr "系统托盘不可用"

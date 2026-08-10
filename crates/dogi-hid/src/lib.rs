@@ -351,7 +351,7 @@ pub use platform::Master3sRuntimeEventListener;
 
 #[cfg(target_os = "linux")]
 mod platform {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, VecDeque};
     use std::fs::{self, File, OpenOptions};
     use std::io::{self, Read, Write};
     use std::os::unix::io::AsRawFd;
@@ -661,6 +661,12 @@ mod platform {
             }
 
             Ok(events)
+        }
+
+        pub fn read_battery(&mut self) -> Result<Option<BatteryInfo>> {
+            self.client
+                .read_battery_from_features(self.slot, &self.features)
+                .map_err(|error| DogiError::Transport(error.to_string()))
         }
     }
 
@@ -2438,6 +2444,7 @@ mod platform {
     struct HidppClient {
         file: File,
         scan_depth: HidppScanDepth,
+        pending_reports: VecDeque<Vec<u8>>,
     }
 
     impl HidppClient {
@@ -2448,7 +2455,11 @@ mod platform {
         fn open_with_depth(path: &str, scan_depth: HidppScanDepth) -> io::Result<Self> {
             let file = OpenOptions::new().read(true).write(true).open(path)?;
             set_nonblocking(&file)?;
-            let mut client = Self { file, scan_depth };
+            let mut client = Self {
+                file,
+                scan_depth,
+                pending_reports: VecDeque::new(),
+            };
             client.drain_input()?;
             Ok(client)
         }
@@ -2873,7 +2884,7 @@ mod platform {
             timeout: Duration,
         ) -> io::Result<Option<Vec<u8>>> {
             let report = build_hidpp_report(devnumber, request_data)?;
-            self.drain_input()?;
+            self.preserve_input()?;
             self.write_report(&report, timeout)?;
 
             let deadline = Instant::now() + timeout;
@@ -2881,21 +2892,24 @@ mod platform {
                 let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
                     return Ok(None);
                 };
-                let Some(reply) = self.read_report(remaining)? else {
+                let Some(reply) = self.read_report_from_fd(remaining)? else {
                     return Ok(None);
                 };
 
                 if reply.len() < 4 {
+                    self.pending_reports.push_back(reply);
                     continue;
                 }
 
                 let report_id = reply[0];
                 if !matches!(report_id, HIDPP_SHORT_REPORT_ID | HIDPP_LONG_REPORT_ID) {
+                    self.pending_reports.push_back(reply);
                     continue;
                 }
 
                 let reply_devnumber = reply[1];
                 if reply_devnumber != devnumber && reply_devnumber != (devnumber ^ 0xff) {
+                    self.pending_reports.push_back(reply);
                     continue;
                 }
 
@@ -2907,6 +2921,7 @@ mod platform {
                 if reply_data.len() >= 2 && reply_data[..2] == request_data[..2] {
                     return Ok(Some(reply_data[2..].to_vec()));
                 }
+                self.pending_reports.push_back(reply);
             }
         }
 
@@ -2943,6 +2958,13 @@ mod platform {
         }
 
         fn read_report(&mut self, timeout: Duration) -> io::Result<Option<Vec<u8>>> {
+            if let Some(report) = self.pending_reports.pop_front() {
+                return Ok(Some(report));
+            }
+            self.read_report_from_fd(timeout)
+        }
+
+        fn read_report_from_fd(&mut self, timeout: Duration) -> io::Result<Option<Vec<u8>>> {
             if !wait_fd(self.file.as_raw_fd(), libc::POLLIN, timeout)? {
                 return Ok(None);
             }
@@ -2953,6 +2975,19 @@ mod platform {
                     Ok(0) => return Ok(None),
                     Ok(read) => return Ok(Some(buffer[..read].to_vec())),
                     Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(None),
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+
+        fn preserve_input(&mut self) -> io::Result<()> {
+            let mut buffer = [0_u8; HIDPP_MAX_READ_LEN];
+            loop {
+                match self.file.read(&mut buffer) {
+                    Ok(0) => return Ok(()),
+                    Ok(read) => self.pending_reports.push_back(buffer[..read].to_vec()),
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(()),
                     Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
                     Err(error) => return Err(error),
                 }
@@ -4065,7 +4100,8 @@ mod platform {
     use std::time::Duration;
 
     use dogi_core::{
-        DeviceInfo, DogiError, Master3sSettings, Result, SettingsApplyPlan, SettingsApplyReport,
+        BatteryInfo, DeviceInfo, DogiError, Master3sSettings, Result, SettingsApplyPlan,
+        SettingsApplyReport,
     };
 
     use crate::{Master3sRuntimeEvent, PreparedSettingsTransaction};
@@ -4146,6 +4182,12 @@ mod platform {
         ) -> Result<Vec<Master3sRuntimeEvent>> {
             Err(DogiError::BackendUnavailable(
                 "only Linux hidraw HID++ runtime listening is implemented".to_owned(),
+            ))
+        }
+
+        pub fn read_battery(&mut self) -> Result<Option<BatteryInfo>> {
+            Err(DogiError::BackendUnavailable(
+                "only Linux hidraw HID++ battery monitoring is implemented".to_owned(),
             ))
         }
     }

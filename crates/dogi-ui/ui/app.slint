@@ -14,6 +14,7 @@ import {
     NetworkTestState,
     PlanRow,
     PlanScope,
+    RuntimePauseReason,
     UiMessage,
     UiStatus,
     UiStatusKind,
@@ -1685,6 +1686,60 @@ component SettingsSelectRow inherits Rectangle {
     }
 }
 
+component SettingsToggleRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in-out property <bool> checked;
+    callback changed(bool);
+
+    height: 64px;
+    background: transparent;
+    vertical-stretch: 0;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 12px;
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                height: 20px;
+                text: root.title;
+                color: Theme.text;
+                font-size: 12px;
+                font-weight: 600;
+                vertical-alignment: center;
+                vertical-stretch: 0;
+            }
+            Text {
+                height: 18px;
+                text: root.subtitle;
+                color: Theme.text-muted;
+                font-size: 10px;
+                vertical-alignment: center;
+                vertical-stretch: 0;
+            }
+        }
+
+        VerticalLayout {
+            width: 44px;
+            horizontal-stretch: 0;
+            alignment: center;
+
+            AccentSwitch {
+                width: 44px;
+                label: root.title;
+                checked <=> root.checked;
+                toggled => { root.changed(self.checked); }
+                vertical-stretch: 0;
+            }
+        }
+    }
+}
+
 component SettingsRuntimeRow inherits Rectangle {
     in property <DesktopRuntimeAvailability> availability;
     in property <DesktopRuntimeState> state;
@@ -1699,10 +1754,12 @@ component SettingsRuntimeRow inherits Rectangle {
         !root.supported ? @tr("Unavailable")
         : root.busy || root.state == DesktopRuntimeState.starting ? @tr("Starting…")
         : root.state == DesktopRuntimeState.running ? @tr("Running")
+        : root.state == DesktopRuntimeState.paused ? @tr("Paused")
         : root.state == DesktopRuntimeState.stopped ? @tr("Off")
         : @tr("Needs attention");
     property <BadgeTone> state-tone:
         root.state == DesktopRuntimeState.running ? BadgeTone.success
+        : root.state == DesktopRuntimeState.paused ? BadgeTone.accent
         : root.state == DesktopRuntimeState.degraded ? BadgeTone.warning
         : BadgeTone.neutral;
     property <string> availability-detail:
@@ -1712,7 +1769,7 @@ component SettingsRuntimeRow inherits Rectangle {
             ? @tr("This binary has no persistent background integration")
         : root.detail;
 
-    height: (!root.supported || root.state == DesktopRuntimeState.degraded) && root.availability-detail != "" ? 76px : 64px;
+    height: (!root.supported || root.state == DesktopRuntimeState.degraded || root.state == DesktopRuntimeState.paused) && root.availability-detail != "" ? 76px : 64px;
     background: transparent;
     vertical-stretch: 0;
 
@@ -1735,7 +1792,7 @@ component SettingsRuntimeRow inherits Rectangle {
                 vertical-stretch: 0;
             }
 
-            if (!root.supported || root.state == DesktopRuntimeState.degraded) && root.availability-detail != "" : Text {
+            if (!root.supported || root.state == DesktopRuntimeState.degraded || root.state == DesktopRuntimeState.paused) && root.availability-detail != "" : Text {
                 height: 18px;
                 text: root.availability-detail;
                 color: root.state == DesktopRuntimeState.degraded ? Theme.warning : Theme.text-muted;
@@ -2327,13 +2384,24 @@ export component MainWindow inherits Window {
     in-out property <int> close-behavior-index: 0;
     in-out property <bool> high-contrast: false;
     in property <DesktopRuntimeState> runtime-state: DesktopRuntimeState.running;
+    in property <RuntimePauseReason> runtime-pause-reason: RuntimePauseReason.none;
     in property <DesktopRuntimeAvailability> runtime-availability: DesktopRuntimeAvailability.available;
     in-out property <bool> runtime-enabled: true;
     in property <bool> runtime-busy: false;
     in property <bool> runtime-management-supported: false;
     in property <bool> app-profiles-supported: false;
     in property <string> runtime-detail;
+    out property <string> runtime-pause-detail:
+        root.runtime-pause-reason == RuntimePauseReason.desktop-locked
+            ? @tr("The desktop is locked; local input enhancements are paused")
+        : root.runtime-pause-reason == RuntimePauseReason.remote-login
+            ? @tr("Remote login is active; local input enhancements are paused")
+        : root.runtime-pause-reason == RuntimePauseReason.no-local-desktop
+            ? @tr("No active local desktop; local input enhancements are paused")
+        : @tr("Desktop session ownership could not be verified; local input enhancements are paused");
     in property <UpdateState> update-state: UpdateState.unavailable;
+    in-out property <bool> low-battery-notifications-enabled: true;
+    in-out property <bool> full-battery-notifications-enabled: true;
     in-out property <bool> automatic-update-checks-enabled: true;
     in property <bool> update-supported: false;
     in property <string> current-version;
@@ -2383,6 +2451,8 @@ export component MainWindow inherits Window {
     callback close-behavior-selected(int);
     callback runtime-enabled-changed(bool);
     callback restart-runtime();
+    callback low-battery-notifications-enabled-changed(bool);
+    callback full-battery-notifications-enabled-changed(bool);
     callback automatic-update-checks-enabled-changed(bool);
     callback check-for-updates();
     callback automatic-update-check();
@@ -2853,6 +2923,8 @@ export component MainWindow inherits Window {
                                 ? @tr("Preparing custom actions…")
                                 : root.runtime-state == DesktopRuntimeState.stopped
                                 ? @tr("Background operations are off")
+                                : root.runtime-state == DesktopRuntimeState.paused
+                                ? root.runtime-pause-detail
                                 : @tr("Custom actions are unavailable: {}", root.runtime-detail);
                         }
 
@@ -3370,11 +3442,11 @@ export component MainWindow inherits Window {
 
                         if root.page-index == 3 : ScrollView {
                             viewport-width: self.width;
-                            viewport-height: 684px;
+                            viewport-height: 793px;
 
                             VerticalLayout {
                             width: parent.width;
-                            height: 684px;
+                            height: 793px;
                             spacing: 10px;
 
                             PageHeading { title: @tr("Appearance"); }
@@ -3410,8 +3482,6 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            Rectangle { height: 6px; vertical-stretch: 0; }
-
                             PageHeading { title: @tr("Window"); }
 
                             Rectangle {
@@ -3433,13 +3503,11 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            Rectangle { height: 6px; vertical-stretch: 0; }
-
                             PageHeading { title: @tr("Background"); }
 
                             Rectangle {
                                 width: 720px;
-                                height: runtime-row.height + 1px;
+                                height: runtime-row.height + 130px;
                                 background: Theme.panel;
                                 border-width: 1px;
                                 border-color: Theme.border;
@@ -3448,20 +3516,40 @@ export component MainWindow inherits Window {
                                 horizontal-stretch: 0;
                                 vertical-stretch: 0;
 
-                                runtime-row := SettingsRuntimeRow {
-                                    width: parent.width;
-                                    state: root.runtime-state;
-                                    availability: root.runtime-availability;
-                                    desired-enabled <=> root.runtime-enabled;
-                                    busy: root.runtime-busy;
-                                    supported: root.runtime-management-supported;
-                                    detail: root.runtime-detail;
-                                    enabled-changed(enabled) => { root.runtime-enabled-changed(enabled); }
-                                    restart => { root.restart-runtime(); }
+                                VerticalLayout {
+                                    spacing: 0px;
+
+                                    runtime-row := SettingsRuntimeRow {
+                                        width: parent.width;
+                                        state: root.runtime-state;
+                                        availability: root.runtime-availability;
+                                        desired-enabled <=> root.runtime-enabled;
+                                        busy: root.runtime-busy;
+                                        supported: root.runtime-management-supported;
+                                        detail: root.runtime-state == DesktopRuntimeState.paused
+                                            ? root.runtime-pause-detail
+                                            : root.runtime-detail;
+                                        enabled-changed(enabled) => { root.runtime-enabled-changed(enabled); }
+                                        restart => { root.restart-runtime(); }
+                                    }
+                                    Divider {}
+                                    SettingsToggleRow {
+                                        width: parent.width;
+                                        title: @tr("Low battery notifications");
+                                        subtitle: @tr("Alerts at 20% and 10%");
+                                        checked <=> root.low-battery-notifications-enabled;
+                                        changed(enabled) => { root.low-battery-notifications-enabled-changed(enabled); }
+                                    }
+                                    Divider {}
+                                    SettingsToggleRow {
+                                        width: parent.width;
+                                        title: @tr("Fully charged notifications");
+                                        subtitle: @tr("Alerts when charging is complete");
+                                        checked <=> root.full-battery-notifications-enabled;
+                                        changed(enabled) => { root.full-battery-notifications-enabled-changed(enabled); }
+                                    }
                                 }
                             }
-
-                            Rectangle { height: 6px; vertical-stretch: 0; }
 
                             PageHeading { title: @tr("Network"); }
 
@@ -3485,8 +3573,6 @@ export component MainWindow inherits Window {
                                     configure => { root.open-network-proxy(); }
                                 }
                             }
-
-                            Rectangle { height: 6px; vertical-stretch: 0; }
 
                             PageHeading { title: @tr("Updates"); }
 
@@ -3732,9 +3818,12 @@ export component MainWindow inherits Window {
                             }
                         }
                         Text {
-                            text: @tr("Dogi adjusts active settings only; it does not update firmware or manage onboard profiles.");
+                            text: root.runtime-pause-reason == RuntimePauseReason.remote-login
+                                ? @tr("You are signed in remotely. Applying changes the mouse connected to this computer.")
+                                : @tr("Dogi adjusts active settings only; it does not update firmware or manage onboard profiles.");
                             color: Theme.text-muted;
                             font-size: 11px;
+                            wrap: word-wrap;
                             vertical-alignment: center;
                         }
                     }

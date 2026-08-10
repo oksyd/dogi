@@ -114,6 +114,10 @@ impl AppPaths {
         self.cache.join("updates")
     }
 
+    pub(crate) fn battery_notification_state(&self) -> PathBuf {
+        self.cache.join("battery-notifications.json")
+    }
+
     pub(crate) fn runtime_control_socket(&self) -> PathBuf {
         self.runtime.join("runtime-control.sock")
     }

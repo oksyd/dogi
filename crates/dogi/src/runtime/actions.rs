@@ -34,6 +34,7 @@ pub trait RuntimeActionExecutor {
     fn execute_command(&mut self, command: &RuntimeCommand) -> Result<()>;
 }
 
+#[cfg(test)]
 pub fn execute_runtime_actions_with(
     actions: &[ResolvedRuntimeAction],
     executor: &mut impl RuntimeActionExecutor,
@@ -41,6 +42,33 @@ pub fn execute_runtime_actions_with(
     actions
         .iter()
         .map(|action| execute_runtime_action_with(action, executor))
+        .collect()
+}
+
+pub fn execute_runtime_actions_guarded_with(
+    actions: &[ResolvedRuntimeAction],
+    executor: &mut impl RuntimeActionExecutor,
+    mut permitted: impl FnMut() -> bool,
+) -> Vec<RuntimeActionExecution> {
+    actions
+        .iter()
+        .map(|action| {
+            if matches!(
+                &action.command,
+                RuntimeCommand::Noop | RuntimeCommand::Unsupported
+            ) || permitted()
+            {
+                execute_runtime_action_with(action, executor)
+            } else {
+                RuntimeActionExecution {
+                    action: action.clone(),
+                    status: RuntimeActionExecutionStatus::Skipped,
+                    detail: Some(
+                        "desktop session changed before the action could be executed".to_owned(),
+                    ),
+                }
+            }
+        })
         .collect()
 }
 
@@ -709,6 +737,31 @@ mod tests {
                 .as_ref()
                 .is_some_and(|detail| detail.contains("synthetic failure"))
         );
+    }
+
+    #[test]
+    fn a_revoked_session_permission_stops_remaining_actions() {
+        let actions = vec![
+            ResolvedRuntimeAction {
+                source: RuntimeActionSource::ThumbWheel,
+                command: RuntimeCommand::KeyChord(vec![RuntimeKey::VolumeUp]),
+            },
+            ResolvedRuntimeAction {
+                source: RuntimeActionSource::ThumbWheel,
+                command: RuntimeCommand::KeyChord(vec![RuntimeKey::VolumeDown]),
+            },
+        ];
+        let mut executor = RecordingExecutor::default();
+        let mut checks = 0;
+
+        let executions = execute_runtime_actions_guarded_with(&actions, &mut executor, || {
+            checks += 1;
+            checks == 1
+        });
+
+        assert_eq!(executions[0].status, RuntimeActionExecutionStatus::Executed);
+        assert_eq!(executions[1].status, RuntimeActionExecutionStatus::Skipped);
+        assert_eq!(executor.commands.len(), 1);
     }
 
     #[test]

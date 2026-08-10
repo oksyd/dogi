@@ -111,8 +111,20 @@ pub struct DesktopRuntimeStatus {
     pub enabled: bool,
     pub active: bool,
     pub ready: bool,
+    pub paused: bool,
+    pub pause_reason: DesktopRuntimePauseReason,
     pub app_profiles_supported: bool,
     pub detail: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DesktopRuntimePauseReason {
+    #[default]
+    None,
+    DesktopLocked,
+    RemoteLogin,
+    NoLocalDesktop,
+    Unknown,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -124,6 +136,7 @@ pub enum DesktopRuntimeOperation {
 #[derive(Clone)]
 pub struct DesktopRuntimeManager {
     pub supported: bool,
+    pub pause_reason: DesktopRuntimePauseReason,
     pub availability: DesktopRuntimeAvailability,
     pub detail: String,
     pub manage: Arc<dyn Fn(DesktopRuntimeOperation) -> Result<DesktopRuntimeStatus> + Send + Sync>,
@@ -344,13 +357,26 @@ fn set_window_status(window: &MainWindow, status: UiStatus) {
 fn set_desktop_runtime_status(window: &MainWindow, status: &DesktopRuntimeStatus) {
     window.set_runtime_state(if !status.enabled && !status.active {
         DesktopRuntimeState::Stopped
+    } else if status.paused {
+        DesktopRuntimeState::Paused
     } else if status.ready {
         DesktopRuntimeState::Running
     } else {
         DesktopRuntimeState::Degraded
     });
+    window.set_runtime_pause_reason(runtime_pause_reason(status.pause_reason));
     window.set_runtime_detail(status.detail.clone().into());
     window.set_app_profiles_supported(status.app_profiles_supported);
+}
+
+fn runtime_pause_reason(reason: DesktopRuntimePauseReason) -> RuntimePauseReason {
+    match reason {
+        DesktopRuntimePauseReason::None => RuntimePauseReason::None,
+        DesktopRuntimePauseReason::DesktopLocked => RuntimePauseReason::DesktopLocked,
+        DesktopRuntimePauseReason::RemoteLogin => RuntimePauseReason::RemoteLogin,
+        DesktopRuntimePauseReason::NoLocalDesktop => RuntimePauseReason::NoLocalDesktop,
+        DesktopRuntimePauseReason::Unknown => RuntimePauseReason::Unknown,
+    }
 }
 
 fn horizontal_scroll_preview_command(
@@ -1099,6 +1125,8 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let theme = app_preferences.theme;
     let mut close_behavior = app_preferences.close_behavior;
     let background_operations_enabled = app_preferences.background_operations_enabled;
+    let low_battery_notifications_enabled = app_preferences.low_battery_notifications_enabled;
+    let full_battery_notifications_enabled = app_preferences.full_battery_notifications_enabled;
     let automatic_update_checks_enabled = app_preferences.automatic_update_checks_enabled;
     let initial_network_preferences = network.initial.clone();
     if let Some(error) = network.load_error.clone() {
@@ -1223,6 +1251,10 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let settings_work_sender = settings_worker_available.then_some(settings_work_sender);
     let settings_sequence = Rc::new(Cell::new(0_u64));
     let runtime_supported = runtime.as_ref().is_some_and(|runtime| runtime.supported);
+    let initial_runtime_pause_reason = runtime
+        .as_ref()
+        .map(|runtime| runtime.pause_reason)
+        .unwrap_or_default();
     let runtime_detail = runtime
         .as_ref()
         .map(|runtime| runtime.detail.clone())
@@ -1367,6 +1399,8 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     set_window_status(&window, startup_status);
 
     window.set_runtime_enabled(background_operations_enabled && runtime_supported);
+    window.set_low_battery_notifications_enabled(low_battery_notifications_enabled);
+    window.set_full_battery_notifications_enabled(full_battery_notifications_enabled);
     window.set_runtime_busy(false);
     window.set_runtime_management_supported(runtime_supported);
     window.set_runtime_state(if runtime_supported {
@@ -1374,6 +1408,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     } else {
         DesktopRuntimeState::Stopped
     });
+    window.set_runtime_pause_reason(runtime_pause_reason(initial_runtime_pause_reason));
     window.set_runtime_detail(runtime_detail.into());
     window.set_runtime_availability(
         runtime
@@ -1716,6 +1751,47 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
             window.set_runtime_state(DesktopRuntimeState::Degraded);
             window.set_runtime_detail("Dogi runtime manager is unavailable".into());
         }
+    });
+
+    let low_battery_save = preferences.save.clone();
+    let low_battery_window = window.as_weak();
+    let active_low_battery_notifications = Rc::new(Cell::new(low_battery_notifications_enabled));
+    let selected_low_battery_notifications = active_low_battery_notifications.clone();
+    window.on_low_battery_notifications_enabled_changed(move |enabled| {
+        let Some(window) = low_battery_window.upgrade() else {
+            return;
+        };
+        if !persist_application_setting(
+            &window,
+            &low_battery_save,
+            ApplicationPreferenceChange::LowBatteryNotificationsEnabled(enabled),
+        ) {
+            window.set_low_battery_notifications_enabled(selected_low_battery_notifications.get());
+            return;
+        }
+        selected_low_battery_notifications.set(enabled);
+        window.set_low_battery_notifications_enabled(enabled);
+    });
+
+    let full_battery_save = preferences.save.clone();
+    let full_battery_window = window.as_weak();
+    let active_full_battery_notifications = Rc::new(Cell::new(full_battery_notifications_enabled));
+    let selected_full_battery_notifications = active_full_battery_notifications.clone();
+    window.on_full_battery_notifications_enabled_changed(move |enabled| {
+        let Some(window) = full_battery_window.upgrade() else {
+            return;
+        };
+        if !persist_application_setting(
+            &window,
+            &full_battery_save,
+            ApplicationPreferenceChange::FullBatteryNotificationsEnabled(enabled),
+        ) {
+            window
+                .set_full_battery_notifications_enabled(selected_full_battery_notifications.get());
+            return;
+        }
+        selected_full_battery_notifications.set(enabled);
+        window.set_full_battery_notifications_enabled(enabled);
     });
 
     let restart_window = window.as_weak();
@@ -4187,6 +4263,29 @@ mod tests {
                 ..AppProfileOverrides::default()
             },
         }
+    }
+
+    #[test]
+    fn expected_runtime_pause_is_presented_as_a_pause_not_a_failure() {
+        let window = MainWindow::new().unwrap();
+        set_desktop_runtime_status(
+            &window,
+            &DesktopRuntimeStatus {
+                enabled: true,
+                active: true,
+                ready: false,
+                paused: true,
+                pause_reason: DesktopRuntimePauseReason::RemoteLogin,
+                app_profiles_supported: false,
+                detail: "remote session".to_owned(),
+            },
+        );
+
+        assert_eq!(window.get_runtime_state(), DesktopRuntimeState::Paused);
+        assert_eq!(
+            window.get_runtime_pause_reason(),
+            RuntimePauseReason::RemoteLogin
+        );
     }
 
     #[test]

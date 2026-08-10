@@ -24,8 +24,17 @@ export enum DeviceDiscoveryState {
 export enum DesktopRuntimeState {
     starting,
     running,
+    paused,
     stopped,
     degraded,
+}
+
+export enum RuntimePauseReason {
+    none,
+    desktop-locked,
+    remote-login,
+    no-local-desktop,
+    unknown,
 }
 
 export enum DesktopRuntimeAvailability {

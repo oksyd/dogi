@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::environment::AppEnvironment;
 
-const APP_CONFIG_SCHEMA_VERSION: u16 = 4;
+const APP_CONFIG_SCHEMA_VERSION: u16 = 6;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -94,6 +94,10 @@ impl Default for StoredAppearance {
 struct StoredBehavior {
     close_behavior: StoredCloseBehavior,
     background_operations_enabled: bool,
+    #[serde(default = "enabled_by_default")]
+    low_battery_notifications_enabled: bool,
+    #[serde(default = "enabled_by_default")]
+    full_battery_notifications_enabled: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -119,6 +123,8 @@ impl Default for StoredBehavior {
         Self {
             close_behavior: StoredCloseBehavior::Quit,
             background_operations_enabled: true,
+            low_battery_notifications_enabled: true,
+            full_battery_notifications_enabled: true,
         }
     }
 }
@@ -273,6 +279,8 @@ impl ApplicationConfigStore {
             theme: config.appearance.theme.application_value(),
             close_behavior: config.behavior.close_behavior.application_value(),
             background_operations_enabled: config.behavior.background_operations_enabled,
+            low_battery_notifications_enabled: config.behavior.low_battery_notifications_enabled,
+            full_battery_notifications_enabled: config.behavior.full_battery_notifications_enabled,
             automatic_update_checks_enabled: config.updates.automatic_update_checks_enabled,
         })
     }
@@ -283,6 +291,14 @@ impl ApplicationConfigStore {
             theme: self.defaults.appearance.theme.application_value(),
             close_behavior: self.defaults.behavior.close_behavior.application_value(),
             background_operations_enabled: self.defaults.behavior.background_operations_enabled,
+            low_battery_notifications_enabled: self
+                .defaults
+                .behavior
+                .low_battery_notifications_enabled,
+            full_battery_notifications_enabled: self
+                .defaults
+                .behavior
+                .full_battery_notifications_enabled,
             automatic_update_checks_enabled: self.defaults.updates.automatic_update_checks_enabled,
         }
     }
@@ -337,6 +353,12 @@ impl ApplicationConfigStore {
             ApplicationPreferenceChange::BackgroundOperationsEnabled(enabled) => {
                 self.save_background_operations_enabled(enabled)
             }
+            ApplicationPreferenceChange::LowBatteryNotificationsEnabled(enabled) => {
+                self.save_low_battery_notifications_enabled(enabled)
+            }
+            ApplicationPreferenceChange::FullBatteryNotificationsEnabled(enabled) => {
+                self.save_full_battery_notifications_enabled(enabled)
+            }
             ApplicationPreferenceChange::AutomaticUpdateChecksEnabled(enabled) => {
                 self.save_automatic_update_checks_enabled(enabled)
             }
@@ -363,6 +385,20 @@ impl ApplicationConfigStore {
         enabled: bool,
     ) -> Result<(), ApplicationConfigError> {
         self.update(|config| config.behavior.background_operations_enabled = enabled)
+    }
+
+    fn save_low_battery_notifications_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<(), ApplicationConfigError> {
+        self.update(|config| config.behavior.low_battery_notifications_enabled = enabled)
+    }
+
+    fn save_full_battery_notifications_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<(), ApplicationConfigError> {
+        self.update(|config| config.behavior.full_battery_notifications_enabled = enabled)
     }
 
     fn save_automatic_update_checks_enabled(
@@ -562,6 +598,10 @@ fn temporary_path(path: &Path) -> PathBuf {
     path.with_file_name(format!(".{file_name}.tmp-{}", std::process::id()))
 }
 
+const fn enabled_by_default() -> bool {
+    true
+}
+
 fn create_config_directory(
     path: &Path,
     owner: Option<FileOwner>,
@@ -730,7 +770,7 @@ mod tests {
             }
         );
         let json = fs::read_to_string(root.join("config.json")).unwrap();
-        assert!(json.contains("\"schema_version\": 4"));
+        assert!(json.contains("\"schema_version\": 6"));
         assert!(json.contains("\"appearance\""));
 
         let _ = fs::remove_dir_all(root);
@@ -799,6 +839,14 @@ mod tests {
             ))
             .unwrap();
         store
+            .save_preference(ApplicationPreferenceChange::LowBatteryNotificationsEnabled(
+                false,
+            ))
+            .unwrap();
+        store
+            .save_preference(ApplicationPreferenceChange::FullBatteryNotificationsEnabled(false))
+            .unwrap();
+        store
             .save_preference(ApplicationPreferenceChange::AutomaticUpdateChecksEnabled(
                 false,
             ))
@@ -811,6 +859,8 @@ mod tests {
                 theme: ApplicationTheme::Dark,
                 close_behavior: CloseBehavior::MinimizeToTray,
                 background_operations_enabled: false,
+                low_battery_notifications_enabled: false,
+                full_battery_notifications_enabled: false,
                 automatic_update_checks_enabled: false,
             }
         );
@@ -836,6 +886,7 @@ mod tests {
         let config = store.load().unwrap();
         assert_eq!(config.schema_version, APP_CONFIG_SCHEMA_VERSION);
         assert!(config.updates.automatic_update_checks_enabled);
+        assert!(config.behavior.low_battery_notifications_enabled);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -882,6 +933,39 @@ mod tests {
         assert_eq!(
             store.load_network_proxy().unwrap(),
             NetworkProxyPreferences::default()
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn schema_four_enables_low_battery_notifications_by_default() {
+        let root = unique_test_root("schema-four");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("config.json"),
+            r#"{
+                "schema_version": 4,
+                "appearance": {"language": "system", "theme": "system"},
+                "behavior": {"close_behavior": "quit", "background_operations_enabled": true},
+                "updates": {"automatic_update_checks_enabled": true},
+                "network": {"proxy": {"mode": "system", "manual": {"protocol": "http", "host": "", "port": 7890, "authentication_enabled": false, "username": "", "password_saved": false}}}
+            }"#,
+        )
+        .unwrap();
+        let store = ApplicationConfigStore::at(root.join("config.json"));
+
+        assert!(
+            store
+                .load_preferences()
+                .unwrap()
+                .low_battery_notifications_enabled
+        );
+        assert!(
+            store
+                .load_preferences()
+                .unwrap()
+                .full_battery_notifications_enabled
         );
 
         let _ = fs::remove_dir_all(root);

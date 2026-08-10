@@ -17,12 +17,15 @@ use dogi_core::{
 };
 
 use crate::application;
+use crate::config::application::ApplicationConfigStore;
 use crate::device::DeviceService;
 use crate::environment::AppEnvironment;
 use crate::runtime::UINPUT_PATH;
+use crate::runtime::battery::BatteryNotificationMonitor;
 use crate::runtime::lock::ProcessLock;
+use crate::runtime::session::{SessionObserver, SessionSnapshot};
 use crate::runtime::{
-    RuntimeActionExecution, SystemRuntimeActionExecutor, execute_runtime_actions_with,
+    RuntimeActionExecution, SystemRuntimeActionExecutor, execute_runtime_actions_guarded_with,
 };
 use crate::runtime::{control as runtime_control, service as runtime_service};
 
@@ -498,6 +501,10 @@ fn doctor_report_from_devices(
     report.cache_directory = environment.paths.cache.display().to_string();
     report.runtime_directory = environment.paths.runtime.display().to_string();
     report.updates_supported = environment.updates.enabled;
+    let session = crate::runtime::session::inspect();
+    report.graphical_session_mode = session.mode.label().to_owned();
+    report.local_actions_allowed = session.policy().execute_local_actions;
+    report.graphical_session_detail = session.detail;
     report
 }
 
@@ -532,6 +539,9 @@ fn doctor_report_from_devices_with_environment(
         cache_directory: String::new(),
         runtime_directory: String::new(),
         updates_supported: false,
+        graphical_session_mode: "unknown".to_owned(),
+        local_actions_allowed: false,
+        graphical_session_detail: String::new(),
         hid_backend: "linux-sysfs-hidraw",
         device_writer_status: "explicit apply and configured app-profile transitions",
         total_hid_devices: all_devices.len(),
@@ -565,6 +575,18 @@ fn print_doctor_report(report: &DoctorReport) {
     println!("  Config directory: {}", report.config_directory);
     println!("  Cache directory: {}", report.cache_directory);
     println!("  Runtime directory: {}", report.runtime_directory);
+    println!(
+        "  Graphical session: {} ({})",
+        report.graphical_session_mode,
+        if report.local_actions_allowed {
+            "local actions enabled"
+        } else {
+            "observation only"
+        }
+    );
+    if !report.graphical_session_detail.is_empty() {
+        println!("  Session policy: {}", report.graphical_session_detail);
+    }
     println!(
         "  Automatic updates: {}",
         enabled_text(report.updates_supported)
@@ -710,6 +732,13 @@ fn runtime_listen(
     let settings_id = resolve_device_settings_id(daemon, &device_id);
     let settings = daemon.load_master3s_settings_for_device(&settings_id)?;
     let runtime_plan = daemon.plan_master3s_runtime(&settings);
+    let session_observer = args.execute_actions.then(SessionObserver::start);
+    if let Some(observer) = &session_observer {
+        let session = observer.snapshot();
+        if session.actions_paused() {
+            return Err(DogiError::BackendUnavailable(session.detail));
+        }
+    }
     let events = daemon.listen_master3s_runtime_events(
         &device_id,
         args.events,
@@ -721,7 +750,21 @@ fn runtime_listen(
         .flat_map(|event| resolver.resolve(&runtime_plan, event))
         .collect::<Vec<_>>();
     let executions = if args.execute_actions {
-        daemon.execute_master3s_runtime_actions(&actions)?
+        let observer = session_observer
+            .as_ref()
+            .expect("action execution creates a session observer");
+        let snapshot = observer.snapshot();
+        if snapshot.actions_paused() {
+            return Err(DogiError::BackendUnavailable(snapshot.detail));
+        }
+        if actions.iter().any(action_is_executable) {
+            let mut executor = SystemRuntimeActionExecutor::open()?;
+            execute_runtime_actions_guarded_with(&actions, &mut executor, || {
+                observer.permits_actions(snapshot.generation)
+            })
+        } else {
+            daemon.execute_master3s_runtime_actions(&actions)?
+        }
     } else {
         Vec::new()
     };
@@ -750,9 +793,24 @@ fn runtime_run(
     let _runtime_lock =
         ProcessLock::acquire(&environment.paths.global_runtime_lock, "action runtime")?;
     let preview_state = runtime_control::RuntimePreviewState::start(&environment.paths)?;
+    let session_observer = SessionObserver::start();
+    let application_store = ApplicationConfigStore::for_environment(environment);
+    let battery_state_path = environment.paths.battery_notification_state();
+    let mut battery_monitor = BatteryNotificationMonitor::load(battery_state_path.clone())
+        .unwrap_or_else(|error| {
+            eprintln!("battery notification state was reset: {error}");
+            BatteryNotificationMonitor::empty(battery_state_path)
+        });
     if args.max_events.is_some() {
         loop {
-            match runtime_run_session(&args, &preview_state, daemon)? {
+            match runtime_run_session(
+                &args,
+                &preview_state,
+                &session_observer,
+                &application_store,
+                &mut battery_monitor,
+                daemon,
+            )? {
                 RuntimeSessionOutcome::Completed => return Ok(()),
                 RuntimeSessionOutcome::SwitchDevice => continue,
             }
@@ -762,7 +820,14 @@ fn runtime_run(
     let mut previous_error = String::new();
     let mut repeated_failures = 0_u32;
     loop {
-        match runtime_run_session(&args, &preview_state, daemon) {
+        match runtime_run_session(
+            &args,
+            &preview_state,
+            &session_observer,
+            &application_store,
+            &mut battery_monitor,
+            daemon,
+        ) {
             Ok(RuntimeSessionOutcome::Completed) => return Ok(()),
             Ok(RuntimeSessionOutcome::SwitchDevice) => continue,
             Err(error) => {
@@ -795,6 +860,9 @@ enum RuntimeSessionOutcome {
 fn runtime_run_session(
     args: &RuntimeRunArgs,
     preview_state: &runtime_control::RuntimePreviewState,
+    session_observer: &SessionObserver,
+    application_store: &ApplicationConfigStore,
+    battery_monitor: &mut BatteryNotificationMonitor,
     daemon: &DeviceService,
 ) -> Result<RuntimeSessionOutcome> {
     let preview_device_id = preview_state
@@ -803,7 +871,10 @@ fn runtime_run_session(
         .map(|preview| preview.device_id);
     let requested_device_id = args.device_id.as_deref().or(preview_device_id.as_deref());
     let device_id = resolve_runtime_device_id(daemon, requested_device_id)?;
-    let settings_id = resolve_device_settings_id(daemon, &device_id);
+    let device = daemon.find_device(&device_id)?;
+    let settings_id = device_settings_id(&device);
+    let device_name = display_device_name(&device).to_owned();
+    battery_monitor.activate(&settings_id);
     let mut base_settings = daemon.load_master3s_settings_for_device(&settings_id)?;
     let idle_timeout = Duration::from_millis(args.idle_timeout_ms);
     let mut processed_events = 0_usize;
@@ -811,9 +882,13 @@ fn runtime_run_session(
     let mut settings_warning_printed = false;
     let mut active_effective_state = RuntimeEffectiveState::default();
     let mut preview_error: Option<(u64, String)> = None;
+    let mut battery_config_warning = String::new();
+    let mut battery_runtime_warning = String::new();
+    let mut battery_language = application_store.default_preferences().language;
     let mut listener = daemon.open_master3s_runtime_event_listener(&device_id)?;
     let mut action_executor = None;
     let mut action_resolver = RuntimeActionResolver::default();
+    let mut session_generation = 0_u64;
 
     println!("Runtime service for {device_id}");
     println!(
@@ -844,7 +919,18 @@ fn runtime_run_session(
             println!("  settings reloaded");
         }
 
-        let active_application = runtime_active_application(daemon, &mut focus_warning_printed);
+        let session_snapshot = session_observer.snapshot();
+        synchronize_runtime_session(
+            &session_snapshot,
+            &mut session_generation,
+            &mut action_resolver,
+            &mut action_executor,
+        );
+        let policy = session_snapshot.policy();
+        let active_application = policy
+            .apply_automatic_device_changes
+            .then(|| runtime_active_application(daemon, &mut focus_warning_printed))
+            .flatten();
         let effective =
             effective_master3s_settings_for_app(&base_settings, active_application.as_ref());
         let matched_profile_name = effective
@@ -858,10 +944,15 @@ fn runtime_run_session(
         {
             preview_error = None;
         }
-        let active_preview = preview_snapshot
+        let requested_preview = preview_snapshot
             .preview
             .as_ref()
             .filter(|preview| preview.device_id == device_id);
+        let active_preview = requested_preview.filter(|_| policy.preview_local_actions);
+        if requested_preview.is_some() && !policy.preview_local_actions {
+            preview_state
+                .publish_failed(preview_snapshot.generation, session_snapshot.detail.clone());
+        }
         if let Some(preview) = preview_snapshot
             .preview
             .as_ref()
@@ -880,16 +971,17 @@ fn runtime_run_session(
         }
 
         let device_settings = runtime_device_settings(&effective.settings, active_preview);
-        let profile_changed =
-            active_effective_state.profile_name.as_deref() != matched_profile_name.as_deref();
+        let profile_changed = policy.apply_automatic_device_changes
+            && active_effective_state.profile_name.as_deref() != matched_profile_name.as_deref();
         if profile_changed {
             action_resolver.reset();
         }
-        let preview_transition = active_effective_state.preview_active != active_preview.is_some();
+        let preview_transition = policy.preview_local_actions
+            && active_effective_state.preview_active != active_preview.is_some();
         let mut preview_apply_failed = false;
         let device_apply_needed = profile_changed || preview_transition;
         if device_apply_needed {
-            if profile_changed {
+            if profile_changed && policy.apply_automatic_device_changes {
                 print_runtime_profile_change(
                     active_application.as_ref(),
                     matched_profile_name.as_deref(),
@@ -905,6 +997,9 @@ fn runtime_run_session(
                 // Adopting the current profile at startup must not mutate the mouse. Device
                 // writes begin only after an observed profile or preview transition.
             } else if args.allow_device_write {
+                if !session_observer.permits_automatic_device_changes(session_snapshot.generation) {
+                    continue;
+                }
                 let report =
                     daemon.apply_master3s_settings_plan(&device_id, &device_settings, &plan)?;
                 let failed_steps = count_failed_apply_steps(&report);
@@ -935,11 +1030,18 @@ fn runtime_run_session(
                 }
             }
         }
-        if active_effective_state.needs_update(
-            matched_profile_name.as_deref(),
-            &device_settings,
-            active_preview.is_some(),
-        ) {
+        if policy.apply_automatic_device_changes
+            && !session_observer.permits_automatic_device_changes(session_snapshot.generation)
+        {
+            continue;
+        }
+        if policy.apply_automatic_device_changes
+            && active_effective_state.needs_update(
+                matched_profile_name.as_deref(),
+                &device_settings,
+                active_preview.is_some(),
+            )
+        {
             active_effective_state.update(
                 matched_profile_name.clone(),
                 &device_settings,
@@ -953,7 +1055,9 @@ fn runtime_run_session(
                 speed_percent: preview.speed_percent,
             });
         }
-        if !preview_apply_failed && (preview_snapshot.preview.is_none() || active_preview.is_some())
+        if policy.preview_local_actions
+            && !preview_apply_failed
+            && (preview_snapshot.preview.is_none() || active_preview.is_some())
         {
             if let Some((_, detail)) = &preview_error {
                 preview_state.publish_failed(preview_snapshot.generation, detail.clone());
@@ -961,25 +1065,87 @@ fn runtime_run_session(
                 preview_state.publish_applied(preview_snapshot.generation);
             }
         }
-        let events = listener.read_events(1, idle_timeout)?;
+        let events = listener.read_events(1, battery_monitor.read_timeout(idle_timeout))?;
+        if battery_monitor.preferences_due() {
+            let preferences = match application_store.load_preferences() {
+                Ok(preferences) => {
+                    battery_config_warning.clear();
+                    preferences
+                }
+                Err(error) => {
+                    let detail = error.to_string();
+                    if detail != battery_config_warning {
+                        eprintln!(
+                            "battery notification preferences are unavailable; using defaults: {detail}"
+                        );
+                        battery_config_warning = detail;
+                    }
+                    application_store.default_preferences()
+                }
+            };
+            battery_language = preferences.language;
+            if let Err(error) = battery_monitor.update_preferences(
+                &settings_id,
+                preferences.low_battery_notifications_enabled,
+                preferences.full_battery_notifications_enabled,
+            ) {
+                let detail = error.to_string();
+                if detail != battery_runtime_warning {
+                    eprintln!("battery monitoring is temporarily unavailable: {detail}");
+                    battery_runtime_warning = detail;
+                }
+            }
+        }
+        if battery_monitor.is_due() {
+            match battery_monitor.check_if_due(
+                &mut listener,
+                &settings_id,
+                &device_name,
+                battery_language,
+            ) {
+                Ok(()) => battery_runtime_warning.clear(),
+                Err(error) => {
+                    let detail = error.to_string();
+                    if detail != battery_runtime_warning {
+                        eprintln!("battery monitoring is temporarily unavailable: {detail}");
+                        battery_runtime_warning = detail;
+                    }
+                }
+            }
+        }
         if events.is_empty() {
             continue;
         }
 
         for event in events {
-            let actions = action_resolver.resolve(&runtime_plan, &event);
+            let execution_snapshot = session_observer.snapshot();
+            synchronize_runtime_session(
+                &execution_snapshot,
+                &mut session_generation,
+                &mut action_resolver,
+                &mut action_executor,
+            );
+            let actions = if execution_snapshot.policy().execute_local_actions {
+                action_resolver.resolve(&runtime_plan, &event)
+            } else {
+                Vec::new()
+            };
+            let permitted_generation = execution_snapshot.generation;
             let executions = if !args.execute_actions {
                 Vec::new()
             } else if let Some(executor) = action_executor.as_mut() {
-                execute_runtime_actions_with(&actions, executor)
-            } else if actions.iter().any(|action| {
-                !matches!(
-                    &action.command,
-                    dogi_core::RuntimeCommand::Noop | dogi_core::RuntimeCommand::Unsupported
-                )
-            }) {
-                let executor = action_executor.insert(SystemRuntimeActionExecutor::open()?);
-                execute_runtime_actions_with(&actions, executor)
+                execute_runtime_actions_guarded_with(&actions, executor, || {
+                    session_observer.permits_actions(permitted_generation)
+                })
+            } else if actions.iter().any(action_is_executable) {
+                if session_observer.permits_actions(permitted_generation) {
+                    let executor = action_executor.insert(SystemRuntimeActionExecutor::open()?);
+                    execute_runtime_actions_guarded_with(&actions, executor, || {
+                        session_observer.permits_actions(permitted_generation)
+                    })
+                } else {
+                    Vec::new()
+                }
             } else {
                 daemon.execute_master3s_runtime_actions(&actions)?
             };
@@ -995,6 +1161,32 @@ fn runtime_run_session(
                 return Ok(RuntimeSessionOutcome::Completed);
             }
         }
+    }
+}
+
+fn action_is_executable(action: &ResolvedRuntimeAction) -> bool {
+    !matches!(
+        &action.command,
+        dogi_core::RuntimeCommand::Noop | dogi_core::RuntimeCommand::Unsupported
+    )
+}
+
+fn synchronize_runtime_session(
+    snapshot: &SessionSnapshot,
+    generation: &mut u64,
+    resolver: &mut RuntimeActionResolver,
+    executor: &mut Option<SystemRuntimeActionExecutor>,
+) {
+    if *generation == snapshot.generation {
+        return;
+    }
+    *generation = snapshot.generation;
+    resolver.reset();
+    *executor = None;
+    if snapshot.detail.is_empty() {
+        println!("  session: local input enhancements enabled");
+    } else {
+        println!("  session: {}", snapshot.detail);
     }
 }
 
@@ -2256,6 +2448,9 @@ struct DoctorReport {
     cache_directory: String,
     runtime_directory: String,
     updates_supported: bool,
+    graphical_session_mode: String,
+    local_actions_allowed: bool,
+    graphical_session_detail: String,
     hid_backend: &'static str,
     device_writer_status: &'static str,
     total_hid_devices: usize,

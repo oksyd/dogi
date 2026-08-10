@@ -15,3 +15,4 @@ Categories=Settings;HardwareSettings;
 Keywords=Logitech;mouse;HID;configuration;
 Keywords[zh_CN]=罗技;鼠标;配置;
 StartupNotify=true
+X-GNOME-UsesNotifications=true

@@ -7,12 +7,12 @@ use std::path::{Path, PathBuf};
 use std::os::unix::fs::FileTypeExt;
 
 use dogi_core::{DogiError, Result};
-use dogi_ui::{DesktopRuntimeOperation, DesktopRuntimeStatus};
+use dogi_ui::{DesktopRuntimeOperation, DesktopRuntimePauseReason, DesktopRuntimeStatus};
 
 use crate::desktop::UserContext;
 use crate::environment::{AppEnvironment, RuntimeIntegration};
 
-use super::UINPUT_PATH;
+use super::{UINPUT_PATH, session};
 
 const SERVICE_NAME: &str = "dogi-runtime.service";
 const VENDOR_UNIT_PATH: &str = "/usr/lib/systemd/user/dogi-runtime.service";
@@ -31,6 +31,10 @@ pub(crate) fn manage(
         DesktopRuntimeOperation::Restart => restart(environment),
         DesktopRuntimeOperation::Reconcile { enabled: false } => stop(environment),
     }
+}
+
+pub(crate) fn current_pause_reason() -> DesktopRuntimePauseReason {
+    pause_reason(session::inspect().mode)
 }
 
 fn ensure_running(environment: &AppEnvironment) -> Result<DesktopRuntimeStatus> {
@@ -104,16 +108,40 @@ fn service_status(environment: &AppEnvironment) -> DesktopRuntimeStatus {
     let context = &environment.user;
     let enabled = systemctl_succeeds(context, &["is-enabled", "--quiet", SERVICE_NAME]);
     let active = systemctl_succeeds(context, &["is-active", "--quiet", SERVICE_NAME]);
-    let uinput_error = active
+    let session = session::inspect();
+    let pause_reason = if active {
+        pause_reason(session.mode)
+    } else {
+        DesktopRuntimePauseReason::None
+    };
+    let paused = pause_reason != DesktopRuntimePauseReason::None;
+    let uinput_error = (active && !paused)
         .then(|| uinput_access(context).err().map(|error| error.to_string()))
         .flatten();
+    let detail = if paused {
+        session.detail
+    } else {
+        uinput_error.unwrap_or_default()
+    };
 
     DesktopRuntimeStatus {
         enabled,
         active,
-        ready: active && uinput_error.is_none(),
+        ready: active && !paused && detail.is_empty(),
+        paused,
+        pause_reason,
         app_profiles_supported: app_profiles_supported(context),
-        detail: uinput_error.unwrap_or_default(),
+        detail,
+    }
+}
+
+const fn pause_reason(mode: session::GraphicalSessionMode) -> DesktopRuntimePauseReason {
+    match mode {
+        session::GraphicalSessionMode::LocalActive => DesktopRuntimePauseReason::None,
+        session::GraphicalSessionMode::LocalLocked => DesktopRuntimePauseReason::DesktopLocked,
+        session::GraphicalSessionMode::RemoteOnly => DesktopRuntimePauseReason::RemoteLogin,
+        session::GraphicalSessionMode::Inactive => DesktopRuntimePauseReason::NoLocalDesktop,
+        session::GraphicalSessionMode::Unknown => DesktopRuntimePauseReason::Unknown,
     }
 }
 
@@ -461,6 +489,7 @@ mod tests {
         ));
         assert!(STATIC_DEBIAN_UNIT.contains("Restart=on-failure"));
         assert!(STATIC_DEBIAN_UNIT.contains("RuntimeDirectory=dogi"));
+        assert!(STATIC_DEBIAN_UNIT.contains("CacheDirectory=dogi"));
         assert!(STATIC_DEBIAN_UNIT.contains("ProtectSystem=strict"));
     }
 
@@ -479,5 +508,25 @@ mod tests {
         assert_eq!(systemd_quote("device 1"), "\"device 1\"");
         assert_eq!(systemd_quote("device\"1"), "\"device\\\"1\"");
         assert_eq!(systemd_quote("/opt/dogi%20/dogi"), "\"/opt/dogi%%20/dogi\"");
+    }
+
+    #[test]
+    fn only_a_verified_local_session_has_no_pause_reason() {
+        assert_eq!(
+            pause_reason(session::GraphicalSessionMode::LocalActive),
+            DesktopRuntimePauseReason::None
+        );
+        assert_eq!(
+            pause_reason(session::GraphicalSessionMode::RemoteOnly),
+            DesktopRuntimePauseReason::RemoteLogin
+        );
+        assert_eq!(
+            pause_reason(session::GraphicalSessionMode::LocalLocked),
+            DesktopRuntimePauseReason::DesktopLocked
+        );
+        assert_eq!(
+            pause_reason(session::GraphicalSessionMode::Unknown),
+            DesktopRuntimePauseReason::Unknown
+        );
     }
 }

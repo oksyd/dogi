@@ -83,6 +83,7 @@ pub(crate) fn launch_gui(environment: &AppEnvironment) -> Result<()> {
             },
             runtime: dogi_ui::DesktopRuntimeManager {
                 supported: runtime_supported,
+                pause_reason: service::current_pause_reason(),
                 availability: if runtime_supported {
                     dogi_ui::DesktopRuntimeAvailability::Available
                 } else if environment.is_development() {
