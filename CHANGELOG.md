@@ -3,6 +3,10 @@
 ### 🐛 Bug Fixes
 
 - Preserve device settings and harden runtime and update recovery
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.1.14
 ## [0.1.13] - 2026-08-10
 
 ### ⚙️ Miscellaneous Tasks
