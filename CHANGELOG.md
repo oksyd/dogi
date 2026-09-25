@@ -1,3 +1,8 @@
+## [0.1.15] - 2026-09-25
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.1.15
 ## [0.1.14] - 2026-09-25
 
 ### 🐛 Bug Fixes
