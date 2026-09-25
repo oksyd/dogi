@@ -1,0 +1,386 @@
+use std::env;
+use std::fmt;
+use std::rc::Rc;
+use std::sync::Arc;
+
+use crate::domain::Result;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ApplicationLanguage {
+    #[default]
+    System,
+    English,
+    SimplifiedChinese,
+}
+
+impl ApplicationLanguage {
+    pub(crate) fn from_index(index: i32) -> Self {
+        match index {
+            1 => Self::English,
+            2 => Self::SimplifiedChinese,
+            _ => Self::System,
+        }
+    }
+
+    pub(crate) fn index(self) -> i32 {
+        match self {
+            Self::System => 0,
+            Self::English => 1,
+            Self::SimplifiedChinese => 2,
+        }
+    }
+
+    pub fn locale(self) -> &'static str {
+        match self {
+            Self::System => system_locale(),
+            Self::English => "en",
+            Self::SimplifiedChinese => "zh_CN",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ApplicationTheme {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl ApplicationTheme {
+    pub(crate) fn from_index(index: i32) -> Self {
+        match index {
+            1 => Self::Light,
+            2 => Self::Dark,
+            _ => Self::System,
+        }
+    }
+
+    pub(crate) fn index(self) -> i32 {
+        match self {
+            Self::System => 0,
+            Self::Light => 1,
+            Self::Dark => 2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum CloseBehavior {
+    #[default]
+    Quit,
+    MinimizeToTray,
+}
+
+impl CloseBehavior {
+    pub(crate) fn from_index(index: i32) -> Self {
+        match index {
+            1 => Self::MinimizeToTray,
+            _ => Self::Quit,
+        }
+    }
+
+    pub(crate) fn index(self) -> i32 {
+        match self {
+            Self::Quit => 0,
+            Self::MinimizeToTray => 1,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApplicationPreferences {
+    pub language: ApplicationLanguage,
+    pub theme: ApplicationTheme,
+    pub close_behavior: CloseBehavior,
+    pub background_operations_enabled: bool,
+    pub low_battery_notifications_enabled: bool,
+    pub full_battery_notifications_enabled: bool,
+    pub automatic_update_checks_enabled: bool,
+}
+
+impl Default for ApplicationPreferences {
+    fn default() -> Self {
+        Self {
+            language: ApplicationLanguage::System,
+            theme: ApplicationTheme::System,
+            close_behavior: CloseBehavior::Quit,
+            background_operations_enabled: true,
+            low_battery_notifications_enabled: true,
+            full_battery_notifications_enabled: true,
+            automatic_update_checks_enabled: true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApplicationPreferenceChange {
+    Language(ApplicationLanguage),
+    Theme(ApplicationTheme),
+    CloseBehavior(CloseBehavior),
+    BackgroundOperationsEnabled(bool),
+    LowBatteryNotificationsEnabled(bool),
+    FullBatteryNotificationsEnabled(bool),
+    AutomaticUpdateChecksEnabled(bool),
+}
+
+pub type ApplicationPreferenceSaver = Rc<dyn Fn(ApplicationPreferenceChange) -> Result<()>>;
+
+#[derive(Clone)]
+pub struct ApplicationPreferencesIntegration {
+    pub initial: ApplicationPreferences,
+    pub load_error: Option<String>,
+    pub save: ApplicationPreferenceSaver,
+}
+
+impl ApplicationPreferencesIntegration {
+    pub fn new(
+        initial: ApplicationPreferences,
+        save: impl Fn(ApplicationPreferenceChange) -> Result<()> + 'static,
+    ) -> Self {
+        Self {
+            initial,
+            load_error: None,
+            save: Rc::new(save),
+        }
+    }
+
+    pub fn with_load_error(mut self, error: impl Into<String>) -> Self {
+        self.load_error = Some(error.into());
+        self
+    }
+}
+
+impl Default for ApplicationPreferencesIntegration {
+    fn default() -> Self {
+        Self::new(ApplicationPreferences::default(), |_| {
+            Err(crate::domain::DogiError::BackendUnavailable(
+                "application preference storage is unavailable".to_owned(),
+            ))
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NetworkProxyMode {
+    #[default]
+    System,
+    Direct,
+    Manual,
+}
+
+impl NetworkProxyMode {
+    pub(crate) fn from_index(index: i32) -> Self {
+        match index {
+            1 => Self::Direct,
+            2 => Self::Manual,
+            _ => Self::System,
+        }
+    }
+
+    pub(crate) fn index(self) -> i32 {
+        match self {
+            Self::System => 0,
+            Self::Direct => 1,
+            Self::Manual => 2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NetworkProxyProtocol {
+    #[default]
+    Http,
+    Https,
+    Socks5,
+}
+
+impl NetworkProxyProtocol {
+    pub(crate) fn from_index(index: i32) -> Self {
+        match index {
+            1 => Self::Https,
+            2 => Self::Socks5,
+            _ => Self::Http,
+        }
+    }
+
+    pub(crate) fn index(self) -> i32 {
+        match self {
+            Self::Http => 0,
+            Self::Https => 1,
+            Self::Socks5 => 2,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NetworkProxyPreferences {
+    pub mode: NetworkProxyMode,
+    pub protocol: NetworkProxyProtocol,
+    pub host: String,
+    pub port: u16,
+    pub authentication_enabled: bool,
+    pub username: String,
+    pub password_saved: bool,
+}
+
+impl Default for NetworkProxyPreferences {
+    fn default() -> Self {
+        Self {
+            mode: NetworkProxyMode::System,
+            protocol: NetworkProxyProtocol::Http,
+            host: String::new(),
+            port: 7890,
+            authentication_enabled: false,
+            username: String::new(),
+            password_saved: false,
+        }
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct NetworkProxyDraft {
+    pub preferences: NetworkProxyPreferences,
+    pub password: String,
+}
+
+impl fmt::Debug for NetworkProxyDraft {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let password = if self.password.is_empty() {
+            "<empty>"
+        } else {
+            "<redacted>"
+        };
+        formatter
+            .debug_struct("NetworkProxyDraft")
+            .field("preferences", &self.preferences)
+            .field("password", &password)
+            .finish()
+    }
+}
+
+#[cfg(test)]
+impl NetworkProxyDraft {
+    pub fn from_preferences(preferences: NetworkProxyPreferences) -> Self {
+        Self {
+            preferences,
+            password: String::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NetworkConnectionTestResult {
+    pub route: String,
+}
+
+pub type NetworkProxySaver =
+    Arc<dyn Fn(NetworkProxyDraft) -> Result<NetworkProxyPreferences> + Send + Sync>;
+pub type NetworkProxyTester =
+    Arc<dyn Fn(NetworkProxyDraft) -> Result<NetworkConnectionTestResult> + Send + Sync>;
+
+#[derive(Clone)]
+pub struct NetworkPreferencesIntegration {
+    pub initial: NetworkProxyPreferences,
+    pub load_error: Option<String>,
+    pub save: NetworkProxySaver,
+    pub test: NetworkProxyTester,
+}
+
+impl NetworkPreferencesIntegration {
+    pub fn new(
+        initial: NetworkProxyPreferences,
+        save: impl Fn(NetworkProxyDraft) -> Result<NetworkProxyPreferences> + Send + Sync + 'static,
+        test: impl Fn(NetworkProxyDraft) -> Result<NetworkConnectionTestResult> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            initial,
+            load_error: None,
+            save: Arc::new(save),
+            test: Arc::new(test),
+        }
+    }
+
+    pub fn with_load_error(mut self, error: impl Into<String>) -> Self {
+        self.load_error = Some(error.into());
+        self
+    }
+}
+
+impl Default for NetworkPreferencesIntegration {
+    fn default() -> Self {
+        Self::new(
+            NetworkProxyPreferences::default(),
+            |_| {
+                Err(crate::domain::DogiError::BackendUnavailable(
+                    "network preference storage is unavailable".to_owned(),
+                ))
+            },
+            |_| {
+                Err(crate::domain::DogiError::BackendUnavailable(
+                    "network connection testing is unavailable".to_owned(),
+                ))
+            },
+        )
+    }
+}
+
+fn system_locale() -> &'static str {
+    ["LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"]
+        .into_iter()
+        .filter_map(|name| env::var(name).ok())
+        .flat_map(|value| value.split(':').map(str::to_owned).collect::<Vec<_>>())
+        .find_map(|locale| normalized_supported_locale(&locale))
+        .unwrap_or("en")
+}
+
+fn normalized_supported_locale(locale: &str) -> Option<&'static str> {
+    let locale = locale.split(['.', '@']).next().unwrap_or(locale);
+    let normalized = locale.replace('-', "_").to_ascii_lowercase();
+    match normalized.as_str() {
+        "zh_cn" | "zh_sg" | "zh_hans" | "zh_hans_cn" | "zh_hans_sg" => Some("zh_CN"),
+        "c" | "posix" | "en" => Some("en"),
+        value if value.starts_with("en_") => Some("en"),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn locale_normalization_only_maps_supported_languages() {
+        assert_eq!(normalized_supported_locale("zh_CN.UTF-8"), Some("zh_CN"));
+        assert_eq!(normalized_supported_locale("zh-Hans-CN"), Some("zh_CN"));
+        assert_eq!(normalized_supported_locale("en_US.UTF-8"), Some("en"));
+        assert_eq!(normalized_supported_locale("zh_TW.UTF-8"), None);
+        assert_eq!(normalized_supported_locale("de_DE.UTF-8"), None);
+    }
+
+    #[test]
+    fn default_integrations_never_report_unsaved_preferences_as_saved() {
+        let application = ApplicationPreferencesIntegration::default();
+        assert!(
+            (application.save)(ApplicationPreferenceChange::Theme(ApplicationTheme::Dark)).is_err()
+        );
+
+        let network = NetworkPreferencesIntegration::default();
+        assert!(
+            (network.save)(NetworkProxyDraft::from_preferences(
+                NetworkProxyPreferences::default()
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn proxy_debug_output_redacts_the_password() {
+        let mut draft = NetworkProxyDraft::from_preferences(NetworkProxyPreferences::default());
+        draft.password = "do-not-log-this".to_owned();
+
+        let output = format!("{draft:?}");
+        assert!(!output.contains("do-not-log-this"));
+        assert!(output.contains("<redacted>"));
+    }
+}

@@ -5,7 +5,7 @@ packaging_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 project_root=$(cd -- "$packaging_dir/.." && pwd)
 cd "$project_root"
 
-package_id=$(cargo pkgid --package dogi)
+package_id=$(cargo pkgid)
 version=${package_id##*#}
 version=${version##*@}
 release_tag=${DOGI_RELEASE_TAG:-}
@@ -49,7 +49,7 @@ dist_dir=${DOGI_DIST_DIR:-$project_root/dist}
 case "$dist_dir" in
     "$project_root"/*) ;;
     *)
-        echo "DOGI_DIST_DIR must be inside the project workspace" >&2
+        echo "DOGI_DIST_DIR must be inside the project directory" >&2
         exit 1
         ;;
 esac
@@ -65,7 +65,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-DOGI_DISTRIBUTION_BUILD=1 cargo build --release --locked --package dogi
+DOGI_DISTRIBUTION_BUILD=1 cargo build --release --locked
 mkdir -p "$dist_dir"
 
 package_root="$work_dir/package-root"
@@ -156,7 +156,7 @@ install -D -m 0644 \
     "$project_root/packaging/portable/distribution" \
     "$portable_root/share/dogi/distribution"
 install -D -m 0644 \
-    "$project_root/crates/dogi/assets/linux/70-dogi-logitech.rules" \
+    "$project_root/packaging/linux/70-dogi-logitech.rules" \
     "$portable_root/lib/udev/rules.d/70-dogi-logitech.rules"
 
 source_date_epoch=${SOURCE_DATE_EPOCH:-}

@@ -1428,9 +1428,6 @@ name = "dogi"
 version = "0.1.17"
 dependencies = [
  "clap",
- "dogi-core",
- "dogi-hid",
- "dogi-ui",
  "gio",
  "keyring",
  "libc",
@@ -1438,38 +1435,14 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "slint",
+ "slint-build",
+ "slint-snapshot",
  "ssh-key",
  "tar",
  "ureq",
  "zbus",
  "zstd",
-]
-
-[[package]]
-name = "dogi-core"
-version = "0.1.17"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "dogi-hid"
-version = "0.1.17"
-dependencies = [
- "dogi-core",
- "libc",
- "serde",
-]
-
-[[package]]
-name = "dogi-ui"
-version = "0.1.17"
-dependencies = [
- "dogi-core",
- "slint",
- "slint-build",
- "slint-snapshot",
- "zbus",
 ]
 
 [[package]]

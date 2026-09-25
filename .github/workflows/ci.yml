@@ -62,7 +62,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/debug/
-          key: cargo-build-v2-ubuntu-26.04-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
+          key: cargo-build-v2-ubuntu-26.04-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
           restore-keys: |
             cargo-build-v2-ubuntu-26.04-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-
 
@@ -70,14 +70,14 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run Clippy
-        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
 
       - name: Run tests
-        run: cargo test --workspace --all-targets --all-features --locked
+        run: cargo test --all-targets --locked
 
       - name: Validate translations
         run: |
-          catalog=crates/dogi-ui/i18n/zh_CN/LC_MESSAGES/dogi-ui.po
+          catalog=src/ui/i18n/zh_CN/LC_MESSAGES/dogi.po
           msgfmt --check --check-format --output-file=/dev/null "$catalog"
           if msgattrib --untranslated --no-obsolete "$catalog" | grep -Eq '^msgid ".+"$'; then
             echo "translation catalog contains untranslated messages" >&2
@@ -97,13 +97,17 @@ jobs:
           xmllint --noout \
             packaging/linux/io.github.oksyd.dogi.metainfo.xml \
             packaging/linux/io.github.oksyd.dogi.svg
-          udevadm verify crates/dogi/assets/linux/70-dogi-logitech.rules
+          udevadm verify packaging/linux/70-dogi-logitech.rules
 
       - name: Validate Cargo package boundary
         run: |
-          package_files=$(cargo package --locked --package dogi --list)
-          grep -Fxq assets/linux/70-dogi-logitech.rules <<<"$package_files"
-          grep -Fxq assets/linux/dogi-runtime.service.in <<<"$package_files"
+          package_files=$(cargo package --locked --list)
+          grep -Fxq packaging/linux/70-dogi-logitech.rules <<<"$package_files"
+          grep -Fxq packaging/linux/dogi-runtime.service <<<"$package_files"
+          grep -Fxq packaging/linux/dogi-runtime.service.in <<<"$package_files"
+          grep -Fxq src/ui/views/app.slint <<<"$package_files"
+          grep -Fxq src/ui/i18n/zh_CN/LC_MESSAGES/dogi.po <<<"$package_files"
+          grep -Fxq packaging/release-signers <<<"$package_files"
 
       - name: Save Cargo sources
         if: github.ref == 'refs/heads/main' && steps.cargo-sources.outputs.cache-hit != 'true'

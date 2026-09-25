@@ -10,6 +10,6 @@ patch:
 
 ci:
     cargo fmt --all -- --check
-    cargo check --workspace --all-targets --all-features
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
-    cargo nextest run --workspace --all-targets --all-features --no-fail-fast
+    cargo check --all-targets --locked
+    cargo clippy --all-targets --locked -- -D warnings
+    cargo nextest run --all-targets --locked --no-fail-fast

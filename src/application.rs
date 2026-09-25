@@ -1,0 +1,169 @@
+use std::rc::Rc;
+use std::sync::Arc;
+
+use crate::domain::{DogiError, Result};
+
+use crate::config::application::ApplicationConfigStore;
+use crate::device::DeviceService;
+use crate::environment::AppEnvironment;
+use crate::runtime::{control::RuntimeControlClient, lock::ProcessLock, service};
+
+pub(crate) fn launch_gui(environment: &AppEnvironment) -> Result<()> {
+    if crate::desktop::context::running_as_root() {
+        return Err(DogiError::InvalidArgument(
+            "run the Dogi GUI as the desktop user, without sudo".to_owned(),
+        ));
+    }
+    let _instance_lock = ProcessLock::acquire(&environment.paths.gui_instance_lock(), "window")?;
+    let devices = DeviceService::for_environment(environment);
+    let mut settings_recovery_error = devices
+        .recover_interrupted_settings_transaction()
+        .err()
+        .map(|error| error.to_string());
+    let application_store = ApplicationConfigStore::for_environment(environment);
+    let update_store = application_store.clone();
+    let preferences = application_preferences(application_store.clone());
+    let network_service = crate::network::NetworkService::new(application_store.clone());
+    let network = network_preferences(network_service.clone());
+    let settings = devices.load_master3s_settings()?;
+    if let Some(notice) = devices.take_recovery_notice() {
+        settings_recovery_error = Some(match settings_recovery_error {
+            Some(error) => format!("{error}\n{notice}"),
+            None => notice,
+        });
+    }
+    let inventory_devices = devices.clone();
+    let scan_devices = devices.clone();
+    let load_settings = devices.clone();
+    let save_settings = devices.clone();
+    let prepare_settings = devices.clone();
+    let commit_settings = devices;
+    let preview_client =
+        RuntimeControlClient::for_environment(environment).map_err(|error| error.to_string());
+    let runtime_environment = environment.clone();
+    let runtime_supported = environment.runtime.persistent_management_supported();
+    let runtime_detail = environment.runtime.management_detail.clone();
+
+    crate::ui::launch_with_integrations(
+        crate::ui::UiState::with_settings(Vec::new(), settings),
+        crate::ui::UiIntegrations {
+            identity: if environment.is_development() {
+                crate::ui::ApplicationIdentity::Development
+            } else {
+                crate::ui::ApplicationIdentity::Stable
+            },
+            discovery: crate::ui::DeviceDiscovery::new(
+                Arc::new(move || inventory_devices.scan_device_inventory()),
+                Arc::new(move || scan_devices.scan_devices_for_ui()),
+            ),
+            settings: crate::ui::DeviceSettingsIntegration {
+                load: Rc::new(move |settings_id| {
+                    load_settings.load_master3s_settings_for_device(settings_id)
+                }),
+                save: Rc::new(move |device_id, settings| {
+                    let path = match device_id {
+                        Some(device_id) => {
+                            save_settings.save_master3s_settings_for_device(device_id, settings)
+                        }
+                        None => save_settings.save_master3s_settings(settings),
+                    }?;
+                    Ok(path.display().to_string())
+                }),
+                prepare: Arc::new(move |device_id, settings, plan| {
+                    prepare_settings
+                        .prepare_master3s_settings_transaction(device_id, settings, plan)
+                }),
+                commit: Arc::new(move |device_id, settings_id, settings, plan| {
+                    let (report, path) = commit_settings.commit_prepared_master3s_settings(
+                        device_id,
+                        settings_id,
+                        settings,
+                        plan,
+                    )?;
+                    Ok(crate::ui::SettingsCommitResult {
+                        report,
+                        saved_path: path.display().to_string(),
+                    })
+                }),
+                recovery_error: settings_recovery_error,
+            },
+            runtime: crate::ui::DesktopRuntimeManager {
+                supported: runtime_supported,
+                app_profiles_supported: service::app_profiles_supported(environment),
+                pause_reason: service::current_pause_reason(),
+                availability: if runtime_supported {
+                    crate::ui::DesktopRuntimeAvailability::Available
+                } else if environment.is_development() {
+                    crate::ui::DesktopRuntimeAvailability::Development
+                } else {
+                    crate::ui::DesktopRuntimeAvailability::Unmanaged
+                },
+                detail: runtime_detail,
+                manage: Arc::new(move |operation| service::manage(&runtime_environment, operation)),
+                horizontal_scroll_preview: Arc::new(move |command| {
+                    let client = preview_client
+                        .as_ref()
+                        .map_err(|detail| DogiError::BackendUnavailable(detail.clone()))?;
+                    match command {
+                        crate::ui::HorizontalScrollPreviewCommand::Set {
+                            device_id,
+                            speed_percent,
+                        } => client.set_horizontal_scroll_preview(&device_id, speed_percent),
+                        crate::ui::HorizontalScrollPreviewCommand::Clear => {
+                            client.clear_horizontal_scroll_preview()
+                        }
+                    }
+                }),
+            },
+            preferences,
+            network,
+            updates: crate::update::application_update_manager(
+                environment,
+                update_store,
+                network_service,
+            ),
+        },
+    )
+}
+
+fn network_preferences(
+    service: crate::network::NetworkService,
+) -> crate::ui::NetworkPreferencesIntegration {
+    let fallback = service.default_preferences();
+    let (initial, load_error) = match service.load_preferences() {
+        Ok(preferences) => (preferences, None),
+        Err(error) => (fallback, Some(error.to_string())),
+    };
+    let save_service = service.clone();
+    let integration = crate::ui::NetworkPreferencesIntegration::new(
+        initial,
+        move |draft| save_service.save(draft),
+        move |draft| service.test(draft),
+    );
+    match load_error {
+        Some(error) => integration.with_load_error(error),
+        None => integration,
+    }
+}
+
+fn application_preferences(
+    store: ApplicationConfigStore,
+) -> crate::ui::ApplicationPreferencesIntegration {
+    let fallback = store.default_preferences();
+    let (initial, mut load_error) = match store.load_preferences() {
+        Ok(preferences) => (preferences, None),
+        Err(error) => (fallback, Some(error.to_string())),
+    };
+    if let Some(notice) = store.take_recovery_notice() {
+        load_error = Some(notice);
+    }
+    let integration = crate::ui::ApplicationPreferencesIntegration::new(initial, move |change| {
+        store
+            .save_preference(change)
+            .map_err(|error| DogiError::Config(error.to_string()))
+    });
+    match load_error {
+        Some(error) => integration.with_load_error(error),
+        None => integration,
+    }
+}

@@ -1,0 +1,1321 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: dogi 0.1.17\n"
+"POT-Creation-Date: 2026-09-25 06:23+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: src/ui/views/app.slint:548
+msgid "Test horizontal scrolling"
+msgstr ""
+
+#: src/ui/views/app.slint:571
+msgid "Baseline · 100%"
+msgstr ""
+
+#: src/ui/views/app.slint:600
+msgid "Current · {}%"
+msgstr ""
+
+#: src/ui/views/app.slint:623 src/ui/views/app.slint:1754
+#: src/ui/views/app.slint:623 src/ui/views/app.slint:1754 src/ui/views/app.slint:3356
+msgid "Unavailable"
+msgstr ""
+
+#: src/ui/views/app.slint:624 src/ui/views/app.slint:1755
+msgid "Starting…"
+msgstr ""
+
+#: src/ui/views/app.slint:625
+msgid "Stop"
+msgstr ""
+
+#: src/ui/views/app.slint:626
+msgid "Test"
+msgstr ""
+
+#: src/ui/views/app.slint:713
+msgid "Roll the thumb wheel"
+msgstr ""
+
+#: src/ui/views/app.slint:852 src/ui/views/app.slint:867
+msgid "Scroll mode"
+msgstr ""
+
+#: src/ui/views/app.slint:1030
+msgid "Settings · Update available"
+msgstr ""
+
+#: src/ui/views/app.slint:1149 src/ui/views/i18n.slint:38
+msgid "Identifying…"
+msgstr ""
+
+#: src/ui/views/app.slint:1150 src/ui/views/i18n.slint:33
+msgid "Connected"
+msgstr ""
+
+#: src/ui/views/app.slint:1151
+msgid "Detected"
+msgstr ""
+
+#: src/ui/views/app.slint:1152
+msgid "Offline"
+msgstr ""
+
+#: src/ui/views/app.slint:1165
+msgid "Receiver overview"
+msgstr ""
+
+#: src/ui/views/app.slint:1166
+msgid "Device overview"
+msgstr ""
+
+#: src/ui/views/app.slint:1167
+msgid "Preview"
+msgstr ""
+
+#: src/ui/views/app.slint:1241
+msgid "Pointer"
+msgstr ""
+
+#: src/ui/views/app.slint:1253 src/ui/views/app.slint:3384
+msgid "Main wheel"
+msgstr ""
+
+#: src/ui/views/app.slint:1265 src/ui/views/app.slint:3018
+#: src/ui/views/app.slint:1265 src/ui/views/app.slint:3018
+msgid "Thumb wheel"
+msgstr ""
+
+#: src/ui/views/app.slint:1278
+msgid "Transport"
+msgstr ""
+
+#: src/ui/views/app.slint:1289 src/ui/views/i18n.slint:13
+msgid "USB"
+msgstr ""
+
+#: src/ui/views/app.slint:1290
+msgid "Interface"
+msgstr ""
+
+#: src/ui/views/app.slint:1302
+msgid "Interfaces"
+msgstr ""
+
+#: src/ui/views/app.slint:1425
+msgid "Select a control on the mouse"
+msgstr ""
+
+#: src/ui/views/app.slint:1531
+msgid "Test gesture"
+msgstr ""
+
+#: src/ui/views/app.slint:1532 src/ui/views/app.slint:3187
+#: src/ui/views/app.slint:1532 src/ui/views/app.slint:3187
+msgid "Click"
+msgstr ""
+
+#: src/ui/views/app.slint:1532
+msgid "Up"
+msgstr ""
+
+#: src/ui/views/app.slint:1532
+msgid "Down"
+msgstr ""
+
+#: src/ui/views/app.slint:1532
+msgid "Left"
+msgstr ""
+
+#: src/ui/views/app.slint:1532
+msgid "Right"
+msgstr ""
+
+#: src/ui/views/app.slint:1756
+msgid "Running"
+msgstr ""
+
+#: src/ui/views/app.slint:1757
+msgid "Paused"
+msgstr ""
+
+#: src/ui/views/app.slint:1758
+msgid "Off"
+msgstr ""
+
+#: src/ui/views/app.slint:1759 src/ui/views/app.slint:1869
+msgid "Needs attention"
+msgstr ""
+
+#: src/ui/views/app.slint:1767
+msgid "Development builds do not manage the installed background service"
+msgstr ""
+
+#: src/ui/views/app.slint:1769
+msgid "This binary has no persistent background integration"
+msgstr ""
+
+#: src/ui/views/app.slint:1787 src/ui/views/app.slint:1841
+msgid "Background operations"
+msgstr ""
+
+#: src/ui/views/app.slint:1825 src/ui/views/app.slint:1944
+msgid "Retry"
+msgstr ""
+
+#: src/ui/views/app.slint:1825
+msgid "Restart"
+msgstr ""
+
+#: src/ui/views/app.slint:1864 src/ui/views/app.slint:1945
+msgid "Checking…"
+msgstr ""
+
+#: src/ui/views/app.slint:1865
+msgid "Up to date"
+msgstr ""
+
+#: src/ui/views/app.slint:1866
+msgid "Ready"
+msgstr ""
+
+#: src/ui/views/app.slint:1867 src/ui/views/app.slint:1946
+msgid "Installing…"
+msgstr ""
+
+#: src/ui/views/app.slint:1868
+msgid "Restart required"
+msgstr ""
+
+#: src/ui/views/app.slint:1871
+msgid "Automatic"
+msgstr ""
+
+#: src/ui/views/app.slint:1879
+msgid "Version {} is ready to install"
+msgstr ""
+
+#: src/ui/views/app.slint:1881
+msgid "Version {} is installed; restart Dogi to finish"
+msgstr ""
+
+#: src/ui/views/app.slint:1884 src/ui/views/app.slint:1885
+msgid "Version {}"
+msgstr ""
+
+#: src/ui/views/app.slint:1903
+msgid "Dogi updates"
+msgstr ""
+
+#: src/ui/views/app.slint:1942
+msgid "Install & Restart"
+msgstr ""
+
+#: src/ui/views/app.slint:1943
+msgid "Restart now"
+msgstr ""
+
+#: src/ui/views/app.slint:1947
+msgid "Check now"
+msgstr ""
+
+#: src/ui/views/app.slint:1972
+msgid "Check and download updates automatically"
+msgstr ""
+
+#: src/ui/views/app.slint:1992 src/ui/views/app.slint:2059
+msgid "Follow system settings"
+msgstr ""
+
+#: src/ui/views/app.slint:1993 src/ui/views/app.slint:2060
+msgid "Direct connection"
+msgstr ""
+
+#: src/ui/views/app.slint:1994 src/ui/views/app.slint:2061
+msgid "Manual proxy"
+msgstr ""
+
+#: src/ui/views/app.slint:2009 src/ui/views/app.slint:2094
+#: src/ui/views/app.slint:2009 src/ui/views/app.slint:2094
+msgid "Network proxy"
+msgstr ""
+
+#: src/ui/views/app.slint:2020
+msgid "Configure"
+msgstr ""
+
+#: src/ui/views/app.slint:2109
+msgid "Controls network access for Dogi updates."
+msgstr ""
+
+#: src/ui/views/app.slint:2125
+msgid "Connection"
+msgstr ""
+
+#: src/ui/views/app.slint:2145
+msgid "Protocol"
+msgstr ""
+
+#: src/ui/views/app.slint:2146
+msgid "Host"
+msgstr ""
+
+#: src/ui/views/app.slint:2147
+msgid "Port"
+msgstr ""
+
+#: src/ui/views/app.slint:2171 src/ui/views/app.slint:2180
+msgid "Proxy authentication"
+msgstr ""
+
+#: src/ui/views/app.slint:2172
+msgid "Store credentials in the desktop keyring"
+msgstr ""
+
+#: src/ui/views/app.slint:2198
+msgid "Username"
+msgstr ""
+
+#: src/ui/views/app.slint:2199 src/ui/views/app.slint:2209
+msgid "Password"
+msgstr ""
+
+#: src/ui/views/app.slint:2209
+msgid "Saved password"
+msgstr ""
+
+#: src/ui/views/app.slint:2228
+msgid "Testing connection…"
+msgstr ""
+
+#: src/ui/views/app.slint:2229
+msgid "Saving proxy settings…"
+msgstr ""
+
+#: src/ui/views/app.slint:2230
+msgid "Connected directly"
+msgstr ""
+
+#: src/ui/views/app.slint:2231
+msgid "Connected through {}"
+msgstr ""
+
+#: src/ui/views/app.slint:2233
+msgid "Test access to GitHub before saving."
+msgstr ""
+
+#: src/ui/views/app.slint:2255 src/ui/views/app.slint:2349
+#: src/ui/views/app.slint:2255 src/ui/views/app.slint:2349
+msgid "Cancel"
+msgstr ""
+
+#: src/ui/views/app.slint:2256
+msgid "Test connection"
+msgstr ""
+
+#: src/ui/views/app.slint:2257
+msgid "Save"
+msgstr ""
+
+#: src/ui/views/app.slint:2405
+msgid "The desktop is locked; local input enhancements are paused"
+msgstr ""
+
+#: src/ui/views/app.slint:2407
+msgid "Remote login is active; local input enhancements are paused"
+msgstr ""
+
+#: src/ui/views/app.slint:2409
+msgid "No active local desktop; local input enhancements are paused"
+msgstr ""
+
+#: src/ui/views/app.slint:2410
+msgid ""
+"Desktop session ownership could not be verified; local input enhancements "
+"are paused"
+msgstr ""
+
+#: src/ui/views/app.slint:2429 src/ui/views/app.slint:3963
+msgid "Dogi {} is ready"
+msgstr ""
+
+#: src/ui/views/app.slint:2430
+msgid "Install the update when you are ready to restart Dogi."
+msgstr ""
+
+#: src/ui/views/app.slint:2609
+msgid "Any identity"
+msgstr ""
+
+#: src/ui/views/app.slint:2610
+msgid "Window title"
+msgstr ""
+
+#: src/ui/views/app.slint:2611
+msgid "Window class"
+msgstr ""
+
+#: src/ui/views/app.slint:2612
+msgid "Executable"
+msgstr ""
+
+#: src/ui/views/app.slint:2627
+msgid "System language"
+msgstr ""
+
+#: src/ui/views/app.slint:2632
+msgid "System theme"
+msgstr ""
+
+#: src/ui/views/app.slint:2633
+msgid "Light"
+msgstr ""
+
+#: src/ui/views/app.slint:2634
+msgid "Dark"
+msgstr ""
+
+#: src/ui/views/app.slint:2637 src/ui/views/app.slint:3983
+msgid "Quit dogi"
+msgstr ""
+
+#: src/ui/views/app.slint:2638
+msgid "Keep running in tray"
+msgstr ""
+
+#: src/ui/views/app.slint:2705
+msgid "Devices"
+msgstr ""
+
+#: src/ui/views/app.slint:2713
+msgid "No mouse found"
+msgstr ""
+
+#: src/ui/views/app.slint:2720 src/ui/views/app.slint:2796
+msgid "Logitech device"
+msgstr ""
+
+#: src/ui/views/app.slint:2741 src/ui/views/app.slint:2792
+msgid "Settings"
+msgstr ""
+
+#: src/ui/views/app.slint:2794
+msgid "No mouse connected"
+msgstr ""
+
+#: src/ui/views/app.slint:2808
+msgid "Supported"
+msgstr ""
+
+#: src/ui/views/app.slint:2837
+msgid "Editing default settings"
+msgstr ""
+
+#: src/ui/views/app.slint:2839
+msgid "{} · Identifying…"
+msgstr ""
+
+#: src/ui/views/app.slint:2842
+msgid "{} · {} · {}"
+msgstr ""
+
+#: src/ui/views/app.slint:2846
+msgid "{} · {}"
+msgstr ""
+
+#: src/ui/views/app.slint:2865
+msgid "Scanning…"
+msgstr ""
+
+#: src/ui/views/app.slint:2865
+msgid "Rescan"
+msgstr ""
+
+#: src/ui/views/app.slint:2880 src/ui/views/app.slint:3921
+msgid "Revert Changes"
+msgstr ""
+
+#: src/ui/views/app.slint:2894 src/ui/views/app.slint:2944
+#: src/ui/views/app.slint:2894 src/ui/views/app.slint:2944
+msgid "Pointer & Wheel"
+msgstr ""
+
+#: src/ui/views/app.slint:2895
+msgid "Buttons"
+msgstr ""
+
+#: src/ui/views/app.slint:2896 src/ui/views/app.slint:3213
+#: src/ui/views/app.slint:2896 src/ui/views/app.slint:3213
+msgid "App Profiles"
+msgstr ""
+
+#: src/ui/views/app.slint:2932
+msgid "Preparing custom actions…"
+msgstr ""
+
+#: src/ui/views/app.slint:2934
+msgid "Background operations are off"
+msgstr ""
+
+#: src/ui/views/app.slint:2937
+msgid "Custom actions are unavailable: {}"
+msgstr ""
+
+#: src/ui/views/app.slint:2961
+msgid "{} · {}%"
+msgstr ""
+
+#: src/ui/views/app.slint:2978 src/ui/views/app.slint:3373
+msgid "Pointer speed"
+msgstr ""
+
+#: src/ui/views/app.slint:2997
+msgid "Scroll wheel"
+msgstr ""
+
+#: src/ui/views/app.slint:3000 src/ui/views/app.slint:3388
+msgid "SmartShift sensitivity"
+msgstr ""
+
+#: src/ui/views/app.slint:3004 src/ui/views/app.slint:3399
+msgid "Smooth scrolling"
+msgstr ""
+
+#: src/ui/views/app.slint:3009
+msgid "Scroll direction"
+msgstr ""
+
+#: src/ui/views/app.slint:3010 src/ui/views/app.slint:3401
+msgid "Standard"
+msgstr ""
+
+#: src/ui/views/app.slint:3010 src/ui/views/app.slint:3401
+msgid "Natural"
+msgstr ""
+
+#: src/ui/views/app.slint:3021 src/ui/views/app.slint:3123
+#: src/ui/views/app.slint:3021 src/ui/views/app.slint:3123
+msgid "Dogi"
+msgstr ""
+
+#: src/ui/views/app.slint:3039
+msgid "Horizontal scroll speed"
+msgstr ""
+
+#: src/ui/views/app.slint:3080 src/ui/views/app.slint:3423
+#: src/ui/views/app.slint:3080 src/ui/views/app.slint:3423
+msgid "Button assignments"
+msgstr ""
+
+#: src/ui/views/app.slint:3128
+msgid "Thumb · rear"
+msgstr ""
+
+#: src/ui/views/app.slint:3129
+msgid "Thumb · front"
+msgstr ""
+
+#: src/ui/views/app.slint:3130
+msgid "Thumb rest"
+msgstr ""
+
+#: src/ui/views/app.slint:3131
+msgid "Behind the wheel"
+msgstr ""
+
+#: src/ui/views/app.slint:3132
+msgid "Wheel press"
+msgstr ""
+
+#: src/ui/views/app.slint:3138 src/ui/views/app.slint:3140
+#: src/ui/views/app.slint:3138 src/ui/views/app.slint:3140 src/ui/views/app.slint:3142
+#: src/ui/views/app.slint:3138 src/ui/views/app.slint:3140 src/ui/views/app.slint:3142 src/ui/views/app.slint:3144
+msgid "Assigned action"
+msgstr ""
+
+#: src/ui/views/app.slint:3163
+msgid "All controls"
+msgstr ""
+
+#: src/ui/views/app.slint:3188 src/ui/views/app.slint:3439
+msgid "Move up"
+msgstr ""
+
+#: src/ui/views/app.slint:3189 src/ui/views/app.slint:3440
+msgid "Move down"
+msgstr ""
+
+#: src/ui/views/app.slint:3190 src/ui/views/app.slint:3441
+msgid "Move left"
+msgstr ""
+
+#: src/ui/views/app.slint:3191 src/ui/views/app.slint:3442
+msgid "Move right"
+msgstr ""
+
+#: src/ui/views/app.slint:3216
+msgid "Automatic app switching is unavailable in this Wayland session."
+msgstr ""
+
+#: src/ui/views/app.slint:3251
+msgid "Profiles"
+msgstr ""
+
+#: src/ui/views/app.slint:3252
+msgid "{n} profile configured"
+msgid_plural "{n} profiles configured"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/views/app.slint:3263
+msgid "New"
+msgstr ""
+
+#: src/ui/views/app.slint:3299
+msgid "No profiles yet"
+msgstr ""
+
+#: src/ui/views/app.slint:3302
+msgid "Create one to override settings for an application."
+msgstr ""
+
+#: src/ui/views/app.slint:3303
+msgid "Profiles switch pointer and thumb wheel settings for the active app."
+msgstr ""
+
+#: src/ui/views/app.slint:3355
+msgid "New profile"
+msgstr ""
+
+#: src/ui/views/app.slint:3357
+msgid "Remove"
+msgstr ""
+
+#: src/ui/views/app.slint:3358
+msgid "Add profile"
+msgstr ""
+
+#: src/ui/views/app.slint:3358
+msgid "Update profile"
+msgstr ""
+
+#: src/ui/views/app.slint:3362
+msgid "Application match"
+msgstr ""
+
+#: src/ui/views/app.slint:3363
+msgid "Match field"
+msgstr ""
+
+#: src/ui/views/app.slint:3364
+msgid "Application identifier"
+msgstr ""
+
+#: src/ui/views/app.slint:3364
+msgid "For example: firefox"
+msgstr ""
+
+#: src/ui/views/app.slint:3366
+msgid "Overrides"
+msgstr ""
+
+#: src/ui/views/app.slint:3375 src/ui/views/app.slint:3414
+msgid "Speed"
+msgstr ""
+
+#: src/ui/views/app.slint:3386
+msgid "Mode"
+msgstr ""
+
+#: src/ui/views/app.slint:3397
+msgid "Scroll behavior"
+msgstr ""
+
+#: src/ui/views/app.slint:3401
+msgid "Direction"
+msgstr ""
+
+#: src/ui/views/app.slint:3412
+msgid "Behavior"
+msgstr ""
+
+#: src/ui/views/app.slint:3461
+msgid "Appearance"
+msgstr ""
+
+#: src/ui/views/app.slint:3479
+msgid "Language"
+msgstr ""
+
+#: src/ui/views/app.slint:3486
+msgid "Theme"
+msgstr ""
+
+#: src/ui/views/app.slint:3494
+msgid "Window"
+msgstr ""
+
+#: src/ui/views/app.slint:3508
+msgid "When closing the window"
+msgstr ""
+
+#: src/ui/views/app.slint:3515
+msgid "Background"
+msgstr ""
+
+#: src/ui/views/app.slint:3547
+msgid "Low battery notifications"
+msgstr ""
+
+#: src/ui/views/app.slint:3548
+msgid "Alerts at 20% and 10%"
+msgstr ""
+
+#: src/ui/views/app.slint:3555
+msgid "Fully charged notifications"
+msgstr ""
+
+#: src/ui/views/app.slint:3556
+msgid "Alerts when charging is complete"
+msgstr ""
+
+#: src/ui/views/app.slint:3563
+msgid "Network"
+msgstr ""
+
+#: src/ui/views/app.slint:3586
+msgid "Updates"
+msgstr ""
+
+#: src/ui/views/app.slint:3715 src/ui/views/loading.slint:50
+#: src/ui/views/app.slint:3715 src/ui/views/loading.slint:50
+msgid "Identifying device…"
+msgstr ""
+
+#: src/ui/views/app.slint:3717
+msgid "Ready to apply"
+msgstr ""
+
+#: src/ui/views/app.slint:3717
+msgid "Changes not saved"
+msgstr ""
+
+#: src/ui/views/app.slint:3718
+msgid "Settings saved"
+msgstr ""
+
+#: src/ui/views/app.slint:3731
+msgid "Working…"
+msgstr ""
+
+#: src/ui/views/app.slint:3731
+msgid "Apply Changes…"
+msgstr ""
+
+#: src/ui/views/app.slint:3740
+msgid "Save Changes"
+msgstr ""
+
+#: src/ui/views/app.slint:3791
+msgid "Apply Changes"
+msgstr ""
+
+#: src/ui/views/app.slint:3794
+msgid "{n} setting · {}"
+msgid_plural "{n} settings · {}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/views/app.slint:3831
+msgid ""
+"You are signed in remotely. Applying changes the mouse connected to this "
+"computer."
+msgstr ""
+
+#: src/ui/views/app.slint:3832
+msgid ""
+"Dogi adjusts active settings only; it does not update firmware or manage "
+"onboard profiles."
+msgstr ""
+
+#: src/ui/views/app.slint:3849
+msgid "Settings to apply"
+msgstr ""
+
+#: src/ui/views/app.slint:3852
+msgid "{n} setting"
+msgid_plural "{n} settings"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/views/app.slint:3891
+msgid "Apply"
+msgstr ""
+
+#: src/ui/views/app.slint:3919
+msgid "Revert Unsaved Changes?"
+msgstr ""
+
+#: src/ui/views/app.slint:3920
+msgid "The saved configuration for this mouse will be restored."
+msgstr ""
+
+#: src/ui/views/app.slint:3933
+msgid "Unsaved Changes"
+msgstr ""
+
+#: src/ui/views/app.slint:3934
+msgid "Save your mouse changes before installing Dogi {}? Dogi will restart."
+msgstr ""
+
+#: src/ui/views/app.slint:3935
+msgid "Save & Restart"
+msgstr ""
+
+#: src/ui/views/app.slint:3936
+msgid "Restart Without Saving"
+msgstr ""
+
+#: src/ui/views/app.slint:3946
+msgid "Quit Without Saving?"
+msgstr ""
+
+#: src/ui/views/app.slint:3947
+msgid "Unsaved mouse configuration changes will be lost."
+msgstr ""
+
+#: src/ui/views/app.slint:3948
+msgid "Quit Without Saving"
+msgstr ""
+
+#: src/ui/views/app.slint:3974
+msgid "Open dogi"
+msgstr ""
+
+#: src/ui/views/app.slint:3978
+msgid "Update available · {}"
+msgstr ""
+
+#: src/ui/views/controls.slint:267
+msgid "Cut"
+msgstr ""
+
+#: src/ui/views/controls.slint:272 src/ui/views/i18n.slint:119
+msgid "Copy"
+msgstr ""
+
+#: src/ui/views/controls.slint:277 src/ui/views/i18n.slint:120
+msgid "Paste"
+msgstr ""
+
+#: src/ui/views/controls.slint:282
+msgid "Select All"
+msgstr ""
+
+#: src/ui/views/i18n.slint:14
+msgid "Bluetooth"
+msgstr ""
+
+#: src/ui/views/i18n.slint:15
+msgid "Unifying"
+msgstr ""
+
+#: src/ui/views/i18n.slint:16
+msgid "Bolt"
+msgstr ""
+
+#: src/ui/views/i18n.slint:17
+msgid "LIGHTSPEED"
+msgstr ""
+
+#: src/ui/views/i18n.slint:18
+msgid "Unknown"
+msgstr ""
+
+#: src/ui/views/i18n.slint:22
+msgid "Battery unavailable"
+msgstr ""
+
+#: src/ui/views/i18n.slint:23
+msgid "{}% · Charging"
+msgstr ""
+
+#: src/ui/views/i18n.slint:24
+msgid "{}% · In use"
+msgstr ""
+
+#: src/ui/views/i18n.slint:25
+msgid "{}% · Full"
+msgstr ""
+
+#: src/ui/views/i18n.slint:26
+msgid "{}% · Low"
+msgstr ""
+
+#: src/ui/views/i18n.slint:27
+msgid "{}% · Critical"
+msgstr ""
+
+#: src/ui/views/i18n.slint:28
+msgid "{}% · Offline"
+msgstr ""
+
+#: src/ui/views/i18n.slint:29
+msgid "{}%"
+msgstr ""
+
+#: src/ui/views/i18n.slint:42
+msgid "HID++ {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:42 src/ui/views/i18n.slint:60
+msgid "HID++ unavailable"
+msgstr ""
+
+#: src/ui/views/i18n.slint:47
+msgid "HID device unavailable"
+msgstr ""
+
+#: src/ui/views/i18n.slint:49
+msgid "HID access required"
+msgstr ""
+
+#: src/ui/views/i18n.slint:51
+msgid "Full HID access required"
+msgstr ""
+
+#: src/ui/views/i18n.slint:53
+msgid "Mouse information unavailable"
+msgstr ""
+
+#: src/ui/views/i18n.slint:55
+msgid "Mouse configuration busy"
+msgstr ""
+
+#: src/ui/views/i18n.slint:57
+msgid "Device query failed"
+msgstr ""
+
+#: src/ui/views/i18n.slint:59
+msgid "Settings unavailable for this mouse"
+msgstr ""
+
+#: src/ui/views/i18n.slint:65
+msgid "Run dogi on the host or expose {} to this environment."
+msgstr ""
+
+#: src/ui/views/i18n.slint:67
+msgid "Install the dogi udev rule, then reconnect the device."
+msgstr ""
+
+#: src/ui/views/i18n.slint:69
+msgid "Check the mouse connection, then refresh."
+msgstr ""
+
+#: src/ui/views/i18n.slint:71
+msgid "Another operation is using the mouse. Try refreshing shortly."
+msgstr ""
+
+#: src/ui/views/i18n.slint:73
+msgid "Dogi could not read the mouse information. Try refreshing."
+msgstr ""
+
+#: src/ui/views/i18n.slint:75
+msgid "Dogi can identify this device, but its settings are not supported yet."
+msgstr ""
+
+#: src/ui/views/i18n.slint:76
+msgid "This device does not expose a compatible configuration endpoint."
+msgstr ""
+
+#: src/ui/views/i18n.slint:80
+msgid "{n} interface"
+msgid_plural "{n} interfaces"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/views/i18n.slint:84
+msgid "{n} interface  {}"
+msgid_plural "{n} interfaces  {}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/views/i18n.slint:90
+msgid "Ratchet"
+msgstr ""
+
+#: src/ui/views/i18n.slint:91
+msgid "Free-spin"
+msgstr ""
+
+#: src/ui/views/i18n.slint:92
+msgid "SmartShift"
+msgstr ""
+
+#: src/ui/views/i18n.slint:96
+msgid "Horizontal Scroll"
+msgstr ""
+
+#: src/ui/views/i18n.slint:97
+msgid "Tab Switch"
+msgstr ""
+
+#: src/ui/views/i18n.slint:98
+msgid "Zoom"
+msgstr ""
+
+#: src/ui/views/i18n.slint:99
+msgid "Volume"
+msgstr ""
+
+#: src/ui/views/i18n.slint:100 src/ui/views/i18n.slint:121
+msgid "Disabled"
+msgstr ""
+
+#: src/ui/views/i18n.slint:104
+msgid "Back button"
+msgstr ""
+
+#: src/ui/views/i18n.slint:105
+msgid "Forward button"
+msgstr ""
+
+#: src/ui/views/i18n.slint:106
+msgid "Gesture button"
+msgstr ""
+
+#: src/ui/views/i18n.slint:107
+msgid "Mode shift"
+msgstr ""
+
+#: src/ui/views/i18n.slint:108
+msgid "Middle click"
+msgstr ""
+
+#: src/ui/views/i18n.slint:112 src/ui/views/i18n.slint:128
+msgid "Back"
+msgstr ""
+
+#: src/ui/views/i18n.slint:113 src/ui/views/i18n.slint:129
+msgid "Forward"
+msgstr ""
+
+#: src/ui/views/i18n.slint:114
+msgid "Activities Overview"
+msgstr ""
+
+#: src/ui/views/i18n.slint:115
+msgid "Switch Windows"
+msgstr ""
+
+#: src/ui/views/i18n.slint:116
+msgid "Previous Workspace"
+msgstr ""
+
+#: src/ui/views/i18n.slint:117
+msgid "Next Workspace"
+msgstr ""
+
+#: src/ui/views/i18n.slint:118 src/ui/views/i18n.slint:131
+msgid "Middle Click"
+msgstr ""
+
+#: src/ui/views/i18n.slint:122 src/ui/views/i18n.slint:132
+msgid "Default Behavior"
+msgstr ""
+
+#: src/ui/views/i18n.slint:123
+msgid "Gestures"
+msgstr ""
+
+#: src/ui/views/i18n.slint:130
+msgid "Scroll Mode Switch"
+msgstr ""
+
+#: src/ui/views/i18n.slint:136
+msgid "{n} override"
+msgid_plural "{n} overrides"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/views/i18n.slint:140
+msgid "SmartShift {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:144
+msgid "Smooth · Natural"
+msgstr ""
+
+#: src/ui/views/i18n.slint:145
+msgid "Smooth · Standard"
+msgstr ""
+
+#: src/ui/views/i18n.slint:146
+msgid "Normal · Natural"
+msgstr ""
+
+#: src/ui/views/i18n.slint:147
+msgid "Normal · Standard"
+msgstr ""
+
+#: src/ui/views/i18n.slint:151
+msgid "Dogi routing"
+msgstr ""
+
+#: src/ui/views/i18n.slint:151
+msgid "Native routing"
+msgstr ""
+
+#: src/ui/views/i18n.slint:157
+msgid "{} DPI → {} DPI"
+msgstr ""
+
+#: src/ui/views/i18n.slint:159
+msgid "{}% → {}%"
+msgstr ""
+
+#: src/ui/views/i18n.slint:161 src/ui/views/i18n.slint:163
+#: src/ui/views/i18n.slint:161 src/ui/views/i18n.slint:163
+msgid "{} → {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:171
+msgid "Set pointer resolution to {} DPI"
+msgstr ""
+
+#: src/ui/views/i18n.slint:173
+msgid "Set pointer speed to {}%"
+msgstr ""
+
+#: src/ui/views/i18n.slint:175
+msgid "Use SmartShift with sensitivity {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:177
+msgid "Use {} scrolling"
+msgstr ""
+
+#: src/ui/views/i18n.slint:179
+msgid "Smooth scrolling · Natural direction"
+msgstr ""
+
+#: src/ui/views/i18n.slint:181
+msgid "Smooth scrolling · Standard direction"
+msgstr ""
+
+#: src/ui/views/i18n.slint:183
+msgid "Smooth scrolling off · Natural direction"
+msgstr ""
+
+#: src/ui/views/i18n.slint:185
+msgid "Smooth scrolling off · Standard direction"
+msgstr ""
+
+#: src/ui/views/i18n.slint:187
+msgid "Enable smooth scrolling"
+msgstr ""
+
+#: src/ui/views/i18n.slint:189
+msgid "Disable smooth scrolling"
+msgstr ""
+
+#: src/ui/views/i18n.slint:191
+msgid "Use natural scroll direction"
+msgstr ""
+
+#: src/ui/views/i18n.slint:193
+msgid "Use standard scroll direction"
+msgstr ""
+
+#: src/ui/views/i18n.slint:195
+msgid "Use native horizontal scrolling"
+msgstr ""
+
+#: src/ui/views/i18n.slint:197
+msgid "Use horizontal scrolling at {}% through Dogi"
+msgstr ""
+
+#: src/ui/views/i18n.slint:199
+msgid "Route thumb wheel through Dogi for {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:201
+msgid "Route {} through dogi for {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:203
+msgid "Use native behavior for {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:205
+msgid "Run the local runtime listener"
+msgstr ""
+
+#: src/ui/views/i18n.slint:206
+msgid "Save local app profile {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:213
+msgid "Applied with {} failed, {} successful, {} unsupported"
+msgstr ""
+
+#: src/ui/views/i18n.slint:215
+msgid "Applied {} settings, {} unsupported"
+msgstr ""
+
+#: src/ui/views/i18n.slint:216
+msgid "Applied {} settings"
+msgstr ""
+
+#: src/ui/views/i18n.slint:220
+msgid "Device scanner stopped unexpectedly"
+msgstr ""
+
+#: src/ui/views/i18n.slint:221
+msgid "Scan failed: {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:222
+msgid "No Logitech devices found"
+msgstr ""
+
+#: src/ui/views/i18n.slint:223
+msgid "Scanning devices…"
+msgstr ""
+
+#: src/ui/views/i18n.slint:224
+msgid "Scan failed to start: {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:225
+msgid "Editing {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:226
+msgid "Changes reverted"
+msgstr ""
+
+#: src/ui/views/i18n.slint:227
+msgid "Changes saved"
+msgstr ""
+
+#: src/ui/views/i18n.slint:229
+msgid "Changes saved. Apply them when the mouse is available."
+msgstr ""
+
+#: src/ui/views/i18n.slint:230
+msgid "Save failed: {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:231
+msgid "Enter an app name"
+msgstr ""
+
+#: src/ui/views/i18n.slint:232
+msgid "App profile {} was not found"
+msgstr ""
+
+#: src/ui/views/i18n.slint:233
+msgid "Connect a supported mouse with full HID access to apply settings"
+msgstr ""
+
+#: src/ui/views/i18n.slint:234
+msgid "Connect the mouse to apply {n} setting"
+msgid_plural "Connect the mouse to apply {n} settings"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/views/i18n.slint:235
+msgid "Applying {n} setting is unavailable"
+msgid_plural "Applying {n} settings is unavailable"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/views/i18n.slint:236
+msgid "Reading current mouse settings…"
+msgstr ""
+
+#: src/ui/views/i18n.slint:237
+msgid "Applying and verifying mouse settings…"
+msgstr ""
+
+#: src/ui/views/i18n.slint:238
+msgid "Review {n} mouse setting"
+msgid_plural "Review {n} mouse settings"
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/ui/views/i18n.slint:240
+msgid "{} · Settings saved"
+msgstr ""
+
+#: src/ui/views/i18n.slint:243
+msgid "Could not apply settings: {}. Your changes were saved."
+msgstr ""
+
+#: src/ui/views/i18n.slint:245
+msgid "Apply failed: {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:247
+msgid ""
+"The mouse changed after review. No settings were written; review and try "
+"again."
+msgstr ""
+
+#: src/ui/views/i18n.slint:249
+msgid ""
+"The settings could not be applied. The original mouse settings were restored."
+msgstr ""
+
+#: src/ui/views/i18n.slint:251
+msgid "Some mouse settings still need recovery: {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:253
+msgid ""
+"Some mouse settings could not be restored. Keep the mouse connected and try "
+"again."
+msgstr ""
+
+#: src/ui/views/i18n.slint:255
+msgid "Could not save application settings: {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:257
+msgid "Could not load application settings: {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:259
+msgid "Could not switch language: {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:261
+msgid "System tray is unavailable: {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:263
+msgid "System tray is unavailable"
+msgstr ""
+
+#: src/ui/views/i18n.slint:265
+msgid "Could not stop the horizontal scroll test, so Dogi will stay open: {}"
+msgstr ""
+
+#: src/ui/views/i18n.slint:267
+msgid "Could not stop the horizontal scroll test, so Dogi will stay open"
+msgstr ""
+
+#: src/ui/views/i18n.slint:269
+msgid ""
+"Dogi could not confirm that the horizontal scroll test stopped, so it will "
+"stay open"
+msgstr ""

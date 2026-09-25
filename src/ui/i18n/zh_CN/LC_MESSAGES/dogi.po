@@ -1,0 +1,1344 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: dogi 0.1.0\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-08-07 10:02+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: zh_CN\n"
+"Language-Team: zh_CN <LL@li.org>\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.17.0\n"
+
+#: src/ui/views/app.slint:547
+msgid "Test horizontal scrolling"
+msgstr "测试横向滚动"
+
+#: src/ui/views/app.slint:570
+msgid "Baseline · 100%"
+msgstr "基准 · 100%"
+
+#: src/ui/views/app.slint:599
+#, python-brace-format
+msgid "Current · {}%"
+msgstr "当前 · {}%"
+
+#: src/ui/views/app.slint:622 src/ui/views/app.slint:1753
+#: src/ui/views/app.slint:3331
+msgid "Unavailable"
+msgstr "不可用"
+
+#: src/ui/views/app.slint:623 src/ui/views/app.slint:1754
+msgid "Starting…"
+msgstr "正在启动…"
+
+#: src/ui/views/app.slint:624
+msgid "Stop"
+msgstr "停止"
+
+#: src/ui/views/app.slint:625
+msgid "Test"
+msgstr "测试"
+
+#: src/ui/views/app.slint:712
+msgid "Roll the thumb wheel"
+msgstr "滚动拇指滚轮"
+
+#: src/ui/views/app.slint:851 src/ui/views/app.slint:866
+msgid "Scroll mode"
+msgstr "滚轮模式"
+
+#: src/ui/views/app.slint:1029
+msgid "Settings · Update available"
+msgstr "设置 · 有可用更新"
+
+#: src/ui/views/app.slint:1148 src/ui/views/i18n.slint:38
+msgid "Identifying…"
+msgstr "正在识别…"
+
+#: src/ui/views/app.slint:1149 src/ui/views/i18n.slint:33
+msgid "Connected"
+msgstr "已连接"
+
+#: src/ui/views/app.slint:1150
+msgid "Detected"
+msgstr "已检测"
+
+#: src/ui/views/app.slint:1151
+msgid "Offline"
+msgstr "离线"
+
+#: src/ui/views/app.slint:1164
+msgid "Receiver overview"
+msgstr "接收器概览"
+
+#: src/ui/views/app.slint:1165
+msgid "Device overview"
+msgstr "设备概览"
+
+#: src/ui/views/app.slint:1166
+msgid "Preview"
+msgstr "预览"
+
+#: src/ui/views/app.slint:1240
+msgid "Pointer"
+msgstr "指针"
+
+#: src/ui/views/app.slint:1252 src/ui/views/app.slint:3359
+msgid "Main wheel"
+msgstr "主滚轮"
+
+#: src/ui/views/app.slint:1264 src/ui/views/app.slint:2993
+msgid "Thumb wheel"
+msgstr "拇指滚轮"
+
+#: src/ui/views/app.slint:1277
+msgid "Transport"
+msgstr "连接方式"
+
+#: src/ui/views/app.slint:1288 src/ui/views/i18n.slint:13
+msgid "USB"
+msgstr "USB"
+
+#: src/ui/views/app.slint:1289
+msgid "Interface"
+msgstr "接口"
+
+#: src/ui/views/app.slint:1301
+msgid "Interfaces"
+msgstr "接口数量"
+
+#: src/ui/views/app.slint:1424
+msgid "Select a control on the mouse"
+msgstr "选择鼠标上的按键"
+
+#: src/ui/views/app.slint:1530
+msgid "Test gesture"
+msgstr "测试手势"
+
+#: src/ui/views/app.slint:1531 src/ui/views/app.slint:3162
+msgid "Click"
+msgstr "点击"
+
+#: src/ui/views/app.slint:1531
+msgid "Up"
+msgstr "上"
+
+#: src/ui/views/app.slint:1531
+msgid "Down"
+msgstr "下"
+
+#: src/ui/views/app.slint:1531
+msgid "Left"
+msgstr "左"
+
+#: src/ui/views/app.slint:1531
+msgid "Right"
+msgstr "右"
+
+#: src/ui/views/app.slint:1755
+msgid "Running"
+msgstr "运行中"
+
+#: src/ui/views/app.slint:1756
+msgid "Paused"
+msgstr "已暂停"
+
+#: src/ui/views/app.slint:1757
+msgid "Off"
+msgstr "已关闭"
+
+#: src/ui/views/app.slint:1757 src/ui/views/app.slint:1865
+msgid "Needs attention"
+msgstr "需要处理"
+
+#: src/ui/views/app.slint:1764
+msgid "Development builds do not manage the installed background service"
+msgstr "开发版本不会管理已安装版本的后台服务"
+
+#: src/ui/views/app.slint:1766
+msgid "This binary has no persistent background integration"
+msgstr "当前程序不包含持久后台集成"
+
+#: src/ui/views/app.slint:1784 src/ui/views/app.slint:1838
+msgid "Background operations"
+msgstr "后台操作"
+
+#: src/ui/views/app.slint:1822 src/ui/views/app.slint:1934
+msgid "Retry"
+msgstr "重试"
+
+#: src/ui/views/app.slint:1822
+msgid "Restart"
+msgstr "重新启动"
+
+#: src/ui/views/app.slint:1861 src/ui/views/app.slint:1935
+msgid "Checking…"
+msgstr "正在检查…"
+
+#: src/ui/views/app.slint:1862
+msgid "Up to date"
+msgstr "已是最新"
+
+#: src/ui/views/app.slint:1863
+msgid "Ready"
+msgstr "可以更新"
+
+#: src/ui/views/app.slint:1864 src/ui/views/app.slint:1936
+msgid "Installing…"
+msgstr "正在安装…"
+
+msgid "Restart required"
+msgstr "需要重启"
+
+#: src/ui/views/app.slint:1867
+msgid "Automatic"
+msgstr "自动更新"
+
+#: src/ui/views/app.slint:1874
+#, python-brace-format
+msgid "Version {} is ready to install"
+msgstr "{} 版本已可安装"
+
+#, python-brace-format
+msgid "Version {} is installed; restart Dogi to finish"
+msgstr "{} 版本已安装；重启 Dogi 即可完成更新"
+
+#: src/ui/views/app.slint:1877 src/ui/views/app.slint:1878
+#, python-brace-format
+msgid "Version {}"
+msgstr "版本 {}"
+
+#: src/ui/views/app.slint:1895
+msgid "Dogi updates"
+msgstr "Dogi 更新"
+
+#: src/ui/views/app.slint:1933
+msgid "Install & Restart"
+msgstr "安装并重启"
+
+msgid "Restart now"
+msgstr "立即重启"
+
+#: src/ui/views/app.slint:1937
+msgid "Check now"
+msgstr "检查更新"
+
+#: src/ui/views/app.slint:1960
+msgid "Check and download updates automatically"
+msgstr "自动检查并下载更新"
+
+#: src/ui/views/app.slint:1980 src/ui/views/app.slint:2047
+msgid "Follow system settings"
+msgstr "跟随系统设置"
+
+#: src/ui/views/app.slint:1981 src/ui/views/app.slint:2048
+msgid "Direct connection"
+msgstr "直接连接"
+
+#: src/ui/views/app.slint:1982 src/ui/views/app.slint:2049
+msgid "Manual proxy"
+msgstr "手动代理"
+
+#: src/ui/views/app.slint:1997 src/ui/views/app.slint:2082
+msgid "Network proxy"
+msgstr "网络代理"
+
+#: src/ui/views/app.slint:2008
+msgid "Configure"
+msgstr "配置"
+
+#: src/ui/views/app.slint:2097
+msgid "Controls network access for Dogi updates."
+msgstr "控制 Dogi 更新的网络连接。"
+
+#: src/ui/views/app.slint:2113
+msgid "Connection"
+msgstr "连接方式"
+
+#: src/ui/views/app.slint:2133
+msgid "Protocol"
+msgstr "协议"
+
+#: src/ui/views/app.slint:2134
+msgid "Host"
+msgstr "主机"
+
+#: src/ui/views/app.slint:2135
+msgid "Port"
+msgstr "端口"
+
+#: src/ui/views/app.slint:2159 src/ui/views/app.slint:2168
+msgid "Proxy authentication"
+msgstr "代理认证"
+
+#: src/ui/views/app.slint:2160
+msgid "Store credentials in the desktop keyring"
+msgstr "将凭据存储在桌面密钥环中"
+
+#: src/ui/views/app.slint:2186
+msgid "Username"
+msgstr "用户名"
+
+#: src/ui/views/app.slint:2187 src/ui/views/app.slint:2197
+msgid "Password"
+msgstr "密码"
+
+#: src/ui/views/app.slint:2197
+msgid "Saved password"
+msgstr "已保存的密码"
+
+#: src/ui/views/app.slint:2216
+msgid "Testing connection…"
+msgstr "正在测试连接…"
+
+#: src/ui/views/app.slint:2217
+msgid "Saving proxy settings…"
+msgstr "正在保存代理设置…"
+
+#: src/ui/views/app.slint:2218
+msgid "Connected directly"
+msgstr "已直接连接"
+
+#: src/ui/views/app.slint:2219
+#, python-brace-format
+msgid "Connected through {}"
+msgstr "已通过 {} 连接"
+
+#: src/ui/views/app.slint:2221
+msgid "Test access to GitHub before saving."
+msgstr "保存前测试 GitHub 连接。"
+
+#: src/ui/views/app.slint:2243 src/ui/views/app.slint:2337
+msgid "Cancel"
+msgstr "取消"
+
+#: src/ui/views/app.slint:2244
+msgid "Test connection"
+msgstr "测试连接"
+
+#: src/ui/views/app.slint:2245
+msgid "Save"
+msgstr "保存"
+
+#: src/ui/views/app.slint:2396
+msgid "The desktop is locked; local input enhancements are paused"
+msgstr "桌面已锁定，本机输入增强已暂停"
+
+#: src/ui/views/app.slint:2398
+msgid "Remote login is active; local input enhancements are paused"
+msgstr "当前为远程登录，本机输入增强已暂停"
+
+#: src/ui/views/app.slint:2400
+msgid "No active local desktop; local input enhancements are paused"
+msgstr "没有活动的本地桌面，本机输入增强已暂停"
+
+#: src/ui/views/app.slint:2401
+msgid ""
+"Desktop session ownership could not be verified; local input enhancements "
+"are paused"
+msgstr "无法确认桌面会话归属，本机输入增强已暂停"
+
+#: src/ui/views/app.slint:2407 src/ui/views/app.slint:3925
+#, python-brace-format
+msgid "Dogi {} is ready"
+msgstr "Dogi {} 已可安装"
+
+#: src/ui/views/app.slint:2408
+msgid "Install the update when you are ready to restart Dogi."
+msgstr "准备好重启 Dogi 时即可安装更新。"
+
+#: src/ui/views/app.slint:2586
+msgid "Any identity"
+msgstr "任意标识"
+
+#: src/ui/views/app.slint:2587
+msgid "Window title"
+msgstr "窗口标题"
+
+#: src/ui/views/app.slint:2588
+msgid "Window class"
+msgstr "窗口类"
+
+#: src/ui/views/app.slint:2589
+msgid "Executable"
+msgstr "可执行文件"
+
+#: src/ui/views/app.slint:2604
+msgid "System language"
+msgstr "跟随系统"
+
+#: src/ui/views/app.slint:2609
+msgid "System theme"
+msgstr "跟随系统"
+
+#: src/ui/views/app.slint:2610
+msgid "Light"
+msgstr "浅色"
+
+#: src/ui/views/app.slint:2611
+msgid "Dark"
+msgstr "深色"
+
+#: src/ui/views/app.slint:2614 src/ui/views/app.slint:3945
+msgid "Quit dogi"
+msgstr "退出 dogi"
+
+#: src/ui/views/app.slint:2615
+msgid "Keep running in tray"
+msgstr "在托盘中继续运行"
+
+#: src/ui/views/app.slint:2682
+msgid "Devices"
+msgstr "设备"
+
+#: src/ui/views/app.slint:2690
+msgid "No mouse found"
+msgstr "未发现鼠标"
+
+#: src/ui/views/app.slint:2697 src/ui/views/app.slint:2773
+msgid "Logitech device"
+msgstr "罗技设备"
+
+#: src/ui/views/app.slint:2718 src/ui/views/app.slint:2769
+msgid "Settings"
+msgstr "设置"
+
+#: src/ui/views/app.slint:2771
+msgid "No mouse connected"
+msgstr "未连接鼠标"
+
+#: src/ui/views/app.slint:2785
+msgid "Supported"
+msgstr "已支持"
+
+#: src/ui/views/app.slint:2814
+msgid "Editing default settings"
+msgstr "正在编辑默认设置"
+
+#: src/ui/views/app.slint:2816
+#, python-brace-format
+msgid "{} · Identifying…"
+msgstr "{} · 正在识别…"
+
+#: src/ui/views/app.slint:2819
+#, python-brace-format
+msgid "{} · {} · {}"
+msgstr "{} · {} · {}"
+
+#: src/ui/views/app.slint:2823
+#, python-brace-format
+msgid "{} · {}"
+msgstr "{} · {}"
+
+#: src/ui/views/app.slint:2842
+msgid "Scanning…"
+msgstr "正在扫描…"
+
+#: src/ui/views/app.slint:2842
+msgid "Rescan"
+msgstr "重新扫描"
+
+#: src/ui/views/app.slint:2857 src/ui/views/app.slint:3883
+msgid "Revert Changes"
+msgstr "撤销更改"
+
+#: src/ui/views/app.slint:2871 src/ui/views/app.slint:2919
+msgid "Pointer & Wheel"
+msgstr "指针与滚轮"
+
+#: src/ui/views/app.slint:2872
+msgid "Buttons"
+msgstr "按键"
+
+#: src/ui/views/app.slint:2873 src/ui/views/app.slint:3188
+msgid "App Profiles"
+msgstr "应用配置"
+
+#: src/ui/views/app.slint:2909
+msgid "Preparing custom actions…"
+msgstr "正在准备自定义操作…"
+
+#: src/ui/views/app.slint:2911
+msgid "Background operations are off"
+msgstr "后台操作已关闭"
+
+#: src/ui/views/app.slint:2912
+#, python-brace-format
+msgid "Custom actions are unavailable: {}"
+msgstr "自定义操作暂不可用：{}"
+
+#: src/ui/views/app.slint:2936
+#, python-brace-format
+msgid "{} · {}%"
+msgstr "{} · {}%"
+
+#: src/ui/views/app.slint:2953 src/ui/views/app.slint:3348
+msgid "Pointer speed"
+msgstr "指针速度"
+
+#: src/ui/views/app.slint:2972
+msgid "Scroll wheel"
+msgstr "滚轮"
+
+#: src/ui/views/app.slint:2975 src/ui/views/app.slint:3363
+msgid "SmartShift sensitivity"
+msgstr "SmartShift 灵敏度"
+
+#: src/ui/views/app.slint:2979 src/ui/views/app.slint:3374
+msgid "Smooth scrolling"
+msgstr "平滑滚动"
+
+#: src/ui/views/app.slint:2984
+msgid "Scroll direction"
+msgstr "滚动方向"
+
+#: src/ui/views/app.slint:2985 src/ui/views/app.slint:3376
+msgid "Standard"
+msgstr "标准"
+
+#: src/ui/views/app.slint:2985 src/ui/views/app.slint:3376
+msgid "Natural"
+msgstr "自然"
+
+#: src/ui/views/app.slint:2996 src/ui/views/app.slint:3098
+msgid "Dogi"
+msgstr "Dogi"
+
+#: src/ui/views/app.slint:3014
+msgid "Horizontal scroll speed"
+msgstr "横向滚动速度"
+
+#: src/ui/views/app.slint:3055 src/ui/views/app.slint:3398
+msgid "Button assignments"
+msgstr "按键分配"
+
+#: src/ui/views/app.slint:3103
+msgid "Thumb · rear"
+msgstr "拇指区 · 后键"
+
+#: src/ui/views/app.slint:3104
+msgid "Thumb · front"
+msgstr "拇指区 · 前键"
+
+#: src/ui/views/app.slint:3105
+msgid "Thumb rest"
+msgstr "拇指托"
+
+#: src/ui/views/app.slint:3106
+msgid "Behind the wheel"
+msgstr "滚轮后方"
+
+#: src/ui/views/app.slint:3107
+msgid "Wheel press"
+msgstr "滚轮按下"
+
+#: src/ui/views/app.slint:3113 src/ui/views/app.slint:3115
+#: src/ui/views/app.slint:3117 src/ui/views/app.slint:3119
+msgid "Assigned action"
+msgstr "已分配操作"
+
+#: src/ui/views/app.slint:3138
+msgid "All controls"
+msgstr "全部按键"
+
+#: src/ui/views/app.slint:3163 src/ui/views/app.slint:3414
+msgid "Move up"
+msgstr "向上移动"
+
+#: src/ui/views/app.slint:3164 src/ui/views/app.slint:3415
+msgid "Move down"
+msgstr "向下移动"
+
+#: src/ui/views/app.slint:3165 src/ui/views/app.slint:3416
+msgid "Move left"
+msgstr "向左移动"
+
+#: src/ui/views/app.slint:3166 src/ui/views/app.slint:3417
+msgid "Move right"
+msgstr "向右移动"
+
+#: src/ui/views/app.slint:3191
+msgid "Automatic app switching is unavailable in this Wayland session."
+msgstr "当前 Wayland 会话无法自动切换应用配置。"
+
+#: src/ui/views/app.slint:3226
+msgid "Profiles"
+msgstr "配置"
+
+#: src/ui/views/app.slint:3227
+#, python-brace-format
+msgid "{n} profile configured"
+msgid_plural "{n} profiles configured"
+msgstr[0] "已配置 {n} 个应用"
+
+#: src/ui/views/app.slint:3238
+msgid "New"
+msgstr "新建"
+
+#: src/ui/views/app.slint:3274
+msgid "No profiles yet"
+msgstr "尚无配置"
+
+#: src/ui/views/app.slint:3277
+msgid "Create one to override settings for an application."
+msgstr "新建配置可为指定应用覆盖设置。"
+
+#: src/ui/views/app.slint:3278
+msgid "Profiles switch pointer and thumb wheel settings for the active app."
+msgstr "应用配置可随当前应用切换指针速度和拇指滚轮。"
+
+#: src/ui/views/app.slint:3330
+msgid "New profile"
+msgstr "新配置"
+
+#: src/ui/views/app.slint:3332
+msgid "Remove"
+msgstr "移除"
+
+#: src/ui/views/app.slint:3333
+msgid "Add profile"
+msgstr "添加配置"
+
+#: src/ui/views/app.slint:3333
+msgid "Update profile"
+msgstr "更新配置"
+
+#: src/ui/views/app.slint:3337
+msgid "Application match"
+msgstr "应用匹配"
+
+#: src/ui/views/app.slint:3338
+msgid "Match field"
+msgstr "匹配字段"
+
+#: src/ui/views/app.slint:3339
+msgid "Application identifier"
+msgstr "应用标识"
+
+#: src/ui/views/app.slint:3339
+msgid "For example: firefox"
+msgstr "例如：firefox"
+
+#: src/ui/views/app.slint:3341
+msgid "Overrides"
+msgstr "覆盖项"
+
+#: src/ui/views/app.slint:3350 src/ui/views/app.slint:3389
+msgid "Speed"
+msgstr "速度"
+
+#: src/ui/views/app.slint:3361
+msgid "Mode"
+msgstr "模式"
+
+#: src/ui/views/app.slint:3372
+msgid "Scroll behavior"
+msgstr "滚动行为"
+
+#: src/ui/views/app.slint:3376
+msgid "Direction"
+msgstr "方向"
+
+#: src/ui/views/app.slint:3387
+msgid "Behavior"
+msgstr "行为"
+
+#: src/ui/views/app.slint:3436
+msgid "Appearance"
+msgstr "外观"
+
+#: src/ui/views/app.slint:3454
+msgid "Language"
+msgstr "语言"
+
+#: src/ui/views/app.slint:3461
+msgid "Theme"
+msgstr "主题"
+
+#: src/ui/views/app.slint:3469
+msgid "Window"
+msgstr "窗口"
+
+#: src/ui/views/app.slint:3483
+msgid "When closing the window"
+msgstr "关闭窗口时"
+
+#: src/ui/views/app.slint:3490
+msgid "Background"
+msgstr "后台"
+
+#: src/ui/views/app.slint:3520
+msgid "Low battery notifications"
+msgstr "低电量通知"
+
+#: src/ui/views/app.slint:3521
+msgid "Alerts at 20% and 10%"
+msgstr "在 20% 和 10% 时提醒"
+
+#: src/ui/views/app.slint:3546
+msgid "Fully charged notifications"
+msgstr "充满电通知"
+
+#: src/ui/views/app.slint:3547
+msgid "Alerts when charging is complete"
+msgstr "充电完成时提醒"
+
+#: src/ui/views/app.slint:3528
+msgid "Network"
+msgstr "网络"
+
+#: src/ui/views/app.slint:3551
+msgid "Updates"
+msgstr "更新"
+
+#: src/ui/views/app.slint:3680 src/ui/views/loading.slint:50
+msgid "Identifying device…"
+msgstr "正在识别设备…"
+
+#: src/ui/views/app.slint:3682
+msgid "Ready to apply"
+msgstr "可以应用"
+
+#: src/ui/views/app.slint:3682
+msgid "Changes not saved"
+msgstr "更改尚未保存"
+
+#: src/ui/views/app.slint:3683
+msgid "Settings saved"
+msgstr "设置已保存"
+
+#: src/ui/views/app.slint:3696
+msgid "Working…"
+msgstr "正在处理…"
+
+#: src/ui/views/app.slint:3696
+msgid "Apply Changes…"
+msgstr "应用更改…"
+
+#: src/ui/views/app.slint:3705
+msgid "Save Changes"
+msgstr "保存更改"
+
+#: src/ui/views/app.slint:3756
+msgid "Apply Changes"
+msgstr "应用更改"
+
+#: src/ui/views/app.slint:3759
+#, python-brace-format
+msgid "{n} setting · {}"
+msgid_plural "{n} settings · {}"
+msgstr[0] "{n} 项鼠标设置 · {}"
+
+#: src/ui/views/app.slint:3795
+msgid ""
+"You are signed in remotely. Applying changes the mouse connected to this "
+"computer."
+msgstr "当前为远程登录。应用更改将修改这台电脑所连接的鼠标。"
+
+#: src/ui/views/app.slint:3795
+msgid "Dogi adjusts active settings only; it does not update firmware or manage onboard profiles."
+msgstr "Dogi 仅调整当前设置，不会更新固件或管理板载配置。"
+
+#: src/ui/views/app.slint:3811
+msgid "Settings to apply"
+msgstr "即将应用的设置"
+
+#: src/ui/views/app.slint:3814
+#, python-brace-format
+msgid "{n} setting"
+msgid_plural "{n} settings"
+msgstr[0] "{n} 项设置"
+
+#: src/ui/views/app.slint:3853
+msgid "Apply"
+msgstr "应用"
+
+#: src/ui/views/app.slint:3881
+msgid "Revert Unsaved Changes?"
+msgstr "撤销未保存的更改？"
+
+#: src/ui/views/app.slint:3882
+msgid "The saved configuration for this mouse will be restored."
+msgstr "将恢复此鼠标已保存的配置。"
+
+#: src/ui/views/app.slint:3895
+msgid "Unsaved Changes"
+msgstr "未保存的更改"
+
+#: src/ui/views/app.slint:3896
+#, python-brace-format
+msgid "Save your mouse changes before installing Dogi {}? Dogi will restart."
+msgstr "安装 Dogi {} 前保存鼠标更改？Dogi 将重启。"
+
+#: src/ui/views/app.slint:3897
+msgid "Save & Restart"
+msgstr "保存并重启"
+
+#: src/ui/views/app.slint:3898
+msgid "Restart Without Saving"
+msgstr "不保存并重启"
+
+#: src/ui/views/app.slint:3908
+msgid "Quit Without Saving?"
+msgstr "不保存并退出？"
+
+#: src/ui/views/app.slint:3909
+msgid "Unsaved mouse configuration changes will be lost."
+msgstr "未保存的鼠标配置更改将会丢失。"
+
+#: src/ui/views/app.slint:3910
+msgid "Quit Without Saving"
+msgstr "不保存并退出"
+
+#: src/ui/views/app.slint:3936
+msgid "Open dogi"
+msgstr "打开 dogi"
+
+#: src/ui/views/app.slint:3940
+#, python-brace-format
+msgid "Update available · {}"
+msgstr "有可用更新 · {}"
+
+# Slint's built-in text editing menu.
+#: src/ui/views/controls.slint:267
+msgid "Cut"
+msgstr "剪切"
+
+#: src/ui/views/controls.slint:272 src/ui/views/i18n.slint:111
+msgid "Copy"
+msgstr "复制"
+
+#: src/ui/views/controls.slint:277 src/ui/views/i18n.slint:112
+msgid "Paste"
+msgstr "粘贴"
+
+#: src/ui/views/controls.slint:282
+msgid "Select All"
+msgstr "全选"
+
+#: src/ui/views/i18n.slint:14
+msgid "Bluetooth"
+msgstr "蓝牙"
+
+#: src/ui/views/i18n.slint:15
+msgid "Unifying"
+msgstr "Unifying"
+
+#: src/ui/views/i18n.slint:16
+msgid "Bolt"
+msgstr "Bolt"
+
+#: src/ui/views/i18n.slint:17
+msgid "LIGHTSPEED"
+msgstr "LIGHTSPEED"
+
+#: src/ui/views/i18n.slint:18
+msgid "Unknown"
+msgstr "未知"
+
+#: src/ui/views/i18n.slint:22
+msgid "Battery unavailable"
+msgstr "电量不可用"
+
+#: src/ui/views/i18n.slint:23
+#, python-brace-format
+msgid "{}% · Charging"
+msgstr "{}% · 充电中"
+
+#: src/ui/views/i18n.slint:24
+#, python-brace-format
+msgid "{}% · In use"
+msgstr "{}% · 使用中"
+
+#: src/ui/views/i18n.slint:25
+#, python-brace-format
+msgid "{}% · Full"
+msgstr "{}% · 已充满"
+
+#: src/ui/views/i18n.slint:26
+#, python-brace-format
+msgid "{}% · Low"
+msgstr "{}% · 电量低"
+
+#: src/ui/views/i18n.slint:27
+#, python-brace-format
+msgid "{}% · Critical"
+msgstr "{}% · 电量严重不足"
+
+#: src/ui/views/i18n.slint:28
+#, python-brace-format
+msgid "{}% · Offline"
+msgstr "{}% · 离线"
+
+#: src/ui/views/i18n.slint:29
+#, python-brace-format
+msgid "{}%"
+msgstr "{}%"
+
+#: src/ui/views/i18n.slint:42
+#, python-brace-format
+msgid "HID++ {}"
+msgstr "HID++ {}"
+
+#: src/ui/views/i18n.slint:42 src/ui/views/i18n.slint:56
+msgid "HID++ unavailable"
+msgstr "HID++ 不可用"
+
+#: src/ui/views/i18n.slint:47
+msgid "HID device unavailable"
+msgstr "HID 设备不可用"
+
+#: src/ui/views/i18n.slint:49
+msgid "HID access required"
+msgstr "需要 HID 访问权限"
+
+#: src/ui/views/i18n.slint:51
+msgid "Full HID access required"
+msgstr "需要完整 HID 访问权限"
+
+#: src/ui/views/i18n.slint:53
+msgid "Mouse information unavailable"
+msgstr "暂未读取到鼠标信息"
+
+msgid "Mouse configuration busy"
+msgstr "鼠标配置通道繁忙"
+
+msgid "Device query failed"
+msgstr "设备查询失败"
+
+#: src/ui/views/i18n.slint:55
+msgid "Settings unavailable for this mouse"
+msgstr "暂不支持此鼠标的设置"
+
+#: src/ui/views/i18n.slint:61
+#, python-brace-format
+msgid "Run dogi on the host or expose {} to this environment."
+msgstr "请在宿主机运行 dogi，或将 {} 暴露到当前环境。"
+
+#: src/ui/views/i18n.slint:63
+msgid "Install the dogi udev rule, then reconnect the device."
+msgstr "请安装 dogi udev 规则，然后重新连接设备。"
+
+#: src/ui/views/i18n.slint:65
+msgid "Check the mouse connection, then refresh."
+msgstr "检查鼠标连接后刷新。"
+
+msgid "Another operation is using the mouse. Try refreshing shortly."
+msgstr "其他操作正在使用鼠标，请稍后刷新。"
+
+msgid "Dogi could not read the mouse information. Try refreshing."
+msgstr "Dogi 未能读取鼠标信息，请尝试刷新。"
+
+#: src/ui/views/i18n.slint:67
+msgid "Dogi can identify this device, but its settings are not supported yet."
+msgstr "Dogi 可以识别此设备，但暂不支持它的设置。"
+
+#: src/ui/views/i18n.slint:68
+msgid "This device does not expose a compatible configuration endpoint."
+msgstr "此设备未提供兼容的配置端点。"
+
+#: src/ui/views/i18n.slint:72
+#, python-brace-format
+msgid "{n} interface"
+msgid_plural "{n} interfaces"
+msgstr[0] "{n} 个接口"
+
+#: src/ui/views/i18n.slint:76
+#, python-brace-format
+msgid "{n} interface  {}"
+msgid_plural "{n} interfaces  {}"
+msgstr[0] "{n} 个接口  {}"
+
+#: src/ui/views/i18n.slint:82
+msgid "Ratchet"
+msgstr "分段滚动"
+
+#: src/ui/views/i18n.slint:83
+msgid "Free-spin"
+msgstr "自由滚动"
+
+#: src/ui/views/i18n.slint:84
+msgid "SmartShift"
+msgstr "SmartShift"
+
+#: src/ui/views/i18n.slint:88
+msgid "Horizontal Scroll"
+msgstr "横向滚动"
+
+#: src/ui/views/i18n.slint:89
+msgid "Tab Switch"
+msgstr "切换标签页"
+
+#: src/ui/views/i18n.slint:90
+msgid "Zoom"
+msgstr "缩放"
+
+#: src/ui/views/i18n.slint:91
+msgid "Volume"
+msgstr "音量"
+
+#: src/ui/views/i18n.slint:92 src/ui/views/i18n.slint:113
+msgid "Disabled"
+msgstr "已禁用"
+
+#: src/ui/views/i18n.slint:96
+msgid "Back button"
+msgstr "后退键"
+
+#: src/ui/views/i18n.slint:97
+msgid "Forward button"
+msgstr "前进键"
+
+#: src/ui/views/i18n.slint:98
+msgid "Gesture button"
+msgstr "手势键"
+
+#: src/ui/views/i18n.slint:99
+msgid "Mode shift"
+msgstr "模式切换键"
+
+#: src/ui/views/i18n.slint:100
+msgid "Middle click"
+msgstr "中键"
+
+#: src/ui/views/i18n.slint:104 src/ui/views/i18n.slint:120
+msgid "Back"
+msgstr "后退"
+
+#: src/ui/views/i18n.slint:105 src/ui/views/i18n.slint:121
+msgid "Forward"
+msgstr "前进"
+
+#: src/ui/views/i18n.slint:106
+msgid "Activities Overview"
+msgstr "活动概览"
+
+#: src/ui/views/i18n.slint:107
+msgid "Switch Windows"
+msgstr "切换窗口"
+
+#: src/ui/views/i18n.slint:108
+msgid "Previous Workspace"
+msgstr "上一个工作区"
+
+#: src/ui/views/i18n.slint:109
+msgid "Next Workspace"
+msgstr "下一个工作区"
+
+#: src/ui/views/i18n.slint:110 src/ui/views/i18n.slint:123
+msgid "Middle Click"
+msgstr "中键单击"
+
+#: src/ui/views/i18n.slint:114 src/ui/views/i18n.slint:124
+msgid "Default Behavior"
+msgstr "默认行为"
+
+#: src/ui/views/i18n.slint:115
+msgid "Gestures"
+msgstr "手势"
+
+#: src/ui/views/i18n.slint:122
+msgid "Scroll Mode Switch"
+msgstr "滚轮模式切换"
+
+#: src/ui/views/i18n.slint:128
+#, python-brace-format
+msgid "{n} override"
+msgid_plural "{n} overrides"
+msgstr[0] "{n} 项覆盖"
+
+#: src/ui/views/i18n.slint:132
+#, python-brace-format
+msgid "SmartShift {}"
+msgstr "SmartShift {}"
+
+#: src/ui/views/i18n.slint:136
+msgid "Smooth · Natural"
+msgstr "平滑 · 自然"
+
+#: src/ui/views/i18n.slint:137
+msgid "Smooth · Standard"
+msgstr "平滑 · 标准"
+
+#: src/ui/views/i18n.slint:138
+msgid "Normal · Natural"
+msgstr "常规 · 自然"
+
+#: src/ui/views/i18n.slint:139
+msgid "Normal · Standard"
+msgstr "常规 · 标准"
+
+#: src/ui/views/i18n.slint:143
+msgid "Dogi routing"
+msgstr "Dogi 接管"
+
+#: src/ui/views/i18n.slint:143
+msgid "Native routing"
+msgstr "原生处理"
+
+#: src/ui/views/i18n.slint:149
+#, python-brace-format
+msgid "{}% → {}%"
+msgstr "{}% → {}%"
+
+#, python-brace-format
+msgid "{} DPI → {} DPI"
+msgstr "{} DPI → {} DPI"
+
+#: src/ui/views/i18n.slint:151 src/ui/views/i18n.slint:153
+#, python-brace-format
+msgid "{} → {}"
+msgstr "{} → {}"
+
+#: src/ui/views/i18n.slint:161
+#, python-brace-format
+msgid "Set pointer speed to {}%"
+msgstr "将指针速度设为 {}%"
+
+#, python-brace-format
+msgid "Set pointer resolution to {} DPI"
+msgstr "将指针分辨率设为 {} DPI"
+
+#: src/ui/views/i18n.slint:163
+#, python-brace-format
+msgid "Use SmartShift with sensitivity {}"
+msgstr "使用 SmartShift，灵敏度为 {}"
+
+#: src/ui/views/i18n.slint:165
+#, python-brace-format
+msgid "Use {} scrolling"
+msgstr "使用{}"
+
+#: src/ui/views/i18n.slint:167
+msgid "Smooth scrolling · Natural direction"
+msgstr "平滑滚动 · 自然方向"
+
+#: src/ui/views/i18n.slint:169
+msgid "Smooth scrolling · Standard direction"
+msgstr "平滑滚动 · 标准方向"
+
+#: src/ui/views/i18n.slint:171
+msgid "Smooth scrolling off · Natural direction"
+msgstr "平滑滚动关闭 · 自然方向"
+
+#: src/ui/views/i18n.slint:173
+msgid "Smooth scrolling off · Standard direction"
+msgstr "平滑滚动关闭 · 标准方向"
+
+#: src/ui/views/i18n.slint:175
+msgid "Enable smooth scrolling"
+msgstr "开启平滑滚动"
+
+#: src/ui/views/i18n.slint:177
+msgid "Disable smooth scrolling"
+msgstr "关闭平滑滚动"
+
+#: src/ui/views/i18n.slint:179
+msgid "Use natural scroll direction"
+msgstr "使用自然方向"
+
+#: src/ui/views/i18n.slint:181
+msgid "Use standard scroll direction"
+msgstr "使用标准方向"
+
+#: src/ui/views/i18n.slint:183
+msgid "Use native horizontal scrolling"
+msgstr "使用原生横向滚动"
+
+#: src/ui/views/i18n.slint:185
+#, python-brace-format
+msgid "Use horizontal scrolling at {}% through Dogi"
+msgstr "通过 Dogi 使用横向滚动，速度 {}%"
+
+#: src/ui/views/i18n.slint:187
+#, python-brace-format
+msgid "Route thumb wheel through Dogi for {}"
+msgstr "由 Dogi 接管拇指滚轮并用于{}"
+
+#: src/ui/views/i18n.slint:189
+#, python-brace-format
+msgid "Route {} through dogi for {}"
+msgstr "由 Dogi 接管{}并执行{}"
+
+#: src/ui/views/i18n.slint:191
+#, python-brace-format
+msgid "Use native behavior for {}"
+msgstr "{}使用鼠标默认行为"
+
+#: src/ui/views/i18n.slint:193
+msgid "Run the local runtime listener"
+msgstr "运行本地操作监听器"
+
+#: src/ui/views/i18n.slint:194
+#, python-brace-format
+msgid "Save local app profile {}"
+msgstr "保存本地应用配置 {}"
+
+#: src/ui/views/i18n.slint:201
+#, python-brace-format
+msgid "Applied with {} failed, {} successful, {} unsupported"
+msgstr "应用完成：{} 项失败，{} 项成功，{} 项不受支持"
+
+#: src/ui/views/i18n.slint:203
+#, python-brace-format
+msgid "Applied {} settings, {} unsupported"
+msgstr "已应用 {} 项设置，{} 项不受支持"
+
+#: src/ui/views/i18n.slint:204
+#, python-brace-format
+msgid "Applied {} settings"
+msgstr "已应用 {} 项设置"
+
+#: src/ui/views/i18n.slint:208
+msgid "Device scanner stopped unexpectedly"
+msgstr "设备扫描器意外停止"
+
+#: src/ui/views/i18n.slint:209
+#, python-brace-format
+msgid "Scan failed: {}"
+msgstr "扫描失败：{}"
+
+#: src/ui/views/i18n.slint:210
+msgid "No Logitech devices found"
+msgstr "未发现 Logitech 设备"
+
+#: src/ui/views/i18n.slint:211
+msgid "Scanning devices…"
+msgstr "正在扫描设备…"
+
+#: src/ui/views/i18n.slint:212
+#, python-brace-format
+msgid "Scan failed to start: {}"
+msgstr "无法启动扫描：{}"
+
+#: src/ui/views/i18n.slint:213
+#, python-brace-format
+msgid "Editing {}"
+msgstr "正在配置 {}"
+
+#: src/ui/views/i18n.slint:214
+msgid "Changes reverted"
+msgstr "已撤销更改"
+
+#: src/ui/views/i18n.slint:215
+msgid "Changes saved"
+msgstr "更改已保存"
+
+#: src/ui/views/i18n.slint:217
+msgid "Changes saved. Apply them when the mouse is available."
+msgstr "更改已保存，可在鼠标可用时应用。"
+
+#: src/ui/views/i18n.slint:218
+#, python-brace-format
+msgid "Save failed: {}"
+msgstr "保存失败：{}"
+
+#: src/ui/views/i18n.slint:219
+msgid "Enter an app name"
+msgstr "请输入应用名称"
+
+#: src/ui/views/i18n.slint:220
+#, python-brace-format
+msgid "App profile {} was not found"
+msgstr "未找到应用配置 {}"
+
+#: src/ui/views/i18n.slint:221
+msgid "Connect a supported mouse with full HID access to apply settings"
+msgstr "请连接受支持且具备完整 HID 访问权限的鼠标"
+
+#: src/ui/views/i18n.slint:222
+#, python-brace-format
+msgid "Connect the mouse to apply {n} setting"
+msgid_plural "Connect the mouse to apply {n} settings"
+msgstr[0] "连接鼠标后可应用这 {n} 项设置"
+
+#: src/ui/views/i18n.slint:223
+#, python-brace-format
+msgid "Applying {n} setting is unavailable"
+msgid_plural "Applying {n} settings is unavailable"
+msgstr[0] "暂时无法应用这 {n} 项设置"
+
+#: src/ui/views/i18n.slint:224
+msgid "Reading current mouse settings…"
+msgstr "正在读取鼠标当前设置…"
+
+#: src/ui/views/i18n.slint:225
+msgid "Applying and verifying mouse settings…"
+msgstr "正在应用并验证鼠标设置…"
+
+#: src/ui/views/i18n.slint:226
+#, python-brace-format
+msgid "Review {n} mouse setting"
+msgid_plural "Review {n} mouse settings"
+msgstr[0] "请检查 {n} 项鼠标设置"
+
+#: src/ui/views/i18n.slint:228
+#, python-brace-format
+msgid "{} · Settings saved"
+msgstr "{} · 设置已保存"
+
+#: src/ui/views/i18n.slint:231
+#, python-brace-format
+msgid "Could not apply settings: {}. Your changes were saved."
+msgstr "无法应用设置：{}。更改已保存。"
+
+#: src/ui/views/i18n.slint:233
+#, python-brace-format
+msgid "Apply failed: {}"
+msgstr "应用失败：{}"
+
+#: src/ui/views/i18n.slint:235
+msgid "The mouse changed after review. No settings were written; review and try again."
+msgstr "鼠标状态在确认后发生了变化。未写入任何设置；请重新检查后再试。"
+
+#: src/ui/views/i18n.slint:237
+msgid "The settings could not be applied. The original mouse settings were restored."
+msgstr "设置未能应用，已恢复鼠标原有设置。"
+
+#: src/ui/views/i18n.slint:239
+#, python-brace-format
+msgid "Some mouse settings still need recovery: {}"
+msgstr "部分鼠标设置仍需恢复：{}"
+
+#: src/ui/views/i18n.slint:241
+msgid "Some mouse settings could not be restored. Keep the mouse connected and try again."
+msgstr "部分鼠标设置无法恢复。请保持鼠标连接后重试。"
+
+#: src/ui/views/i18n.slint:243
+#, python-brace-format
+msgid "Could not save application settings: {}"
+msgstr "无法保存应用设置：{}"
+
+#: src/ui/views/i18n.slint:245
+#, python-brace-format
+msgid "Could not load application settings: {}"
+msgstr "无法读取应用设置：{}"
+
+#: src/ui/views/i18n.slint:247
+#, python-brace-format
+msgid "Could not switch language: {}"
+msgstr "无法切换语言：{}"
+
+#: src/ui/views/i18n.slint:249
+#, python-brace-format
+msgid "System tray is unavailable: {}"
+msgstr "系统托盘不可用：{}"
+
+#: src/ui/views/i18n.slint:251
+msgid "System tray is unavailable"
+msgstr "系统托盘不可用"
+
+#, python-brace-format
+msgid "Could not stop the horizontal scroll test, so Dogi will stay open: {}"
+msgstr "无法停止横向滚动测试，因此 Dogi 将保持运行：{}"
+
+msgid "Could not stop the horizontal scroll test, so Dogi will stay open"
+msgstr "无法停止横向滚动测试，因此 Dogi 将保持运行"
+
+msgid "Dogi could not confirm that the horizontal scroll test stopped, so it will stay open"
+msgstr "Dogi 无法确认横向滚动测试已停止，因此将保持运行"

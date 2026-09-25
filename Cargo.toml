@@ -1,26 +1,16 @@
-[workspace]
-resolver = "3"
-members = [
-    "crates/dogi",
-    "crates/dogi-core",
-    "crates/dogi-hid",
-    "crates/dogi-ui",
-]
-default-members = ["crates/dogi"]
-
-[workspace.package]
+[package]
+name = "dogi"
 version = "0.1.17"
 edition = "2024"
 rust-version = "1.98"
 license = "Apache-2.0"
 homepage = "https://github.com/oksyd/dogi"
 repository = "https://github.com/oksyd/dogi"
+description = "Linux desktop application for configuring Logitech mice"
+readme = "README.md"
+include = ["src/**", "build.rs", "packaging/linux/**", "packaging/release-signers", "README.md", "LICENSE"]
 
-[workspace.dependencies]
-dogi-core = { version = "0.1.17", path = "crates/dogi-core", default-features = false }
-dogi-hid = { version = "0.1.17", path = "crates/dogi-hid", default-features = false }
-dogi-ui = { version = "0.1.17", path = "crates/dogi-ui", default-features = false }
-
+[dependencies]
 clap = { version = "4.6.6", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
 serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
 serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
@@ -37,23 +27,24 @@ zstd = { version = "0.14.0", default-features = false }
 zbus = { version = "5.19.0", default-features = false, features = ["async-io", "blocking-api"] }
 
 slint = { version = "1.17.1", default-features = false, features = ["accessibility", "backend-winit", "compat-1-2", "renderer-femtovg", "renderer-software", "std", "system-tray"] }
+
+[build-dependencies]
 slint-build = { version = "1.17.1", default-features = false, features = ["default"] }
 
+[dev-dependencies]
 slint-snapshot = { version = "0.1.1", default-features = false }
 
-[workspace.lints.rust]
+[lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 unused_must_use = "deny"
 
-[workspace.lints.clippy]
+[lints.clippy]
 dbg_macro = "deny"
 todo = "deny"
 undocumented_unsafe_blocks = "deny"
 unimplemented = "deny"
 
-[workspace.metadata.release]
-shared-version = true
-consolidate-commits = true
+[package.metadata.release]
 publish = false
 tag-prefix = ""
 tag-name = "{{prefix}}{{version}}"
@@ -67,5 +58,5 @@ pre-release-hook = [
     "{{version}}",
 ]
 pre-release-replacements = [
-    { file = "../../packaging/linux/io.github.oksyd.dogi.metainfo.xml", search = '<release version="[^"]+" date="[0-9]{4}-[0-9]{2}-[0-9]{2}" type="development">', replace = '<release version="{{version}}" date="{{date}}" type="development">', exactly = 1 },
+    { file = "packaging/linux/io.github.oksyd.dogi.metainfo.xml", search = '<release version="[^"]+" date="[0-9]{4}-[0-9]{2}-[0-9]{2}" type="development">', replace = '<release version="{{version}}" date="{{date}}" type="development">', exactly = 1 },
 ]
