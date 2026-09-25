@@ -1,22 +1,261 @@
 name: Release
+run-name: ${{ github.event_name == 'workflow_run' && format('Resume releases after CI {0}', github.event.workflow_run.id) || format('Release {0}', github.ref_name) }}
 
 on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Signed stable release tag to recover
-        required: true
-        type: string
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
 
 permissions: {}
 
 concurrency:
-  group: release-${{ inputs.tag }}
+  group: release-${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || github.ref }}
   cancel-in-progress: false
 
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
 jobs:
+  resume:
+    name: Resume tagged release after CI
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Check out trusted release policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Dispatch release at its signed tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          tags=$(git tag --points-at "$RELEASE_COMMIT")
+          while IFS= read -r tag; do
+            [[ "$tag" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || continue
+            git -c gpg.format=ssh \
+              -c gpg.ssh.allowedSignersFile="$GITHUB_WORKSPACE/packaging/release-signers" \
+              verify-tag "$tag"
+            gh workflow run release.yml --ref "$tag"
+          done <<< "$tags"
+
+  prepare:
+    name: Verify tag and resolve quality checks
+    if: github.event_name != 'workflow_run'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      commit: ${{ steps.tag.outputs.commit }}
+      decision: ${{ steps.ci.outputs.decision }}
+    steps:
+      - name: Check out trusted release policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify release tag
+        id: tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          if [[ "$RELEASE_REF_TYPE" != tag || ! "$RELEASE_TAG" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "run this workflow at an unprefixed stable version tag, or rerun its existing release run" >&2
+            exit 1
+          fi
+          git -c gpg.format=ssh \
+            -c gpg.ssh.allowedSignersFile="$GITHUB_WORKSPACE/packaging/release-signers" \
+            verify-tag "$RELEASE_TAG"
+          tag_commit=$(git rev-list -n 1 "$RELEASE_TAG")
+          if [[ "$tag_commit" != "$RELEASE_COMMIT" ]]; then
+            echo "release tag no longer matches the triggering commit" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
+            echo "release commit must belong to main" >&2
+            exit 1
+          fi
+          printf 'tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          printf 'commit=%s\n' "$tag_commit" >> "$GITHUB_OUTPUT"
+
+      - name: Skip existing release assets
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          releases=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100")
+          complete=$(jq --arg tag "$RELEASE_TAG" '
+            any(.[][]; .tag_name == $tag and
+              (.draft == false or
+                ([.assets[].name] | sort) ==
+                (["SHA256SUMS", "dogi-\($tag)-x86_64-unknown-linux-gnu.tar.zst", "dogi_\($tag)_amd64.deb"] | sort)))
+          ' <<< "$releases")
+          printf 'complete=%s\n' "$complete" >> "$GITHUB_OUTPUT"
+          if [[ "$complete" == true ]]; then
+            echo "Release assets already exist; skipping duplicate build." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Resolve main CI without waiting
+        id: ci
+        if: steps.existing.outputs.complete != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ steps.tag.outputs.commit }}
+        run: |
+          runs=$(gh api --method GET --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f branch=main -f event=push -f head_sha="$RELEASE_COMMIT" -f per_page=100)
+          state=$(jq -r --arg commit "$RELEASE_COMMIT" --arg repo "$GITHUB_REPOSITORY" '
+            [.[] | .workflow_runs[] | select(.head_sha == $commit and .head_branch == "main" and
+              .event == "push" and .head_repository.full_name == $repo)] | max_by(.id) |
+            if . == null then "missing"
+            elif .status != "completed" then "pending"
+            elif .conclusion == "success" then "success"
+            else "failed" end
+          ' <<< "$runs")
+          case "$state" in
+            success) echo 'decision=reuse' >> "$GITHUB_OUTPUT" ;;
+            missing) echo 'decision=check' >> "$GITHUB_OUTPUT" ;;
+            pending)
+              echo 'decision=defer' >> "$GITHUB_OUTPUT"
+              echo "Main CI is running; its completion event will resume this release." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *) echo "Main CI failed; rerun or fix CI before releasing." >&2; exit 1 ;;
+          esac
+
+  quality:
+    name: Required quality checks
+    needs: prepare
+    if: needs.prepare.outputs.decision == 'check'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    name: Package
+    needs: [prepare, quality]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && (needs.prepare.outputs.decision == 'reuse' || needs.quality.result == 'success') }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            binutils \
+            dpkg-dev \
+            libfontconfig1-dev \
+            libglib2.0-dev \
+            zstd
+
+      - name: Prepare Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Restore Cargo sources
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-sources-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-sources-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Restore release build cache
+        id: cargo-release
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/release/
+          key: cargo-build-v2-ubuntu-26.04-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-release-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: |
+            cargo-build-v2-ubuntu-26.04-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-release-
+
+      - name: Build release assets
+        env:
+          DOGI_RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: ./packaging/build-release.sh
+
+      - name: Inspect Debian package
+        run: |
+          dpkg-deb --info dist/*.deb
+          dpkg-deb --contents dist/*.deb
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          LC_ALL=C find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' \
+            | sort \
+            | xargs sha256sum > SHA256SUMS
+
+      - name: Save release build cache
+        if: steps.cargo-release.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: target/release/
+          key: ${{ steps.cargo-release.outputs.cache-primary-key }}
+
+      - name: Attest release assets
+        if: github.event.repository.visibility == 'public'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.deb
+            dist/*.tar.zst
+
+      - name: Upload package artifacts
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dogi-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
   promote:
-    name: Promote verified CI assets
+    name: Create draft release
+    needs: [prepare, package]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.package.result == 'success' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
@@ -27,7 +266,7 @@ jobs:
       attestations: read
       contents: write
     steps:
-      - name: Check out tagged source
+      - name: Check out trusted release signers
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -37,7 +276,8 @@ jobs:
       - name: Verify release tag
         id: tag
         env:
-          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
         run: |
           if [[ ! "$RELEASE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "release tag must be an unprefixed stable version: $RELEASE_TAG" >&2
@@ -47,45 +287,22 @@ jobs:
             -c gpg.ssh.allowedSignersFile="$GITHUB_WORKSPACE/packaging/release-signers" \
             verify-tag "$RELEASE_TAG"
           tag_commit=$(git rev-list -n 1 "$RELEASE_TAG")
-          printf 'tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          printf 'commit=%s\n' "$tag_commit" >> "$GITHUB_OUTPUT"
-          git -c advice.detachedHead=false checkout --detach "$tag_commit"
-
-      - name: Resolve successful main CI
-        id: ci
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_COMMIT: ${{ steps.tag.outputs.commit }}
-        run: |
-          run_id=$(
-            gh api \
-              --method GET \
-              --header 'Accept: application/vnd.github+json' \
-              --header 'X-GitHub-Api-Version: 2026-03-10' \
-              "repos/$GH_REPO/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&head_sha=$RELEASE_COMMIT&per_page=100" \
-              --jq '.workflow_runs[0].id // empty'
-          )
-          if [[ -z "$run_id" ]]; then
-            echo "no successful main CI run exists for release commit $RELEASE_COMMIT" >&2
-            echo "wait for that commit's CI workflow to succeed, then rerun this workflow" >&2
+          if [[ "$tag_commit" != "$RELEASE_COMMIT" ]]; then
+            echo "release tag moved after verification" >&2
             exit 1
           fi
-          printf 'run-id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
 
-      - name: Download verified CI artifact
+      - name: Download release artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: dogi-release-${{ steps.tag.outputs.commit }}
+          artifact-ids: ${{ needs.package.outputs.artifact-id }}
           path: dist
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.ci.outputs.run-id }}
+          merge-multiple: true
           digest-mismatch: error
 
       - name: Verify release assets
         env:
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           expected_portable="dogi-$RELEASE_TAG-x86_64-unknown-linux-gnu.tar.zst"
           expected_debian="dogi_${RELEASE_TAG}_amd64.deb"
@@ -116,14 +333,15 @@ jobs:
         if: github.event.repository.visibility == 'public'
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_COMMIT: ${{ steps.tag.outputs.commit }}
+          RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           for asset in dist/*.deb dist/*.tar.zst; do
             gh attestation verify "$asset" \
               --repo "$GITHUB_REPOSITORY" \
-              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
               --source-digest "$RELEASE_COMMIT" \
-              --source-ref refs/heads/main \
+              --source-ref "refs/tags/$RELEASE_TAG" \
               --deny-self-hosted-runners
           done
 
@@ -131,7 +349,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             is_draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')

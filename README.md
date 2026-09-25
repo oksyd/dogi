@@ -1,111 +1,43 @@
 # Dogi
 
-Dogi is a Linux desktop application for configuring Logitech mice, currently focused on the
-MX Master 3S. It provides a Slint GUI, direct HID++ device access, and a local runtime for custom
-actions.
+Dogi is a Linux desktop application for configuring Logitech mice, with a focus on the
+MX Master 3S. It brings device settings, custom actions, and battery monitoring together in a
+native desktop interface.
 
 ## Features
 
-- Multi-device profiles with independent drafts and settings.
-- Pointer speed, scroll wheel, thumb wheel, button, and application-profile controls.
-- Five-way gesture assignments with an in-app gesture test surface.
-- Device identity, capability, connection, and battery detection through HID++.
-- Explicit, diff-only device writes with confirmation before changes are applied.
-- Custom keyboard and mouse actions through Linux `uinput`.
-- System tray integration, background runtime management, and English/Chinese UI.
-- Verified updates from immutable GitHub Releases with system, direct, and manual proxy modes.
+### Mouse settings
 
-## Build and run
+- Adjust pointer speed, scroll wheel behavior, and thumb wheel scrolling speed.
+- Assign button actions, keyboard shortcuts, and five-way gestures.
+- Test thumb wheel scrolling and gesture assignments directly in the app.
 
-```bash
-cargo build
-./target/debug/dogi
-```
+### Devices and profiles
 
-Running `dogi` without a command opens the GUI. Run it as the desktop user; root is only required
-to install the device-access rules.
+- Keep independent settings and unsaved changes for each device.
+- Create application-specific profiles, with automatic switching on X11.
+- View device identity, connection state, available capabilities, and battery status.
+- Receive desktop notifications for low battery and a full charge.
 
-```bash
-sudo ./target/debug/dogi udev install
-sudo udevadm control --reload-rules
-sudo udevadm trigger --subsystem-match=hidraw
-sudo udevadm trigger --subsystem-match=misc
-```
+### Desktop integration
 
-Reconnect the receiver or mouse after installing the rules. Use `dogi doctor` to verify access to
-`hidraw`, `uinput`, active-window detection, and the user service.
+- Run in the system tray and manage background actions from the app.
+- Choose an English or Chinese interface.
+- Check for and install updates, with system, direct, or custom proxy settings.
 
-## Common commands
+## Settings and safety
 
-```bash
-dogi list
-dogi inspect <device-id>
-dogi doctor
-dogi config show
-dogi config plan
-dogi runtime plan
-dogi service print
-```
+Saving a profile and applying device settings are separate operations. Dogi previews pending
+changes and requests confirmation before applying only the modified device settings.
 
-Run `dogi <command> --help` for complete options.
+Custom actions and software-controlled thumb wheel behavior run locally through the background
+runtime. Dogi does not update device firmware or manage onboard-profile memory.
 
-## Configuration safety
+## Compatibility
 
-Saving stores the selected profile locally. Applying is a separate confirmed operation that writes
-only changed HID++ setting groups. CLI writes additionally require `--allow-device-write`.
+Dogi currently targets the MX Master 3S on Linux. Available controls depend on the connected
+device's capabilities and access permissions; support for other Logitech models is not guaranteed.
 
-Dogi does not manage Logitech onboard-profile memory. Custom actions and non-native thumb-wheel
-behavior are implemented locally through the background runtime and `uinput`.
-
-## Configuration files
-
-Installed and portable releases store configuration under `$XDG_CONFIG_HOME/dogi`, or
-`$HOME/.config/dogi` when `XDG_CONFIG_HOME` is unset:
-
-- `config.json` — application, update, and non-secret network preferences.
-- `master3s.json` — default and per-device mouse profiles.
-
-Configuration writes use atomic replacement. Unsupported or malformed schemas are preserved as a
-timestamped backup, then replaced with current defaults and reported in the UI. Authenticated proxy
-passwords are stored in the desktop keyring, never in `config.json`.
-
-Local Cargo builds, including `--release` builds, use an isolated `dogi-development` namespace for
-configuration, cache, runtime sockets, and the GUI instance lock. They never install or rewrite the
-release background service, and automatic updates are disabled. To exercise runtime actions during
-development, start the foreground runtime explicitly in another terminal:
-
-```bash
-cargo run -- runtime run --execute-actions --allow-device-write
-```
-
-Only one action runtime can own `uinput` at a time. Stop the installed Dogi runtime before starting
-the development runtime; Dogi reports the conflict instead of taking it over.
-
-## Desktop integration
-
-The Debian package ships a fixed systemd user unit that runs `/usr/bin/dogi`; the GUI only enables,
-disables, or restarts it. Portable installations create their user unit only after background
-operations are explicitly enabled. Unmanaged and development binaries do not create persistent
-services.
-
-X11 application matching uses `xprop`. Wayland does not expose an equivalent global active-window
-API, so profiles can be edited there but automatic profile switching remains unavailable.
-
-## UI previews
-
-UI tests render in memory without a desktop session. CI checks representative states without
-saving or uploading screenshots; no PNG baselines or pixel comparisons are maintained.
-To export a local preview:
-
-```bash
-FONTCONFIG_FILE="$PWD/crates/dogi-ui/tests/preview-fontconfig.conf" \
-DOGI_UI_SNAPSHOT="$PWD/target/ui-previews/default.png" \
-cargo test --locked --package dogi-ui --lib tests::renders_preview -- --exact
-```
-
-## Releases
-
-Run `just patch` to bump the version and push the signed release tag. CI builds and verifies the
-packages, then creates a draft GitHub Release for the maintainer to review and publish manually.
-No additional release signing key is required. In-app updates verify the existing Git tag
-signature and the immutable GitHub Release asset's size and SHA-256 digest before installation.
+On Wayland, application profiles can be edited, but automatic application-profile switching is
+currently unavailable. Device configuration and software actions require access to the relevant
+HID and input interfaces.
