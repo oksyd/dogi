@@ -6,28 +6,25 @@ use std::time::Duration;
 
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 use dogi_core::{
-    Action, ActiveApplication, AppProfile, AppProfileOverrides, ApplicationMatchField,
-    ApplicationMatcher, ButtonAction, CapabilityState, DeviceInfo, DogiError, GestureBindings,
-    GestureDirection, HidppFeature, LOGITECH_VENDOR_ID, LocalRuntimePlan, Master3sButton,
-    Master3sRuntimeEvent, Master3sSettings, ResolvedRuntimeAction, Result, RuntimeActionResolver,
-    RuntimeActionSource, SettingsApplyPlan, SettingsApplyReport, SettingsApplyStatus,
-    ThumbWheelMode, ThumbWheelRuntimeAction, WheelRatchetMode, build_master3s_apply_plan,
-    build_master3s_device_diff_plan, build_master3s_runtime_plan, device_settings_id,
-    effective_master3s_settings_for_app, resolved_logitech_device_name, settings_apply_step_scope,
+    Action, AppProfile, AppProfileOverrides, ApplicationMatchField, ApplicationMatcher,
+    ButtonAction, CapabilityState, DeviceInfo, DogiError, GestureBindings, GestureDirection,
+    LOGITECH_VENDOR_ID, LocalRuntimePlan, Master3sButton, Master3sRuntimeEvent, Master3sSettings,
+    ResolvedRuntimeAction, Result, RuntimeActionResolver, RuntimeActionSource, SettingsApplyPlan,
+    SettingsApplyReport, SettingsApplyStatus, ThumbWheelMode, WheelRatchetMode,
+    build_master3s_runtime_plan, device_settings_id, resolved_logitech_device_name,
+    settings_apply_step_scope,
 };
 
 use crate::application;
-use crate::config::application::ApplicationConfigStore;
 use crate::device::DeviceService;
 use crate::environment::AppEnvironment;
 use crate::runtime::UINPUT_PATH;
-use crate::runtime::battery::BatteryNotificationMonitor;
 use crate::runtime::lock::ProcessLock;
-use crate::runtime::session::{SessionObserver, SessionSnapshot};
+use crate::runtime::service as runtime_service;
+use crate::runtime::session::SessionObserver;
 use crate::runtime::{
     RuntimeActionExecution, SystemRuntimeActionExecutor, execute_runtime_actions_guarded_with,
 };
-use crate::runtime::{control as runtime_control, service as runtime_service};
 
 #[cfg(test)]
 use crate::runtime::actions::RuntimeActionExecutionStatus;
@@ -36,7 +33,6 @@ const LINUX_UDEV_RULE_PATH: &str = "/etc/udev/rules.d/70-dogi-logitech.rules";
 const LINUX_UDEV_RULE: &str = include_str!("../assets/linux/70-dogi-logitech.rules");
 const LINUX_UDEV_RELOAD_HINT: &str = "sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=hidraw && sudo udevadm trigger --subsystem-match=misc";
 const LINUX_UINPUT_HINT: &str = "Dogi custom actions need write access to /dev/uinput";
-const PREVIEW_DIVERSION_SPEED_PERCENT: u16 = 101;
 
 #[derive(Debug, Parser)]
 #[command(name = "dogi")]
@@ -426,8 +422,15 @@ pub fn run() -> ExitCode {
 }
 
 fn execute(cli: Cli) -> Result<()> {
+    let command = command_or_default(cli);
+    if crate::desktop::context::running_as_root() && command_uses_desktop_state(&command) {
+        return Err(DogiError::InvalidArgument(
+            "run configuration, runtime, service, and GUI commands as the desktop user; use sudo only for `dogi udev install` or `dogi udev uninstall`"
+                .to_owned(),
+        ));
+    }
     let environment = AppEnvironment::detect()?;
-    match command_or_default(cli) {
+    match command {
         Command::List(args) => list_devices(args),
         Command::Inspect(args) => inspect_device(args),
         Command::Doctor(args) => doctor(args, &environment),
@@ -437,6 +440,13 @@ fn execute(cli: Cli) -> Result<()> {
         Command::Udev(args) => udev(args),
         Command::Gui => application::launch_gui(&environment),
     }
+}
+
+fn command_uses_desktop_state(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Config(_) | Command::Runtime(_) | Command::Service(_) | Command::Gui
+    )
 }
 
 fn command_or_default(cli: Cli) -> Command {
@@ -749,10 +759,7 @@ fn runtime_listen(
         .iter()
         .flat_map(|event| resolver.resolve(&runtime_plan, event))
         .collect::<Vec<_>>();
-    let executions = if args.execute_actions {
-        let observer = session_observer
-            .as_ref()
-            .expect("action execution creates a session observer");
+    let executions = if let Some(observer) = &session_observer {
         let snapshot = observer.snapshot();
         if snapshot.actions_paused() {
             return Err(DogiError::BackendUnavailable(snapshot.detail));
@@ -790,517 +797,24 @@ fn runtime_run(
     daemon: &DeviceService,
     environment: &AppEnvironment,
 ) -> Result<()> {
-    let _runtime_lock =
-        ProcessLock::acquire(&environment.paths.global_runtime_lock, "action runtime")?;
-    let preview_state = runtime_control::RuntimePreviewState::start(&environment.paths)?;
-    let session_observer = SessionObserver::start();
-    let application_store = ApplicationConfigStore::for_environment(environment);
-    let battery_state_path = environment.paths.battery_notification_state();
-    let mut battery_monitor = BatteryNotificationMonitor::load(battery_state_path.clone())
-        .unwrap_or_else(|error| {
-            eprintln!("battery notification state was reset: {error}");
-            BatteryNotificationMonitor::empty(battery_state_path)
-        });
-    if args.max_events.is_some() {
-        loop {
-            match runtime_run_session(
-                &args,
-                &preview_state,
-                &session_observer,
-                &application_store,
-                &mut battery_monitor,
-                daemon,
-            )? {
-                RuntimeSessionOutcome::Completed => return Ok(()),
-                RuntimeSessionOutcome::SwitchDevice => continue,
-            }
-        }
-    }
-
-    let mut previous_error = String::new();
-    let mut repeated_failures = 0_u32;
-    loop {
-        match runtime_run_session(
-            &args,
-            &preview_state,
-            &session_observer,
-            &application_store,
-            &mut battery_monitor,
-            daemon,
-        ) {
-            Ok(RuntimeSessionOutcome::Completed) => return Ok(()),
-            Ok(RuntimeSessionOutcome::SwitchDevice) => continue,
-            Err(error) => {
-                let detail = error.to_string();
-                preview_state.fail_pending(detail.clone());
-                if detail == previous_error {
-                    repeated_failures = repeated_failures.saturating_add(1);
-                    if repeated_failures.is_multiple_of(20) {
-                        eprintln!(
-                            "Dogi runtime is still waiting to reconnect ({repeated_failures} attempts): {detail}"
-                        );
-                    }
-                } else {
-                    eprintln!("Dogi runtime is waiting to reconnect: {detail}");
-                    previous_error = detail;
-                    repeated_failures = 1;
-                }
-                std::thread::sleep(Duration::from_secs(3));
-            }
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RuntimeSessionOutcome {
-    Completed,
-    SwitchDevice,
-}
-
-fn runtime_run_session(
-    args: &RuntimeRunArgs,
-    preview_state: &runtime_control::RuntimePreviewState,
-    session_observer: &SessionObserver,
-    application_store: &ApplicationConfigStore,
-    battery_monitor: &mut BatteryNotificationMonitor,
-    daemon: &DeviceService,
-) -> Result<RuntimeSessionOutcome> {
-    let preview_device_id = preview_state
-        .snapshot()
-        .preview
-        .map(|preview| preview.device_id);
-    let requested_device_id = args.device_id.as_deref().or(preview_device_id.as_deref());
-    let device_id = resolve_runtime_device_id(daemon, requested_device_id)?;
-    let device = daemon.find_device(&device_id)?;
-    let settings_id = device_settings_id(&device);
-    let device_name = display_device_name(&device).to_owned();
-    battery_monitor.activate(&settings_id);
-    let mut base_settings = daemon.load_master3s_settings_for_device(&settings_id)?;
-    let idle_timeout = Duration::from_millis(args.idle_timeout_ms);
-    let mut processed_events = 0_usize;
-    let mut focus_warning_printed = false;
-    let mut settings_warning_printed = false;
-    let mut active_effective_state = RuntimeEffectiveState::default();
-    let mut preview_error: Option<(u64, String)> = None;
-    let mut battery_config_warning = String::new();
-    let mut battery_runtime_warning = String::new();
-    let mut battery_language = application_store.default_preferences().language;
-    let mut listener = daemon.open_master3s_runtime_event_listener(&device_id)?;
-    let mut action_executor = None;
-    let mut action_resolver = RuntimeActionResolver::default();
-    let mut session_generation = 0_u64;
-
-    println!("Runtime service for {device_id}");
-    println!(
-        "  mode: actions {}, device writes {}",
-        if args.execute_actions {
-            "enabled"
-        } else {
-            "dry-run"
+    crate::runtime::supervisor::run(
+        crate::runtime::supervisor::RuntimeSupervisorOptions {
+            device_id: args.device_id,
+            max_events: args.max_events,
+            idle_timeout: Duration::from_millis(args.idle_timeout_ms),
+            execute_actions: args.execute_actions,
+            allow_device_write: args.allow_device_write,
         },
-        if args.allow_device_write {
-            "enabled"
-        } else {
-            "disabled"
-        }
-    );
-
-    if args.max_events == Some(0) {
-        return Ok(RuntimeSessionOutcome::Completed);
-    }
-
-    loop {
-        if reload_runtime_base_settings(
-            daemon,
-            &settings_id,
-            &mut base_settings,
-            &mut settings_warning_printed,
-        ) {
-            println!("  settings reloaded");
-        }
-
-        let session_snapshot = session_observer.snapshot();
-        synchronize_runtime_session(
-            &session_snapshot,
-            &mut session_generation,
-            &mut action_resolver,
-            &mut action_executor,
-        );
-        let policy = session_snapshot.policy();
-        let active_application = policy
-            .apply_automatic_device_changes
-            .then(|| runtime_active_application(daemon, &mut focus_warning_printed))
-            .flatten();
-        let effective =
-            effective_master3s_settings_for_app(&base_settings, active_application.as_ref());
-        let matched_profile_name = effective
-            .matched_profile
-            .as_ref()
-            .map(|profile| profile.name.clone());
-        let preview_snapshot = preview_state.snapshot();
-        if preview_error
-            .as_ref()
-            .is_some_and(|(generation, _)| *generation != preview_snapshot.generation)
-        {
-            preview_error = None;
-        }
-        let requested_preview = preview_snapshot
-            .preview
-            .as_ref()
-            .filter(|preview| preview.device_id == device_id);
-        let active_preview = requested_preview.filter(|_| policy.preview_local_actions);
-        if requested_preview.is_some() && !policy.preview_local_actions {
-            preview_state
-                .publish_failed(preview_snapshot.generation, session_snapshot.detail.clone());
-        }
-        if let Some(preview) = preview_snapshot
-            .preview
-            .as_ref()
-            .filter(|preview| preview.device_id != device_id)
-        {
-            if args.device_id.is_none() {
-                return Ok(RuntimeSessionOutcome::SwitchDevice);
-            }
-            preview_state.publish_failed(
-                preview_snapshot.generation,
-                format!(
-                    "preview device {} is not the active runtime device {}",
-                    preview.device_id, device_id
-                ),
-            );
-        }
-
-        let device_settings = runtime_device_settings(&effective.settings, active_preview);
-        let profile_changed = policy.apply_automatic_device_changes
-            && active_effective_state.profile_name.as_deref() != matched_profile_name.as_deref();
-        if profile_changed {
-            action_resolver.reset();
-        }
-        let preview_transition = policy.preview_local_actions
-            && active_effective_state.preview_active != active_preview.is_some();
-        let mut preview_apply_failed = false;
-        let device_apply_needed = profile_changed || preview_transition;
-        if device_apply_needed {
-            if profile_changed && policy.apply_automatic_device_changes {
-                print_runtime_profile_change(
-                    active_application.as_ref(),
-                    matched_profile_name.as_deref(),
-                );
-            }
-            let plan = runtime_device_apply_plan(
-                &device_id,
-                active_effective_state.settings.as_ref(),
-                &device_settings,
-                preview_transition,
-            );
-            if plan.steps.is_empty() {
-                // Adopting the current profile at startup must not mutate the mouse. Device
-                // writes begin only after an observed profile or preview transition.
-            } else if args.allow_device_write {
-                if !session_observer.permits_automatic_device_changes(session_snapshot.generation) {
-                    continue;
-                }
-                let report =
-                    daemon.apply_master3s_settings_plan(&device_id, &device_settings, &plan)?;
-                let failed_steps = count_failed_apply_steps(&report);
-                println!(
-                    "  device apply: {} failed step{}",
-                    failed_steps,
-                    plural(failed_steps)
-                );
-                if (active_preview.is_some() || preview_transition)
-                    && let Some(detail) = preview_thumb_wheel_failure(&report)
-                {
-                    preview_state.publish_failed(preview_snapshot.generation, detail.clone());
-                    preview_error = Some((preview_snapshot.generation, detail));
-                    preview_apply_failed = true;
-                }
-            } else {
-                println!("  device apply: skipped, --allow-device-write not set");
-                if active_preview.is_some() || preview_transition {
-                    preview_state.publish_failed(
-                        preview_snapshot.generation,
-                        "horizontal scroll preview needs device-write access",
-                    );
-                    preview_error = Some((
-                        preview_snapshot.generation,
-                        "horizontal scroll preview needs device-write access".to_owned(),
-                    ));
-                    preview_apply_failed = true;
-                }
-            }
-        }
-        if policy.apply_automatic_device_changes
-            && !session_observer.permits_automatic_device_changes(session_snapshot.generation)
-        {
-            continue;
-        }
-        if policy.apply_automatic_device_changes
-            && active_effective_state.needs_update(
-                matched_profile_name.as_deref(),
-                &device_settings,
-                active_preview.is_some(),
-            )
-        {
-            active_effective_state.update(
-                matched_profile_name.clone(),
-                &device_settings,
-                active_preview.is_some(),
-            );
-        }
-
-        let mut runtime_plan = daemon.plan_master3s_runtime(&effective.settings);
-        if let Some(preview) = active_preview {
-            runtime_plan.thumb_wheel = Some(ThumbWheelRuntimeAction::HorizontalScroll {
-                speed_percent: preview.speed_percent,
-            });
-        }
-        if policy.preview_local_actions
-            && !preview_apply_failed
-            && (preview_snapshot.preview.is_none() || active_preview.is_some())
-        {
-            if let Some((_, detail)) = &preview_error {
-                preview_state.publish_failed(preview_snapshot.generation, detail.clone());
-            } else {
-                preview_state.publish_applied(preview_snapshot.generation);
-            }
-        }
-        let events = listener.read_events(1, battery_monitor.read_timeout(idle_timeout))?;
-        if battery_monitor.preferences_due() {
-            let preferences = match application_store.load_preferences() {
-                Ok(preferences) => {
-                    battery_config_warning.clear();
-                    preferences
-                }
-                Err(error) => {
-                    let detail = error.to_string();
-                    if detail != battery_config_warning {
-                        eprintln!(
-                            "battery notification preferences are unavailable; using defaults: {detail}"
-                        );
-                        battery_config_warning = detail;
-                    }
-                    application_store.default_preferences()
-                }
-            };
-            battery_language = preferences.language;
-            if let Err(error) = battery_monitor.update_preferences(
-                &settings_id,
-                preferences.low_battery_notifications_enabled,
-                preferences.full_battery_notifications_enabled,
-            ) {
-                let detail = error.to_string();
-                if detail != battery_runtime_warning {
-                    eprintln!("battery monitoring is temporarily unavailable: {detail}");
-                    battery_runtime_warning = detail;
-                }
-            }
-        }
-        if battery_monitor.is_due() {
-            match battery_monitor.check_if_due(
-                &mut listener,
-                &settings_id,
-                &device_name,
-                battery_language,
-            ) {
-                Ok(()) => battery_runtime_warning.clear(),
-                Err(error) => {
-                    let detail = error.to_string();
-                    if detail != battery_runtime_warning {
-                        eprintln!("battery monitoring is temporarily unavailable: {detail}");
-                        battery_runtime_warning = detail;
-                    }
-                }
-            }
-        }
-        if events.is_empty() {
-            continue;
-        }
-
-        for event in events {
-            let execution_snapshot = session_observer.snapshot();
-            synchronize_runtime_session(
-                &execution_snapshot,
-                &mut session_generation,
-                &mut action_resolver,
-                &mut action_executor,
-            );
-            let actions = if execution_snapshot.policy().execute_local_actions {
-                action_resolver.resolve(&runtime_plan, &event)
-            } else {
-                Vec::new()
-            };
-            let permitted_generation = execution_snapshot.generation;
-            let executions = if !args.execute_actions {
-                Vec::new()
-            } else if let Some(executor) = action_executor.as_mut() {
-                execute_runtime_actions_guarded_with(&actions, executor, || {
-                    session_observer.permits_actions(permitted_generation)
-                })
-            } else if actions.iter().any(action_is_executable) {
-                if session_observer.permits_actions(permitted_generation) {
-                    let executor = action_executor.insert(SystemRuntimeActionExecutor::open()?);
-                    execute_runtime_actions_guarded_with(&actions, executor, || {
-                        session_observer.permits_actions(permitted_generation)
-                    })
-                } else {
-                    Vec::new()
-                }
-            } else {
-                daemon.execute_master3s_runtime_actions(&actions)?
-            };
-
-            print_runtime_loop_event(&event, &actions, &executions, args.execute_actions);
-            processed_events += 1;
-
-            if args
-                .max_events
-                .is_some_and(|max_events| processed_events >= max_events)
-            {
-                println!("Runtime service stopped after {processed_events} event(s)");
-                return Ok(RuntimeSessionOutcome::Completed);
-            }
-        }
-    }
+        daemon,
+        environment,
+    )
 }
 
 fn action_is_executable(action: &ResolvedRuntimeAction) -> bool {
     !matches!(
-        &action.command,
+        action.command,
         dogi_core::RuntimeCommand::Noop | dogi_core::RuntimeCommand::Unsupported
     )
-}
-
-fn synchronize_runtime_session(
-    snapshot: &SessionSnapshot,
-    generation: &mut u64,
-    resolver: &mut RuntimeActionResolver,
-    executor: &mut Option<SystemRuntimeActionExecutor>,
-) {
-    if *generation == snapshot.generation {
-        return;
-    }
-    *generation = snapshot.generation;
-    resolver.reset();
-    *executor = None;
-    if snapshot.detail.is_empty() {
-        println!("  session: local input enhancements enabled");
-    } else {
-        println!("  session: {}", snapshot.detail);
-    }
-}
-
-fn reload_runtime_base_settings(
-    daemon: &DeviceService,
-    settings_id: &str,
-    current: &mut Master3sSettings,
-    warning_printed: &mut bool,
-) -> bool {
-    match daemon.load_master3s_settings_for_device(settings_id) {
-        Ok(settings) => {
-            *warning_printed = false;
-            if &settings != current {
-                *current = settings;
-                true
-            } else {
-                false
-            }
-        }
-        Err(error) => {
-            if !*warning_printed {
-                eprintln!("settings reload failed; keeping previous settings: {error}");
-                *warning_printed = true;
-            }
-            false
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-struct RuntimeEffectiveState {
-    profile_name: Option<String>,
-    settings: Option<Master3sSettings>,
-    preview_active: bool,
-}
-
-impl RuntimeEffectiveState {
-    fn needs_update(
-        &self,
-        profile_name: Option<&str>,
-        settings: &Master3sSettings,
-        preview_active: bool,
-    ) -> bool {
-        self.profile_name.as_deref() != profile_name
-            || self.settings_changed(settings)
-            || self.preview_active != preview_active
-    }
-
-    fn settings_changed(&self, settings: &Master3sSettings) -> bool {
-        self.settings.as_ref() != Some(settings)
-    }
-
-    fn update(
-        &mut self,
-        profile_name: Option<String>,
-        settings: &Master3sSettings,
-        preview_active: bool,
-    ) {
-        self.profile_name = profile_name;
-        self.settings = Some(settings.clone());
-        self.preview_active = preview_active;
-    }
-}
-
-fn runtime_device_settings(
-    effective: &Master3sSettings,
-    preview: Option<&runtime_control::HorizontalScrollPreview>,
-) -> Master3sSettings {
-    let mut settings = effective.clone();
-    if preview.is_some() {
-        settings.thumb_wheel = ThumbWheelMode::HorizontalScroll;
-        settings.thumb_wheel_speed_percent = PREVIEW_DIVERSION_SPEED_PERCENT;
-    }
-    settings.normalized()
-}
-
-fn runtime_device_apply_plan(
-    device_id: &str,
-    baseline: Option<&Master3sSettings>,
-    target: &Master3sSettings,
-    force_thumb_wheel: bool,
-) -> SettingsApplyPlan {
-    // A fresh runtime session has no trustworthy knowledge of the mouse's current state.
-    // Treat the target as its own baseline so startup and reconnect stay read-only.
-    let mut plan = build_master3s_device_diff_plan(device_id, baseline.unwrap_or(target), target);
-    if force_thumb_wheel
-        && !plan
-            .steps
-            .iter()
-            .any(|step| step.feature == HidppFeature::ThumbWheel)
-        && let Some(step) = build_master3s_apply_plan(device_id, target)
-            .steps
-            .into_iter()
-            .find(|step| step.feature == HidppFeature::ThumbWheel)
-    {
-        plan.steps.push(step);
-    }
-    plan
-}
-
-fn preview_thumb_wheel_failure(report: &SettingsApplyReport) -> Option<String> {
-    report.outcomes.iter().find_map(|outcome| {
-        (outcome.feature == HidppFeature::ThumbWheel
-            && matches!(
-                outcome.status,
-                SettingsApplyStatus::Failed | SettingsApplyStatus::Unsupported
-            ))
-        .then(|| {
-            outcome
-                .detail
-                .clone()
-                .unwrap_or_else(|| outcome.title.clone())
-        })
-    })
 }
 
 fn udev_print() -> Result<()> {
@@ -1884,64 +1398,6 @@ fn print_runtime_listen_report(report: &RuntimeListenReport) {
     }
 }
 
-fn runtime_active_application(
-    daemon: &DeviceService,
-    focus_warning_printed: &mut bool,
-) -> Option<ActiveApplication> {
-    match daemon.active_application() {
-        Ok(active_application) => active_application,
-        Err(error) => {
-            if !*focus_warning_printed {
-                eprintln!("active app profile detection unavailable: {error}");
-                *focus_warning_printed = true;
-            }
-            None
-        }
-    }
-}
-
-fn print_runtime_profile_change(
-    active_application: Option<&ActiveApplication>,
-    matched_profile_name: Option<&str>,
-) {
-    let active_application = active_application
-        .map(ActiveApplication::summary)
-        .filter(|summary| !summary.is_empty())
-        .unwrap_or_else(|| "unknown application".to_owned());
-    let profile = matched_profile_name.unwrap_or("default profile");
-
-    println!("  active app: {active_application}");
-    println!("  active profile: {profile}");
-}
-
-fn print_runtime_loop_event(
-    event: &Master3sRuntimeEvent,
-    actions: &[ResolvedRuntimeAction],
-    executions: &[RuntimeActionExecution],
-    execute_actions: bool,
-) {
-    println!("  event: {}", format_runtime_event(event));
-    if actions.is_empty() {
-        println!("    actions: none");
-    } else {
-        println!("    actions:");
-        for action in actions {
-            println!("      {}", format_resolved_runtime_action(action));
-        }
-    }
-
-    if execute_actions {
-        if executions.is_empty() {
-            println!("    executions: none");
-        } else {
-            println!("    executions:");
-            for execution in executions {
-                println!("      {}", format_runtime_action_execution(execution));
-            }
-        }
-    }
-}
-
 fn format_runtime_event(event: &Master3sRuntimeEvent) -> String {
     match event {
         Master3sRuntimeEvent::ThumbWheel {
@@ -2072,23 +1528,6 @@ fn apply_status_label(status: SettingsApplyStatus) -> &'static str {
         SettingsApplyStatus::RolledBack => "rolled back",
         SettingsApplyStatus::RollbackFailed => "rollback failed",
     }
-}
-
-fn count_failed_apply_steps(report: &SettingsApplyReport) -> usize {
-    report
-        .outcomes
-        .iter()
-        .filter(|outcome| {
-            matches!(
-                outcome.status,
-                SettingsApplyStatus::Failed | SettingsApplyStatus::RollbackFailed
-            )
-        })
-        .count()
-}
-
-fn plural(count: usize) -> &'static str {
-    if count == 1 { "" } else { "s" }
 }
 
 fn apply_config_set_args(settings: &mut Master3sSettings, args: &ConfigSetArgs) {
@@ -2536,6 +1975,29 @@ mod tests {
     }
 
     #[test]
+    fn only_stateless_diagnostics_and_udev_commands_cross_the_root_boundary() {
+        for arguments in [
+            vec!["dogi", "list"],
+            vec!["dogi", "inspect", "device-id"],
+            vec!["dogi", "doctor"],
+            vec!["dogi", "udev", "print"],
+        ] {
+            let command = command_or_default(Cli::try_parse_from(arguments).unwrap());
+            assert!(!command_uses_desktop_state(&command));
+        }
+
+        for arguments in [
+            vec!["dogi"],
+            vec!["dogi", "config", "show"],
+            vec!["dogi", "runtime", "plan"],
+            vec!["dogi", "service", "path"],
+        ] {
+            let command = command_or_default(Cli::try_parse_from(arguments).unwrap());
+            assert!(command_uses_desktop_state(&command));
+        }
+    }
+
+    #[test]
     fn config_command_parses() {
         let cli = Cli::try_parse_from([
             "dogi",
@@ -2628,140 +2090,6 @@ mod tests {
             Command::Runtime(_)
         ));
         assert!(matches!(command_or_default(auto_run), Command::Runtime(_)));
-    }
-
-    #[test]
-    fn runtime_effective_state_adopts_initial_and_changed_settings() {
-        let base = Master3sSettings::default();
-        let mut state = RuntimeEffectiveState::default();
-
-        assert!(state.needs_update(None, &base, false));
-
-        state.update(None, &base, false);
-
-        assert!(!state.needs_update(None, &base, false));
-        assert!(state.needs_update(None, &base, true));
-        assert!(state.needs_update(Some("Firefox"), &base, false));
-
-        let faster = Master3sSettings {
-            pointer_speed_percent: 135,
-            ..Master3sSettings::default()
-        };
-
-        assert!(state.needs_update(None, &faster, false));
-        assert!(state.settings_changed(&faster));
-
-        state.update(Some("Firefox".to_owned()), &faster, false);
-
-        assert!(!state.needs_update(Some("Firefox"), &faster, false));
-
-        let edited_profile = Master3sSettings {
-            pointer_speed_percent: 145,
-            ..Master3sSettings::default()
-        };
-        assert!(state.needs_update(Some("Firefox"), &edited_profile, false));
-
-        assert!(state.needs_update(Some("Code"), &faster, false));
-    }
-
-    #[test]
-    fn runtime_preview_only_forces_thumb_wheel_diversion() {
-        let base = Master3sSettings {
-            pointer_speed_percent: 135,
-            thumb_wheel: ThumbWheelMode::Zoom,
-            thumb_wheel_speed_percent: 250,
-            ..Master3sSettings::default()
-        };
-        let preview = runtime_control::HorizontalScrollPreview {
-            lease_id: "lease".to_owned(),
-            device_id: "device".to_owned(),
-            speed_percent: 175,
-        };
-
-        let target = runtime_device_settings(&base, Some(&preview));
-
-        assert_eq!(target.pointer_speed_percent, 135);
-        assert_eq!(target.thumb_wheel, ThumbWheelMode::HorizontalScroll);
-        assert_eq!(
-            target.thumb_wheel_speed_percent,
-            PREVIEW_DIVERSION_SPEED_PERCENT
-        );
-        assert_eq!(runtime_device_settings(&base, None), base.normalized());
-    }
-
-    #[test]
-    fn runtime_preview_transition_always_writes_thumb_wheel_routing() {
-        let settings = Master3sSettings {
-            thumb_wheel: ThumbWheelMode::HorizontalScroll,
-            thumb_wheel_speed_percent: PREVIEW_DIVERSION_SPEED_PERCENT,
-            ..Master3sSettings::default()
-        };
-
-        let ordinary = runtime_device_apply_plan("device", Some(&settings), &settings, false);
-        let preview = runtime_device_apply_plan("device", Some(&settings), &settings, true);
-
-        assert!(ordinary.steps.is_empty());
-        assert_eq!(preview.steps.len(), 1);
-        assert_eq!(preview.steps[0].feature, HidppFeature::ThumbWheel);
-    }
-
-    #[test]
-    fn runtime_startup_never_reconciles_saved_defaults_to_the_mouse() {
-        let settings = Master3sSettings::default();
-
-        let plan = runtime_device_apply_plan("device", None, &settings, false);
-
-        assert!(plan.steps.is_empty());
-    }
-
-    #[test]
-    fn runtime_reconnect_during_preview_writes_only_thumb_wheel_routing() {
-        let settings = Master3sSettings {
-            pointer_speed_percent: 175,
-            high_resolution_scroll: true,
-            natural_scroll: true,
-            thumb_wheel: ThumbWheelMode::HorizontalScroll,
-            thumb_wheel_speed_percent: PREVIEW_DIVERSION_SPEED_PERCENT,
-            ..Master3sSettings::default()
-        };
-
-        let plan = runtime_device_apply_plan("device", None, &settings, true);
-
-        assert_eq!(plan.steps.len(), 1);
-        assert_eq!(plan.steps[0].feature, HidppFeature::ThumbWheel);
-    }
-
-    #[test]
-    fn runtime_reload_updates_base_settings_from_saved_config() {
-        let path = unique_cli_test_path("runtime-reload");
-        let daemon = DeviceService::with_config_path(&path);
-        let mut current = Master3sSettings::default();
-        let mut warning_printed = true;
-        let saved = Master3sSettings {
-            pointer_speed_percent: 135,
-            ..Master3sSettings::default()
-        };
-
-        daemon
-            .save_master3s_settings_for_device("device-a", &saved)
-            .unwrap();
-
-        assert!(reload_runtime_base_settings(
-            &daemon,
-            "device-a",
-            &mut current,
-            &mut warning_printed
-        ));
-        assert_eq!(current.pointer_speed_percent, 135);
-        assert!(!warning_printed);
-        assert!(!reload_runtime_base_settings(
-            &daemon,
-            "device-a",
-            &mut current,
-            &mut warning_printed
-        ));
-
-        let _ = std::fs::remove_file(path);
     }
 
     #[test]
@@ -3164,6 +2492,7 @@ mod tests {
                 unit_id: None,
                 model_id: None,
                 feature_count: 0,
+                features_complete: false,
                 features: Vec::new(),
             }),
             manufacturer: Some("Logitech".to_owned()),
@@ -3200,9 +2529,5 @@ mod tests {
                 ..dogi_core::DeviceCapabilities::default()
             },
         }
-    }
-
-    fn unique_cli_test_path(name: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("dogi-command-{name}-{}.json", std::process::id()))
     }
 }

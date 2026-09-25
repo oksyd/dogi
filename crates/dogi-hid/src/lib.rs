@@ -1,228 +1,29 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::expect_used, clippy::panic, clippy::unwrap_used)
+)]
+
 use std::time::Duration;
 
 use dogi_core::{
-    DeviceInfo, DeviceSettingValue, DogiError, HidppFeature, HidppFeatureInfo,
-    Master3sRuntimeEvent, Master3sSettings, Result, SettingsApplyOperation, SettingsApplyPlan,
-    SettingsApplyPreview, SettingsApplyPreviewStep, SettingsApplyReport, build_master3s_apply_plan,
-    master3s_button_from_control_id,
+    DeviceInfo, DogiError, Master3sRuntimeEvent, Master3sSettings, Result, SettingsApplyPlan,
+    SettingsApplyReport, build_master3s_apply_plan,
 };
-use serde::{Deserialize, Serialize};
 
-const HIDPP_SHORT_REPORT_ID: u8 = 0x10;
-const HIDPP_LONG_REPORT_ID: u8 = 0x11;
-const HIDPP_FEATURE_REPROG_CONTROLS_V4: u16 = 0x1b04;
-const HIDPP_FEATURE_THUMB_WHEEL: u16 = 0x2150;
+mod runtime_events;
+mod transactions;
 
-const SETTINGS_TRANSACTION_FORMAT_VERSION: u8 = 1;
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PreparedSettingsTransaction {
-    version: u8,
-    device_id: String,
-    profile_name: String,
-    changes: Vec<PreparedHidChange>,
-}
-
-impl PreparedSettingsTransaction {
-    pub fn device_id(&self) -> &str {
-        &self.device_id
-    }
-
-    pub fn profile_name(&self) -> &str {
-        &self.profile_name
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.changes.is_empty()
-    }
-
-    pub fn preview(&self) -> SettingsApplyPreview {
-        SettingsApplyPreview {
-            device_id: self.device_id.clone(),
-            profile_name: self.profile_name.clone(),
-            steps: self
-                .changes
-                .iter()
-                .map(|change| SettingsApplyPreviewStep {
-                    operation: change.operation.clone(),
-                    feature: change.feature,
-                    before: change.before_value.clone(),
-                    after: change.after_value.clone(),
-                })
-                .collect(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PreparedHidChange {
-    title: String,
-    operation: SettingsApplyOperation,
-    feature: HidppFeature,
-    feature_id: u16,
-    read_function: u8,
-    read_payload: Vec<u8>,
-    write_function: u8,
-    before_write: Vec<u8>,
-    after_write: Vec<u8>,
-    verification: Vec<VerificationByte>,
-    before_value: DeviceSettingValue,
-    after_value: DeviceSettingValue,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct VerificationByte {
-    response_index: usize,
-    mask: u8,
-    before: u8,
-    after: u8,
-}
-
-pub fn parse_master3s_runtime_notification(
-    report: &[u8],
-    features: &[HidppFeatureInfo],
-) -> Option<Master3sRuntimeEvent> {
-    let report_id = *report.first()?;
-    if report_id != HIDPP_SHORT_REPORT_ID && report_id != HIDPP_LONG_REPORT_ID {
-        return None;
-    }
-
-    let feature_index = *report.get(2)?;
-    let address = *report.get(3)?;
-    if feature_index == 0 || address & 0x0f != 0 {
-        return None;
-    }
-
-    let function = address >> 4;
-    let data = report.get(4..)?;
-    let feature_id = features
-        .iter()
-        .find(|feature| feature.index == feature_index)
-        .map(|feature| feature.feature_id)?;
-
-    match (feature_id, function) {
-        (HIDPP_FEATURE_THUMB_WHEEL, 0) => parse_thumb_wheel_runtime_event(data),
-        (HIDPP_FEATURE_REPROG_CONTROLS_V4, 0) => parse_diverted_buttons_runtime_event(data),
-        (HIDPP_FEATURE_REPROG_CONTROLS_V4, 1) => parse_raw_movement_runtime_event(data),
-        _ => None,
-    }
-}
-
-fn parse_thumb_wheel_runtime_event(data: &[u8]) -> Option<Master3sRuntimeEvent> {
-    let delta = i16::from_be_bytes([*data.first()?, *data.get(1)?]);
-    Some(Master3sRuntimeEvent::ThumbWheel {
-        delta,
-        phase: data.get(4).copied(),
-        resolution: 1,
-        direction: 1,
-    })
-}
-
-fn parse_diverted_buttons_runtime_event(data: &[u8]) -> Option<Master3sRuntimeEvent> {
-    let control_bytes = data.get(..8)?;
-    let mut buttons = Vec::new();
-    let mut unknown_control_ids = Vec::new();
-
-    for chunk in control_bytes.chunks_exact(2) {
-        let control_id = u16::from_be_bytes([chunk[0], chunk[1]]);
-        if control_id == 0 {
-            continue;
-        }
-
-        if let Some(button) = master3s_button_from_control_id(control_id) {
-            buttons.push(button);
-        } else {
-            unknown_control_ids.push(control_id);
-        }
-    }
-
-    Some(Master3sRuntimeEvent::DivertedButtons {
-        buttons,
-        unknown_control_ids,
-    })
-}
-
-fn parse_raw_movement_runtime_event(data: &[u8]) -> Option<Master3sRuntimeEvent> {
-    Some(Master3sRuntimeEvent::RawMovement {
-        x: i16::from_be_bytes([*data.first()?, *data.get(1)?]),
-        y: i16::from_be_bytes([*data.get(2)?, *data.get(3)?]),
-    })
-}
+pub use runtime_events::parse_notification as parse_master3s_runtime_notification;
+pub use transactions::PreparedSettingsTransaction;
+use transactions::{
+    FORMAT_VERSION as SETTINGS_TRANSACTION_FORMAT_VERSION, PreparedDeviceIdentity,
+    PreparedHidChange, VerificationByte, normalized_identifier, validate_apply_plan,
+    validate_recoverable_identity,
+};
 
 #[cfg(test)]
-mod runtime_notification_tests {
+mod api_tests {
     use super::*;
-    use dogi_core::Master3sButton;
-
-    #[test]
-    fn parses_thumb_wheel_runtime_notification() {
-        let features = vec![feature(16, HIDPP_FEATURE_THUMB_WHEEL)];
-        let report = [HIDPP_SHORT_REPORT_ID, 1, 16, 0x00, 0xff, 0xec, 0, 0, 1];
-
-        assert_eq!(
-            parse_master3s_runtime_notification(&report, &features),
-            Some(Master3sRuntimeEvent::ThumbWheel {
-                delta: -20,
-                phase: Some(1),
-                resolution: 1,
-                direction: 1,
-            })
-        );
-    }
-
-    #[test]
-    fn parses_diverted_button_runtime_notification() {
-        let features = vec![feature(9, HIDPP_FEATURE_REPROG_CONTROLS_V4)];
-        let report = [
-            HIDPP_LONG_REPORT_ID,
-            1,
-            9,
-            0x00,
-            0x00,
-            0x53,
-            0x00,
-            0xc3,
-            0xbe,
-            0xef,
-            0,
-            0,
-        ];
-
-        assert_eq!(
-            parse_master3s_runtime_notification(&report, &features),
-            Some(Master3sRuntimeEvent::DivertedButtons {
-                buttons: vec![Master3sButton::Back, Master3sButton::Gesture],
-                unknown_control_ids: vec![0xbeef],
-            })
-        );
-    }
-
-    #[test]
-    fn parses_raw_movement_notification() {
-        let features = vec![feature(9, HIDPP_FEATURE_REPROG_CONTROLS_V4)];
-        let report = [HIDPP_LONG_REPORT_ID, 1, 9, 0x10, 0xff, 0xec, 0x00, 0x19];
-
-        assert_eq!(
-            parse_master3s_runtime_notification(&report, &features),
-            Some(Master3sRuntimeEvent::RawMovement { x: -20, y: 25 })
-        );
-    }
-
-    #[test]
-    fn ignores_request_replies_and_unknown_features() {
-        let features = vec![feature(16, HIDPP_FEATURE_THUMB_WHEEL)];
-        let reply = [HIDPP_SHORT_REPORT_ID, 1, 16, 0x08, 0, 0];
-        let unknown_feature = [HIDPP_SHORT_REPORT_ID, 1, 17, 0x00, 0, 0];
-
-        assert_eq!(parse_master3s_runtime_notification(&reply, &features), None);
-        assert_eq!(
-            parse_master3s_runtime_notification(&unknown_feature, &features),
-            None
-        );
-    }
 
     #[test]
     fn partial_apply_rejects_a_plan_for_another_device_before_io() {
@@ -233,16 +34,6 @@ mod runtime_notification_tests {
             .expect_err("mismatched plan must be rejected");
 
         assert!(matches!(error, DogiError::InvalidArgument(_)));
-    }
-
-    fn feature(index: u8, feature_id: u16) -> HidppFeatureInfo {
-        HidppFeatureInfo {
-            index,
-            feature_id,
-            name: format!("FEATURE_{feature_id:04X}"),
-            flags: 0,
-            version: 1,
-        }
     }
 }
 
@@ -312,7 +103,9 @@ pub fn prepare_master3s_settings_plan(
             plan.device_id
         )));
     }
-    platform::prepare_master3s_settings_plan(device_id, &settings.normalized(), plan)
+    let settings = settings.normalized();
+    validate_apply_plan(&settings, plan)?;
+    platform::prepare_master3s_settings_plan(device_id, &settings, plan)
 }
 
 pub fn execute_prepared_master3s_settings_transaction(
@@ -354,6 +147,7 @@ mod platform {
     use std::collections::{HashMap, VecDeque};
     use std::fs::{self, File, OpenOptions};
     use std::io::{self, Read, Write};
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     use std::os::unix::io::AsRawFd;
     use std::path::{Path, PathBuf};
     use std::sync::{Mutex, OnceLock};
@@ -371,8 +165,9 @@ mod platform {
     };
 
     use crate::{
-        HidBackend, Master3sRuntimeEvent, PreparedHidChange, PreparedSettingsTransaction,
-        SETTINGS_TRANSACTION_FORMAT_VERSION, VerificationByte, parse_master3s_runtime_notification,
+        HidBackend, Master3sRuntimeEvent, PreparedDeviceIdentity, PreparedHidChange,
+        PreparedSettingsTransaction, SETTINGS_TRANSACTION_FORMAT_VERSION, VerificationByte,
+        normalized_identifier, parse_master3s_runtime_notification, validate_recoverable_identity,
     };
 
     const HIDRAW_CLASS: &str = "/sys/class/hidraw";
@@ -441,6 +236,10 @@ mod platform {
     const HIDPP_BOLT_DEVICE_NAME: u8 = 0x60;
     const HIDPP_PING_TIMEOUT: Duration = Duration::from_millis(500);
     const HIDPP_REQUEST_TIMEOUT: Duration = Duration::from_millis(1_200);
+    const HIDPP_PROBE_LOCK_TIMEOUT: Duration = Duration::from_millis(400);
+    const HIDPP_TRANSACTION_LOCK_TIMEOUT: Duration = Duration::from_secs(3);
+    const HIDPP_LISTENER_LOCK_TIMEOUT: Duration = Duration::from_millis(40);
+    const HIDPP_LISTENER_READ_SLICE: Duration = Duration::from_millis(50);
     const HIDPP_PROBE_RETRY_DELAYS: [Duration; 2] =
         [Duration::from_millis(120), Duration::from_millis(360)];
 
@@ -497,9 +296,7 @@ mod platform {
                     continue;
                 }
 
-                if let Some(device) = read_hidraw_device(&entry.path(), &hidraw_name, depth)? {
-                    devices.push(device);
-                }
+                devices.extend(read_hidraw_devices(&entry.path(), &hidraw_name, depth)?);
             }
 
             devices.sort_by(|left, right| {
@@ -554,15 +351,66 @@ mod platform {
     pub fn execute_prepared_master3s_settings_transaction(
         transaction: &PreparedSettingsTransaction,
     ) -> Result<SettingsApplyReport> {
-        let device = find_device(transaction.device_id())?;
+        let device = find_transaction_device(transaction)?;
         execute_prepared_transaction_for_device(&device, transaction)
     }
 
     pub fn recover_prepared_master3s_settings_transaction(
         transaction: &PreparedSettingsTransaction,
     ) -> Result<SettingsApplyReport> {
-        let device = find_device(transaction.device_id())?;
+        let device = find_transaction_device(transaction)?;
         recover_prepared_transaction_for_device(&device, transaction)
+    }
+
+    fn find_transaction_device(transaction: &PreparedSettingsTransaction) -> Result<DeviceInfo> {
+        validate_recoverable_identity(transaction)?;
+        let mut devices = SysfsHidBackend.scan()?;
+        devices.sort_by_key(|device| {
+            let endpoint_hint =
+                dogi_core::hidpp_endpoint_id(&device.id) != transaction.identity.receiver_id;
+            let slot_hint = device
+                .paired_device
+                .as_ref()
+                .is_none_or(|paired| paired.slot != transaction.identity.slot);
+            (endpoint_hint, slot_hint)
+        });
+        for device in devices {
+            let Some(paired) = device.paired_device.as_ref() else {
+                continue;
+            };
+            if strong_unit_matches(
+                transaction.identity.unit_id.as_deref(),
+                paired.unit_id.as_deref(),
+            ) {
+                return Ok(device);
+            }
+            if normalized_identifier(transaction.identity.unit_id.as_deref())
+                .is_some_and(|value| value.chars().any(|character| character != '0'))
+            {
+                continue;
+            }
+            if !optional_identifier_matches(
+                transaction.identity.receiver_serial.as_deref(),
+                device.serial_number.as_deref(),
+            ) {
+                continue;
+            }
+            let Ok(mut client) = HidppClient::open(&device.path) else {
+                continue;
+            };
+            let Ok(current) = probe_settings_target(&mut client, device.receiver_kind, paired.slot)
+            else {
+                continue;
+            };
+            if strong_identity_matches(
+                &transaction.identity,
+                &current,
+                device.serial_number.as_deref(),
+            ) {
+                return Ok(device);
+            }
+        }
+        Err(DogiError::DeviceNotFound)
     }
 
     pub fn listen_master3s_runtime_events(
@@ -580,6 +428,7 @@ mod platform {
     }
 
     pub struct Master3sRuntimeEventListener {
+        _consumer_lease: EndpointConsumerLease,
         client: HidppClient,
         slot: u8,
         features: Vec<HidppFeatureInfo>,
@@ -599,13 +448,20 @@ mod platform {
                         .to_owned(),
                 )
             })?;
+            let consumer_lease =
+                EndpointConsumerLease::acquire(dogi_core::hidpp_endpoint_id(&device.id))
+                    .map_err(|error| DogiError::BackendUnavailable(error.to_string()))?;
             let mut client = HidppClient::open(&device.path)
                 .map_err(|error| DogiError::Transport(error.to_string()))?;
             let thumb_wheel_info =
                 read_thumb_wheel_runtime_info(&mut client, paired.slot, &paired.features)
                     .map_err(|error| DogiError::Transport(error.to_string()))?;
+            client.release_endpoint_lock().map_err(|error| {
+                DogiError::Transport(format!("failed to release HID++ endpoint lock: {error}"))
+            })?;
 
             Ok(Self {
+                _consumer_lease: consumer_lease,
                 client,
                 slot: paired.slot,
                 features: paired.features.clone(),
@@ -626,15 +482,29 @@ mod platform {
             let mut events = Vec::new();
 
             while events.len() < event_limit {
-                let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                let Some(_) = deadline.checked_duration_since(Instant::now()) else {
                     break;
                 };
-                let Some(report) = self
+                let lock_file = self
                     .client
-                    .read_report(remaining)
+                    .file
+                    .try_clone()
+                    .map_err(|error| DogiError::Transport(error.to_string()))?;
+                let Some(_lock) = acquire_listener_lease(&lock_file, deadline)
                     .map_err(|error| DogiError::Transport(error.to_string()))?
                 else {
                     break;
+                };
+                let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                    break;
+                };
+                let read_timeout = remaining.min(HIDPP_LISTENER_READ_SLICE);
+                let Some(report) = self
+                    .client
+                    .read_report(read_timeout)
+                    .map_err(|error| DogiError::Transport(error.to_string()))?
+                else {
+                    continue;
                 };
                 if report.get(1).copied().is_some_and(|devnumber| {
                     devnumber != self.slot && devnumber != (self.slot ^ 0xff)
@@ -664,6 +534,13 @@ mod platform {
         }
 
         pub fn read_battery(&mut self) -> Result<Option<BatteryInfo>> {
+            let lock_file = self
+                .client
+                .file
+                .try_clone()
+                .map_err(|error| DogiError::Transport(error.to_string()))?;
+            let _lock = EndpointLockGuard::acquire(&lock_file, HIDPP_TRANSACTION_LOCK_TIMEOUT)
+                .map_err(|error| DogiError::Transport(error.to_string()))?;
             self.client
                 .read_battery_from_features(self.slot, &self.features)
                 .map_err(|error| DogiError::Transport(error.to_string()))
@@ -694,17 +571,17 @@ mod platform {
         })
     }
 
-    fn read_hidraw_device(
+    fn read_hidraw_devices(
         sysfs_path: &Path,
         hidraw_name: &str,
         depth: HidppScanDepth,
-    ) -> Result<Option<DeviceInfo>> {
+    ) -> Result<Vec<DeviceInfo>> {
         let device_path = sysfs_path.join("device");
         let hid_uevent = read_uevent(&device_path.join("uevent"))?;
         let Some((bus_id, vendor_id, product_id)) =
             parse_hid_id(hid_uevent.get("HID_ID").map(String::as_str))
         else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
 
         let interface_path = device_path.join("..");
@@ -747,7 +624,7 @@ mod platform {
         }
 
         let hidpp_usage = report_descriptor.hidpp_usage.as_ref();
-        let mut capabilities = DeviceCapabilities {
+        let base_capabilities = DeviceCapabilities {
             hidpp: if report_descriptor.is_hidpp_interface() {
                 CapabilityState::Supported
             } else {
@@ -770,6 +647,14 @@ mod platform {
             Some(format!("{sysfs_path}:{hidraw_dev_path}")),
         ])
         .unwrap_or_else(|| hidraw_dev_path.clone());
+        let endpoint_id = stable_device_id(vendor_id, product_id, &id_seed);
+        let probe_cache_key = endpoint_probe_cache_key(
+            vendor_id,
+            product_id,
+            &sysfs_path,
+            physical_path.as_deref(),
+            serial_number.as_deref(),
+        );
         let hidraw_readwrite = OpenOptions::new()
             .read(true)
             .write(true)
@@ -786,57 +671,73 @@ mod platform {
                 WritePolicy::Disabled
             },
         };
-        let hidpp_probe =
+        let hidpp_probes =
             if depth != HidppScanDepth::Inventory && report_descriptor.is_hidpp_interface() {
-                read_hidpp_device_probe(&hidraw_dev_path, receiver_kind, depth)?
+                read_hidpp_device_probes(
+                    &hidraw_dev_path,
+                    probe_cache_key.as_deref(),
+                    receiver_kind,
+                    depth,
+                )?
             } else {
-                HidppDeviceProbe::default()
+                vec![HidppDeviceProbe::default()]
             };
-        if let Some(paired_device) = &hidpp_probe.paired_device {
-            apply_hidpp_feature_capabilities(&mut capabilities, &paired_device.features);
-        }
-        let battery = if let Some(battery) = hidpp_probe.battery {
-            battery
-        } else {
-            let reason = hidpp_probe.detail.unwrap_or_else(|| {
-                if depth != HidppScanDepth::Inventory {
-                    "battery is read through HID++ features 0x1004/0x1000/0x1001; this interface did not expose a paired-device battery"
-                } else {
-                    "HID++ identity, capabilities, and battery have not been queried yet"
+        Ok(hidpp_probes
+            .into_iter()
+            .map(|probe| {
+                let mut capabilities = base_capabilities.clone();
+                if let Some(paired_device) = &probe.paired_device {
+                    apply_hidpp_feature_capabilities(
+                        &mut capabilities,
+                        &paired_device.features,
+                    );
                 }
-                .to_owned()
-            });
-            BatteryInfo::not_queried(reason)
-        };
-        if battery.level_percent.is_some() || battery.source == BatterySource::Hidpp {
-            capabilities.battery = CapabilityState::Supported;
-        }
+                let battery = probe.battery.unwrap_or_else(|| {
+                    let reason = probe.detail.unwrap_or_else(|| {
+                        if depth != HidppScanDepth::Inventory {
+                            "battery is read through HID++ features 0x1004/0x1000/0x1001; this interface did not expose a paired-device battery"
+                        } else {
+                            "HID++ identity, capabilities, and battery have not been queried yet"
+                        }
+                        .to_owned()
+                    });
+                    BatteryInfo::not_queried(reason)
+                });
+                if battery.level_percent.is_some() || battery.source == BatterySource::Hidpp {
+                    capabilities.battery = CapabilityState::Supported;
+                }
+                let id = probe.paired_device.as_ref().map_or_else(
+                    || endpoint_id.clone(),
+                    |paired| dogi_core::logical_hidpp_device_id(&endpoint_id, paired),
+                );
 
-        Ok(Some(DeviceInfo {
-            id: stable_device_id(vendor_id, product_id, &id_seed),
-            name,
-            paired_device: hidpp_probe.paired_device,
-            manufacturer,
-            serial_number,
-            bus,
-            bus_id: Some(bus_id),
-            vendor_id,
-            product_id,
-            release_number,
-            connection,
-            receiver_kind,
-            path: hidraw_dev_path,
-            sysfs_path,
-            physical_path,
-            driver,
-            interface_number,
-            usage_page: hidpp_usage.map(|usage| usage.usage_page),
-            usage: hidpp_usage.map(|usage| usage.usage),
-            access,
-            battery,
-            report_descriptor,
-            capabilities,
-        }))
+                DeviceInfo {
+                    id,
+                    name: name.clone(),
+                    paired_device: probe.paired_device,
+                    manufacturer: manufacturer.clone(),
+                    serial_number: serial_number.clone(),
+                    bus,
+                    bus_id: Some(bus_id),
+                    vendor_id,
+                    product_id,
+                    release_number,
+                    connection,
+                    receiver_kind,
+                    path: hidraw_dev_path.clone(),
+                    sysfs_path: sysfs_path.clone(),
+                    physical_path: physical_path.clone(),
+                    driver: driver.clone(),
+                    interface_number,
+                    usage_page: hidpp_usage.map(|usage| usage.usage_page),
+                    usage: hidpp_usage.map(|usage| usage.usage),
+                    access: access.clone(),
+                    battery,
+                    report_descriptor: report_descriptor.clone(),
+                    capabilities,
+                }
+            })
+            .collect())
     }
 
     fn prepare_master3s_settings_for_device(
@@ -844,7 +745,9 @@ mod platform {
         settings: &Master3sSettings,
         plan: &SettingsApplyPlan,
     ) -> Result<PreparedSettingsTransaction> {
-        let (mut client, slot, features) = open_settings_device(device)?;
+        let (mut client, target) = open_settings_device(device)?;
+        let slot = target.paired.slot;
+        let features = target.paired.features.clone();
         let settings = settings.normalized();
         let mut changes = Vec::with_capacity(plan.steps.len());
         let button_controls = if plan.steps.iter().any(|step| {
@@ -898,8 +801,39 @@ mod platform {
         Ok(PreparedSettingsTransaction {
             version: SETTINGS_TRANSACTION_FORMAT_VERSION,
             device_id: device.id.clone(),
+            identity: prepared_device_identity(device, &target)?,
             profile_name: settings.profile_name,
             changes,
+        })
+    }
+
+    fn prepared_device_identity(
+        device: &DeviceInfo,
+        target: &VerifiedSettingsTarget,
+    ) -> Result<PreparedDeviceIdentity> {
+        let paired = &target.paired;
+        if !has_strong_instance_identifier(
+            paired.unit_id.as_deref(),
+            target
+                .pairing_serial
+                .as_deref()
+                .filter(|_| device.serial_number.is_some()),
+        ) {
+            return Err(DogiError::Protocol(
+                "HID++ target has no unit ID or receiver pairing serial; refusing a recoverable write"
+                    .to_owned(),
+            ));
+        }
+        Ok(PreparedDeviceIdentity {
+            receiver_id: dogi_core::hidpp_endpoint_id(&device.id).to_owned(),
+            receiver_vendor_id: device.vendor_id,
+            receiver_product_id: device.product_id,
+            receiver_serial: device.serial_number.clone(),
+            slot: paired.slot,
+            wpid: paired.wpid.clone(),
+            pairing_serial: target.pairing_serial.clone(),
+            unit_id: paired.unit_id.clone(),
+            model_id: paired.model_id.clone(),
         })
     }
 
@@ -907,7 +841,10 @@ mod platform {
         device: &DeviceInfo,
         transaction: &PreparedSettingsTransaction,
     ) -> Result<SettingsApplyReport> {
-        let (mut client, slot, features) = open_settings_device(device)?;
+        validate_recoverable_identity(transaction)?;
+        let (mut client, paired) = open_transaction_device(device, &transaction.identity)?;
+        let slot = paired.slot;
+        let features = paired.features;
         let mut io = HidppSettingsIo {
             client: &mut client,
             slot,
@@ -993,7 +930,10 @@ mod platform {
         device: &DeviceInfo,
         transaction: &PreparedSettingsTransaction,
     ) -> Result<SettingsApplyReport> {
-        let (mut client, slot, features) = open_settings_device(device)?;
+        validate_recoverable_identity(transaction)?;
+        let (mut client, paired) = open_transaction_device(device, &transaction.identity)?;
+        let slot = paired.slot;
+        let features = paired.features;
         let mut io = HidppSettingsIo {
             client: &mut client,
             slot,
@@ -1065,9 +1005,12 @@ mod platform {
         })
     }
 
-    fn open_settings_device(
-        device: &DeviceInfo,
-    ) -> Result<(HidppClient, u8, Vec<HidppFeatureInfo>)> {
+    struct VerifiedSettingsTarget {
+        paired: PairedDeviceInfo,
+        pairing_serial: Option<String>,
+    }
+
+    fn open_settings_device(device: &DeviceInfo) -> Result<(HidppClient, VerifiedSettingsTarget)> {
         if !device.access.hidraw_readwrite {
             return Err(DogiError::Transport(format!(
                 "{} needs read/write hidraw permission for HID++ settings",
@@ -1080,9 +1023,160 @@ mod platform {
                     .to_owned(),
             )
         })?;
-        let client = HidppClient::open(&device.path)
+        let mut client = HidppClient::open(&device.path)
             .map_err(|error| DogiError::Transport(error.to_string()))?;
-        Ok((client, paired.slot, paired.features.clone()))
+        let current = probe_settings_target(&mut client, device.receiver_kind, paired.slot)?;
+        validate_paired_identity(
+            paired,
+            &current.paired,
+            "device identity changed during preparation",
+        )?;
+        Ok((client, current))
+    }
+
+    fn open_transaction_device(
+        device: &DeviceInfo,
+        identity: &PreparedDeviceIdentity,
+    ) -> Result<(HidppClient, PairedDeviceInfo)> {
+        validate_recoverable_identity_fields(identity)?;
+        let mut client = HidppClient::open(&device.path)
+            .map_err(|error| DogiError::Transport(error.to_string()))?;
+        let slot = device
+            .paired_device
+            .as_ref()
+            .map_or(identity.slot, |paired| paired.slot);
+        let current = probe_settings_target(&mut client, device.receiver_kind, slot)?;
+        validate_prepared_identity(identity, &current, device.serial_number.as_deref())?;
+        Ok((client, current.paired))
+    }
+
+    fn probe_settings_target(
+        client: &mut HidppClient,
+        receiver_kind: Option<ReceiverKind>,
+        slot: u8,
+    ) -> Result<VerifiedSettingsTarget> {
+        let pairing = client
+            .read_receiver_pairing_device(slot, receiver_kind)
+            .map_err(|error| DogiError::Transport(error.to_string()))?;
+        if receiver_kind.is_some() && pairing.slot_state_known && !pairing.identifies_device() {
+            return Err(DogiError::Protocol(format!(
+                "receiver slot {slot} is no longer paired"
+            )));
+        }
+        let protocol = retry_probe(true, || client.ping(slot), &mut std::thread::sleep)
+            .map_err(|error| DogiError::Transport(error.to_string()))?
+            .ok_or_else(|| {
+                DogiError::Transport(format!(
+                    "HID++ target in receiver slot {slot} is not responding"
+                ))
+            })?;
+        let (mut paired, _) = read_paired_device_with_retry(
+            client,
+            slot,
+            protocol,
+            &pairing,
+            &mut std::thread::sleep,
+        )
+        .map_err(|error| DogiError::Transport(error.to_string()))?;
+        let pairing_serial = pairing.serial.clone();
+        merge_receiver_pairing_info(&mut paired, pairing);
+        Ok(VerifiedSettingsTarget {
+            paired,
+            pairing_serial,
+        })
+    }
+
+    fn validate_prepared_identity(
+        expected: &PreparedDeviceIdentity,
+        current: &VerifiedSettingsTarget,
+        receiver_serial: Option<&str>,
+    ) -> Result<()> {
+        if !strong_identity_matches(expected, current, receiver_serial)
+            || !optional_identifier_matches(
+                expected.wpid.as_deref(),
+                current.paired.wpid.as_deref(),
+            )
+            || !optional_identifier_matches(
+                expected.model_id.as_deref(),
+                current.paired.model_id.as_deref(),
+            )
+        {
+            return Err(DogiError::Protocol(
+                "paired-device identity changed after the settings transaction was prepared"
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn strong_unit_matches(expected: Option<&str>, current: Option<&str>) -> bool {
+        let expected = normalized_identifier(expected)
+            .filter(|value| value.chars().any(|character| character != '0'));
+        expected.is_some() && expected == normalized_identifier(current)
+    }
+
+    fn strong_identity_matches(
+        expected: &PreparedDeviceIdentity,
+        current: &VerifiedSettingsTarget,
+        receiver_serial: Option<&str>,
+    ) -> bool {
+        if normalized_identifier(expected.unit_id.as_deref())
+            .is_some_and(|value| value.chars().any(|character| character != '0'))
+        {
+            return strong_unit_matches(
+                expected.unit_id.as_deref(),
+                current.paired.unit_id.as_deref(),
+            );
+        }
+        strong_unit_matches(expected.receiver_serial.as_deref(), receiver_serial)
+            && strong_unit_matches(
+                expected.pairing_serial.as_deref(),
+                current.pairing_serial.as_deref(),
+            )
+    }
+
+    fn validate_recoverable_identity_fields(identity: &PreparedDeviceIdentity) -> Result<()> {
+        let transaction = PreparedSettingsTransaction {
+            version: SETTINGS_TRANSACTION_FORMAT_VERSION,
+            device_id: String::new(),
+            identity: identity.clone(),
+            profile_name: String::new(),
+            changes: Vec::new(),
+        };
+        validate_recoverable_identity(&transaction)
+    }
+
+    fn has_strong_instance_identifier(unit_id: Option<&str>, pairing_serial: Option<&str>) -> bool {
+        [unit_id, pairing_serial]
+            .into_iter()
+            .flatten()
+            .filter_map(|value| normalized_identifier(Some(value)))
+            .any(|value| value.chars().any(|character| character != '0'))
+    }
+
+    fn validate_paired_identity(
+        expected: &PairedDeviceInfo,
+        current: &PairedDeviceInfo,
+        detail: &str,
+    ) -> Result<()> {
+        if expected.slot != current.slot
+            || !optional_identifier_matches(expected.wpid.as_deref(), current.wpid.as_deref())
+            || !optional_identifier_matches(expected.unit_id.as_deref(), current.unit_id.as_deref())
+            || !optional_identifier_matches(
+                expected.model_id.as_deref(),
+                current.model_id.as_deref(),
+            )
+        {
+            return Err(DogiError::Protocol(detail.to_owned()));
+        }
+        Ok(())
+    }
+
+    fn optional_identifier_matches(expected: Option<&str>, current: Option<&str>) -> bool {
+        match super::normalized_identifier(expected) {
+            Some(expected) => super::normalized_identifier(current).as_deref() == Some(&expected),
+            None => true,
+        }
     }
 
     fn prepare_pointer_speed(
@@ -1789,21 +1883,26 @@ mod platform {
         }
     }
 
-    #[derive(Debug, Default)]
+    #[derive(Clone, Debug, Default)]
     struct HidppDeviceProbe {
         paired_device: Option<PairedDeviceInfo>,
+        pairing_serial: Option<String>,
         battery: Option<BatteryInfo>,
         detail: Option<String>,
     }
 
     #[derive(Clone)]
-    struct CachedHidppProbe {
+    struct CachedHidppProbes {
         receiver_kind: Option<ReceiverKind>,
         depth: HidppScanDepth,
-        paired_device: PairedDeviceInfo,
+        cached_at: Instant,
+        probes: Vec<HidppDeviceProbe>,
     }
 
-    static HIDPP_PROBE_CACHE: OnceLock<Mutex<HashMap<String, CachedHidppProbe>>> = OnceLock::new();
+    const COMPLETE_PROBE_CACHE_TTL: Duration = Duration::from_secs(5);
+    const INCOMPLETE_PROBE_CACHE_TTL: Duration = Duration::from_secs(1);
+
+    static HIDPP_PROBE_CACHE: OnceLock<Mutex<HashMap<String, CachedHidppProbes>>> = OnceLock::new();
 
     #[derive(Clone, Debug, Default)]
     struct ReceiverPairingInfo {
@@ -1846,120 +1945,224 @@ mod platform {
         ) -> io::Result<Option<BatteryInfo>>;
     }
 
-    fn read_hidpp_device_probe(
+    fn read_hidpp_device_probes(
         path: &str,
+        cache_key: Option<&str>,
         receiver_kind: Option<ReceiverKind>,
         depth: HidppScanDepth,
-    ) -> Result<HidppDeviceProbe> {
+    ) -> Result<Vec<HidppDeviceProbe>> {
         let mut client = match HidppClient::open_with_depth(path, depth) {
             Ok(client) => client,
             Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
-                return Ok(HidppDeviceProbe {
+                return Ok(vec![HidppDeviceProbe {
                     paired_device: None,
+                    pairing_serial: None,
                     battery: None,
                     detail: Some(format!(
                         "HID++ paired-device query requires read/write access to {path}"
                     )),
-                });
+                }]);
             }
             Err(error) => {
-                return Ok(HidppDeviceProbe {
+                return Ok(vec![HidppDeviceProbe {
                     paired_device: None,
+                    pairing_serial: None,
                     battery: None,
                     detail: Some(format!(
                         "HID++ paired-device query failed to open {path}: {error}"
                     )),
-                });
+                }]);
             }
         };
 
-        if let Some(cached) = cached_hidpp_probe(path, receiver_kind, depth)
-            && let Some(probe) =
-                refresh_cached_hidpp_probe(&mut client, cached, receiver_kind, std::thread::sleep)
+        if let Some(cached) =
+            cache_key.and_then(|cache_key| cached_hidpp_probes(cache_key, receiver_kind, depth))
+            && let Some(probes) =
+                refresh_cached_hidpp_probes(&mut client, cached, receiver_kind, std::thread::sleep)
         {
-            return Ok(probe);
+            return Ok(probes);
         }
 
-        let probe = probe_hidpp_device(&mut client, receiver_kind, std::thread::sleep);
-        remember_hidpp_probe(path, receiver_kind, depth, &probe);
-        Ok(probe)
+        let probes = probe_hidpp_devices(&mut client, receiver_kind, std::thread::sleep);
+        if let Some(cache_key) = cache_key {
+            remember_hidpp_probes(cache_key, receiver_kind, depth, &probes);
+        }
+        Ok(probes)
     }
 
-    fn hidpp_probe_cache() -> &'static Mutex<HashMap<String, CachedHidppProbe>> {
+    fn endpoint_probe_cache_key(
+        vendor_id: u16,
+        product_id: u16,
+        sysfs_path: &str,
+        physical_path: Option<&str>,
+        receiver_serial: Option<&str>,
+    ) -> Option<String> {
+        let physical_path = physical_path.filter(|value| !value.trim().is_empty());
+        let receiver_serial = receiver_serial.filter(|value| !value.trim().is_empty());
+        if physical_path.is_none() && receiver_serial.is_none() {
+            return None;
+        }
+        Some(format!(
+            "{vendor_id:04x}:{product_id:04x}:sysfs={sysfs_path}:physical={}:serial={}",
+            physical_path.unwrap_or("-"),
+            receiver_serial.unwrap_or("-")
+        ))
+    }
+
+    fn hidpp_probe_cache() -> &'static Mutex<HashMap<String, CachedHidppProbes>> {
         HIDPP_PROBE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
     }
 
-    fn cached_hidpp_probe(
+    fn cached_hidpp_probes(
         path: &str,
         receiver_kind: Option<ReceiverKind>,
         depth: HidppScanDepth,
-    ) -> Option<CachedHidppProbe> {
-        hidpp_probe_cache()
-            .lock()
-            .ok()?
-            .get(path)
-            .filter(|cached| cached.receiver_kind == receiver_kind && cached.depth >= depth)
-            .cloned()
+    ) -> Option<CachedHidppProbes> {
+        let mut cache = hidpp_probe_cache().lock().ok()?;
+        let cached = cache.get(path)?;
+        let complete = cached.probes.iter().all(|probe| {
+            probe
+                .paired_device
+                .as_ref()
+                .is_some_and(|paired| paired.features_complete)
+        });
+        let ttl = if complete {
+            COMPLETE_PROBE_CACHE_TTL
+        } else {
+            INCOMPLETE_PROBE_CACHE_TTL
+        };
+        if cached.receiver_kind != receiver_kind
+            || cached.depth < depth
+            || cached.cached_at.elapsed() >= ttl
+        {
+            cache.remove(path);
+            return None;
+        }
+        cache.get(path).cloned()
     }
 
-    fn remember_hidpp_probe(
+    fn remember_hidpp_probes(
         path: &str,
         receiver_kind: Option<ReceiverKind>,
         depth: HidppScanDepth,
-        probe: &HidppDeviceProbe,
+        probes: &[HidppDeviceProbe],
     ) {
-        if receiver_kind.is_none() {
+        if probes.is_empty()
+            || !probes.iter().any(|probe| {
+                probe
+                    .paired_device
+                    .as_ref()
+                    .is_some_and(|paired| !paired.features.is_empty())
+            })
+        {
             return;
         }
-        let Some(paired_device) = probe
-            .paired_device
-            .as_ref()
-            .filter(|paired| !paired.features.is_empty())
-        else {
-            return;
-        };
         if let Ok(mut cache) = hidpp_probe_cache().lock() {
             cache.insert(
                 path.to_owned(),
-                CachedHidppProbe {
+                CachedHidppProbes {
                     receiver_kind,
                     depth,
-                    paired_device: paired_device.clone(),
+                    cached_at: Instant::now(),
+                    probes: probes.to_vec(),
                 },
             );
         }
     }
 
-    fn refresh_cached_hidpp_probe(
+    fn refresh_cached_hidpp_probes(
         client: &mut HidppClient,
-        cached: CachedHidppProbe,
+        cached: CachedHidppProbes,
         receiver_kind: Option<ReceiverKind>,
         mut pause: impl FnMut(Duration),
-    ) -> Option<HidppDeviceProbe> {
-        let mut paired_device = cached.paired_device;
-        if receiver_kind.is_some() {
-            let current = client
-                .read_receiver_pairing_device(paired_device.slot, receiver_kind)
-                .ok()?;
-            if current.slot_state_known && !current.identifies_device() {
-                return None;
+    ) -> Option<Vec<HidppDeviceProbe>> {
+        let mut refreshed = Vec::with_capacity(cached.probes.len());
+        for probe in cached.probes {
+            let mut paired_device = probe.paired_device?;
+            if receiver_kind.is_some() {
+                let current = client
+                    .read_receiver_pairing_device(paired_device.slot, receiver_kind)
+                    .ok()?;
+                if current.slot_state_known && !current.identifies_device() {
+                    return None;
+                }
+                if current
+                    .wpid
+                    .as_deref()
+                    .zip(paired_device.wpid.as_deref())
+                    .is_some_and(|(current, cached)| {
+                        super::normalized_identifier(Some(current))
+                            != super::normalized_identifier(Some(cached))
+                    })
+                    || current
+                        .serial
+                        .as_deref()
+                        .zip(probe.pairing_serial.as_deref())
+                        .is_some_and(|(current, cached)| {
+                            super::normalized_identifier(Some(current))
+                                != super::normalized_identifier(Some(cached))
+                        })
+                {
+                    return None;
+                }
+                let pairing_serial = current.serial.clone().or(probe.pairing_serial.clone());
+                merge_receiver_pairing_info(&mut paired_device, current);
+                // Keep the receiver's per-slot serial separate from the HID++ model metadata.
+                // It identifies the paired physical instance when no unit ID is available.
+                refreshed.push(refresh_hidpp_probe(
+                    client,
+                    paired_device,
+                    pairing_serial,
+                    &mut pause,
+                )?);
+                continue;
             }
-            if current
-                .wpid
-                .as_deref()
-                .zip(paired_device.wpid.as_deref())
-                .is_some_and(|(current, cached)| current != cached)
-            {
-                return None;
-            }
-            merge_receiver_pairing_info(&mut paired_device, current);
-        }
 
-        let protocol = retry_probe(true, || client.ping(paired_device.slot), &mut pause)
+            let protocol = retry_probe(true, || client.ping(paired_device.slot), &mut pause)
+                .ok()
+                .flatten()?;
+            paired_device.protocol = Some(protocol);
+
+            let battery = retry_probe(
+                true,
+                || {
+                    client
+                        .read_battery_from_features(paired_device.slot, &paired_device.features)
+                        .map(|battery| battery.map(Some))
+                },
+                &mut pause,
+            )
+            .ok()
+            .flatten()
+            .flatten();
+            let detail = battery.is_none().then(|| {
+            format!(
+                "HID++ device slot {} did not return a supported battery value after {} attempts",
+                paired_device.slot,
+                HIDPP_PROBE_RETRY_DELAYS.len() + 1
+            )
+        });
+
+            refreshed.push(HidppDeviceProbe {
+                paired_device: Some(paired_device),
+                pairing_serial: probe.pairing_serial.clone(),
+                battery,
+                detail,
+            });
+        }
+        Some(refreshed)
+    }
+
+    fn refresh_hidpp_probe(
+        client: &mut HidppClient,
+        mut paired_device: PairedDeviceInfo,
+        pairing_serial: Option<String>,
+        pause: &mut impl FnMut(Duration),
+    ) -> Option<HidppDeviceProbe> {
+        let protocol = retry_probe(true, || client.ping(paired_device.slot), pause)
             .ok()
             .flatten()?;
         paired_device.protocol = Some(protocol);
-
         let battery = retry_probe(
             true,
             || {
@@ -1967,7 +2170,7 @@ mod platform {
                     .read_battery_from_features(paired_device.slot, &paired_device.features)
                     .map(|battery| battery.map(Some))
             },
-            &mut pause,
+            pause,
         )
         .ok()
         .flatten()
@@ -1979,19 +2182,20 @@ mod platform {
                 HIDPP_PROBE_RETRY_DELAYS.len() + 1
             )
         });
-
         Some(HidppDeviceProbe {
             paired_device: Some(paired_device),
+            pairing_serial,
             battery,
             detail,
         })
     }
 
-    fn probe_hidpp_device(
+    fn probe_hidpp_devices(
         client: &mut impl HidppProbeClient,
         receiver_kind: Option<ReceiverKind>,
         mut pause: impl FnMut(Duration),
-    ) -> HidppDeviceProbe {
+    ) -> Vec<HidppDeviceProbe> {
+        let mut probes = Vec::new();
         let mut detail = None;
         for &devnumber in hidpp_candidate_devnumbers(receiver_kind) {
             let receiver_pairing = if receiver_kind.is_some() {
@@ -2009,6 +2213,7 @@ mod platform {
             };
 
             let slot_is_known = receiver_pairing.identifies_device();
+            let pairing_serial = receiver_pairing.serial.clone();
             if receiver_kind.is_some() && receiver_pairing.slot_state_known && !slot_is_known {
                 continue;
             }
@@ -2033,11 +2238,15 @@ mod platform {
                                     HIDPP_PROBE_RETRY_DELAYS.len() + 1
                                 )
                             });
-                            return HidppDeviceProbe {
+                            probes.push(HidppDeviceProbe {
                                 paired_device: Some(paired_device),
+                                pairing_serial,
                                 battery,
                                 detail,
-                            };
+                            });
+                            if receiver_kind.is_none() {
+                                break;
+                            }
                         }
                         Err(error) => {
                             detail = Some(format!(
@@ -2050,14 +2259,18 @@ mod platform {
                     if let Some(paired_device) =
                         paired_device_from_receiver_pairing(devnumber, receiver_pairing)
                     {
-                        return HidppDeviceProbe {
+                        probes.push(HidppDeviceProbe {
                             paired_device: Some(paired_device),
+                            pairing_serial,
                             battery: None,
                             detail: Some(format!(
                                 "HID++ receiver pairing table identified device slot {devnumber}; the device did not answer after {} attempts",
                                 HIDPP_PROBE_RETRY_DELAYS.len() + 1
                             )),
-                        };
+                        });
+                        if receiver_kind.is_none() {
+                            break;
+                        }
                     }
                 }
                 Err(error) => {
@@ -2067,23 +2280,43 @@ mod platform {
                     if let Some(paired_device) =
                         paired_device_from_receiver_pairing(devnumber, receiver_pairing)
                     {
-                        return HidppDeviceProbe {
+                        probes.push(HidppDeviceProbe {
                             paired_device: Some(paired_device),
+                            pairing_serial,
                             battery: None,
-                            detail,
-                        };
+                            detail: detail.clone(),
+                        });
+                        if receiver_kind.is_none() {
+                            break;
+                        }
                     }
                 }
             }
         }
 
-        HidppDeviceProbe {
-            paired_device: None,
-            battery: None,
-            detail: Some(detail.unwrap_or_else(|| {
-                "HID++ paired-device query did not find a responding paired device".to_owned()
-            })),
+        if probes.is_empty() {
+            probes.push(HidppDeviceProbe {
+                paired_device: None,
+                pairing_serial: None,
+                battery: None,
+                detail: Some(detail.unwrap_or_else(|| {
+                    "HID++ paired-device query did not find a responding paired device".to_owned()
+                })),
+            });
         }
+        probes
+    }
+
+    #[cfg(test)]
+    fn probe_hidpp_device(
+        client: &mut impl HidppProbeClient,
+        receiver_kind: Option<ReceiverKind>,
+        pause: impl FnMut(Duration),
+    ) -> HidppDeviceProbe {
+        probe_hidpp_devices(client, receiver_kind, pause)
+            .into_iter()
+            .next()
+            .unwrap_or_default()
     }
 
     fn retry_probe<T>(
@@ -2166,7 +2399,9 @@ mod platform {
                     Ok(candidate @ (.., None)) => {
                         let replace = best_incomplete.as_ref().is_none_or(
                             |(current, _): &(PairedDeviceInfo, Option<BatteryInfo>)| {
-                                candidate.0.feature_count > current.feature_count
+                                (candidate.0.features_complete && !current.features_complete)
+                                    || (candidate.0.features_complete == current.features_complete
+                                        && candidate.0.features.len() > current.features.len())
                             },
                         );
                         if replace {
@@ -2314,6 +2549,7 @@ mod platform {
             unit_id: None,
             model_id: None,
             feature_count: 0,
+            features_complete: false,
             features: Vec::new(),
         })
     }
@@ -2447,13 +2683,28 @@ mod platform {
         pending_reports: VecDeque<Vec<u8>>,
     }
 
+    struct FeatureInventory {
+        features: Vec<HidppFeatureInfo>,
+        expected_count: usize,
+        complete: bool,
+    }
+
     impl HidppClient {
         fn open(path: &str) -> io::Result<Self> {
-            Self::open_with_depth(path, HidppScanDepth::Full)
+            Self::open_with_lock_timeout(path, HidppScanDepth::Full, HIDPP_TRANSACTION_LOCK_TIMEOUT)
         }
 
         fn open_with_depth(path: &str, scan_depth: HidppScanDepth) -> io::Result<Self> {
+            Self::open_with_lock_timeout(path, scan_depth, HIDPP_PROBE_LOCK_TIMEOUT)
+        }
+
+        fn open_with_lock_timeout(
+            path: &str,
+            scan_depth: HidppScanDepth,
+            lock_timeout: Duration,
+        ) -> io::Result<Self> {
             let file = OpenOptions::new().read(true).write(true).open(path)?;
+            lock_endpoint(&file, lock_timeout)?;
             set_nonblocking(&file)?;
             let mut client = Self {
                 file,
@@ -2462,6 +2713,10 @@ mod platform {
             };
             client.drain_input()?;
             Ok(client)
+        }
+
+        fn release_endpoint_lock(&mut self) -> io::Result<()> {
+            unlock_endpoint(&self.file)
         }
 
         fn ping(&mut self, devnumber: u8) -> io::Result<Option<HidppProtocolVersion>> {
@@ -2488,7 +2743,8 @@ mod platform {
             protocol: HidppProtocolVersion,
             receiver_pairing: &ReceiverPairingInfo,
         ) -> io::Result<(PairedDeviceInfo, Option<BatteryInfo>)> {
-            let features = self.enumerate_features(devnumber, receiver_pairing)?;
+            let inventory = self.enumerate_features(devnumber, receiver_pairing)?;
+            let features = inventory.features;
             let name = if receiver_pairing.name.is_some() {
                 None
             } else {
@@ -2501,7 +2757,7 @@ mod platform {
             };
             let (unit_id, model_id) = self.read_device_ids(devnumber, &features)?;
             let battery = self.read_battery_from_features(devnumber, &features)?;
-            let feature_count = features.len();
+            let feature_count = inventory.expected_count;
 
             Ok((
                 PairedDeviceInfo {
@@ -2513,6 +2769,7 @@ mod platform {
                     unit_id,
                     model_id,
                     feature_count,
+                    features_complete: inventory.complete,
                     features,
                 },
                 battery,
@@ -2609,7 +2866,7 @@ mod platform {
             &mut self,
             devnumber: u8,
             receiver_pairing: &ReceiverPairingInfo,
-        ) -> io::Result<Vec<HidppFeatureInfo>> {
+        ) -> io::Result<FeatureInventory> {
             if self.scan_depth == HidppScanDepth::DogiFeatures {
                 return self.enumerate_dogi_features(devnumber, receiver_pairing);
             }
@@ -2624,29 +2881,44 @@ mod platform {
             let Some(feature_set_index) =
                 self.feature_index(devnumber, HIDPP_FEATURE_FEATURE_SET)?
             else {
-                return Ok(features);
+                return Ok(FeatureInventory {
+                    expected_count: features.len(),
+                    features,
+                    complete: true,
+                });
             };
 
             let Some(count_reply) =
                 self.feature_request(devnumber, feature_set_index, 0x00, &[])?
             else {
-                return Ok(features);
+                return Ok(FeatureInventory {
+                    expected_count: features.len(),
+                    features,
+                    complete: false,
+                });
             };
             let Some(raw_count) = count_reply.first().copied() else {
-                return Ok(features);
+                return Ok(FeatureInventory {
+                    expected_count: features.len(),
+                    features,
+                    complete: false,
+                });
             };
             let total_count = usize::from(raw_count)
                 .saturating_add(1)
                 .min(usize::from(u8::MAX) + 1);
+            let mut complete = true;
 
             for index in 1..total_count {
                 let index = index as u8;
                 let Some(reply) =
                     self.feature_request(devnumber, feature_set_index, 0x10, &[index])?
                 else {
+                    complete = false;
                     continue;
                 };
                 if reply.len() < 2 {
+                    complete = false;
                     continue;
                 }
 
@@ -2665,14 +2937,18 @@ mod platform {
             }
 
             features.sort_by_key(|feature| feature.index);
-            Ok(features)
+            Ok(FeatureInventory {
+                expected_count: total_count,
+                complete: complete && features.len() == total_count,
+                features,
+            })
         }
 
         fn enumerate_dogi_features(
             &mut self,
             devnumber: u8,
             receiver_pairing: &ReceiverPairingInfo,
-        ) -> io::Result<Vec<HidppFeatureInfo>> {
+        ) -> io::Result<FeatureInventory> {
             let mut features = vec![HidppFeatureInfo {
                 index: 0,
                 feature_id: HIDPP_FEATURE_ROOT,
@@ -2680,6 +2956,7 @@ mod platform {
                 flags: 0,
                 version: 0,
             }];
+            let mut complete = true;
             for &feature_id in HIDPP_DOGI_FEATURE_IDS {
                 if feature_id == HIDPP_FEATURE_DEVICE_NAME
                     && receiver_pairing.name.is_some()
@@ -2694,11 +2971,16 @@ mod platform {
                     HIDPP_REQUEST_TIMEOUT,
                 )?
                 else {
+                    complete = false;
                     continue;
                 };
-                let Some(index) = reply.first().copied().filter(|index| *index != 0) else {
+                let Some(index) = reply.first().copied() else {
+                    complete = false;
                     continue;
                 };
+                if index == 0 {
+                    continue;
+                }
                 if features.iter().any(|feature| feature.index == index) {
                     continue;
                 }
@@ -2711,7 +2993,11 @@ mod platform {
                 });
             }
             features.sort_by_key(|feature| feature.index);
-            Ok(features)
+            Ok(FeatureInventory {
+                expected_count: features.len(),
+                features,
+                complete,
+            })
         }
 
         fn read_device_name(
@@ -3192,6 +3478,146 @@ mod platform {
         Ok(())
     }
 
+    struct EndpointConsumerLease {
+        file: File,
+    }
+
+    impl EndpointConsumerLease {
+        fn acquire(endpoint_id: &str) -> io::Result<Self> {
+            let runtime_root = std::env::var_os("XDG_RUNTIME_DIR")
+                .map(PathBuf::from)
+                .filter(|path| path.is_absolute())
+                .unwrap_or_else(|| {
+                    // SAFETY: `geteuid` has no preconditions and does not access Rust memory.
+                    let uid = unsafe { libc::geteuid() };
+                    PathBuf::from(format!("/run/user/{uid}"))
+                });
+            Self::acquire_in(&runtime_root.join("dogi/hid-listeners"), endpoint_id)
+        }
+
+        fn acquire_in(directory: &Path, endpoint_id: &str) -> io::Result<Self> {
+            fs::create_dir_all(directory)?;
+            fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
+            let key = endpoint_id
+                .chars()
+                .map(|character| {
+                    if character.is_ascii_alphanumeric() || character == '-' {
+                        character
+                    } else {
+                        '_'
+                    }
+                })
+                .collect::<String>();
+            let path = directory.join(format!("{key}.lock"));
+            let file = OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .read(true)
+                .write(true)
+                .mode(0o600)
+                .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
+                .open(&path)?;
+            // SAFETY: `file` owns a valid descriptor. `flock` only updates advisory
+            // lock state and does not retain pointers or take ownership.
+            let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+            if result != 0 {
+                let error = io::Error::last_os_error();
+                if error
+                    .raw_os_error()
+                    .is_some_and(|code| code == libc::EWOULDBLOCK || code == libc::EAGAIN)
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "another Dogi runtime listener already owns this HID++ endpoint",
+                    ));
+                }
+                return Err(error);
+            }
+            Ok(Self { file })
+        }
+    }
+
+    impl Drop for EndpointConsumerLease {
+        fn drop(&mut self) {
+            let _ = unlock_endpoint(&self.file);
+        }
+    }
+
+    struct EndpointLockGuard<'a> {
+        file: &'a File,
+    }
+
+    impl<'a> EndpointLockGuard<'a> {
+        fn acquire(file: &'a File, timeout: Duration) -> io::Result<Self> {
+            lock_endpoint(file, timeout)?;
+            Ok(Self { file })
+        }
+    }
+
+    impl Drop for EndpointLockGuard<'_> {
+        fn drop(&mut self) {
+            let _ = unlock_endpoint(self.file);
+        }
+    }
+
+    fn acquire_listener_lease(
+        file: &File,
+        deadline: Instant,
+    ) -> io::Result<Option<EndpointLockGuard<'_>>> {
+        loop {
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                return Ok(None);
+            };
+            match EndpointLockGuard::acquire(file, HIDPP_LISTENER_LOCK_TIMEOUT.min(remaining)) {
+                Ok(guard) => return Ok(Some(guard)),
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
+    fn lock_endpoint(file: &File, timeout: Duration) -> io::Result<()> {
+        let operation = libc::LOCK_EX | libc::LOCK_NB;
+        let deadline = Instant::now() + timeout;
+        loop {
+            // SAFETY: `file` owns a valid descriptor for the entire call. `flock`
+            // neither takes ownership nor accesses memory through a raw pointer.
+            let result = unsafe { libc::flock(file.as_raw_fd(), operation) };
+            if result == 0 {
+                return Ok(());
+            }
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            if error
+                .raw_os_error()
+                .is_some_and(|code| code == libc::EWOULDBLOCK || code == libc::EAGAIN)
+            {
+                if Instant::now() >= deadline {
+                    return Err(io::Error::new(
+                        io::ErrorKind::WouldBlock,
+                        "HID++ endpoint is busy in another Dogi process",
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            return Err(error);
+        }
+    }
+
+    fn unlock_endpoint(file: &File) -> io::Result<()> {
+        // SAFETY: `file` owns a valid descriptor for the entire call. Unlocking
+        // changes only advisory lock state associated with the open description.
+        let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+
     fn wait_fd(fd: i32, events: libc::c_short, timeout: Duration) -> io::Result<bool> {
         let mut pollfd = libc::pollfd {
             fd,
@@ -3411,6 +3837,17 @@ mod platform {
             PreparedSettingsTransaction {
                 version: SETTINGS_TRANSACTION_FORMAT_VERSION,
                 device_id: "device-1".to_owned(),
+                identity: PreparedDeviceIdentity {
+                    receiver_id: "device-1".to_owned(),
+                    receiver_vendor_id: 0x046d,
+                    receiver_product_id: 0xc548,
+                    receiver_serial: Some("receiver-1".to_owned()),
+                    slot: 1,
+                    wpid: Some("B034".to_owned()),
+                    pairing_serial: Some("PAIRING-1".to_owned()),
+                    unit_id: Some("AABBCCDD".to_owned()),
+                    model_id: Some("B03400000000".to_owned()),
+                },
                 profile_name: "Default".to_owned(),
                 changes: vec![
                     transaction_change(0x2205, 10, 11),
@@ -3503,6 +3940,7 @@ mod platform {
                 unit_id: Some("AABBCCDD".to_owned()),
                 model_id: Some("B03400000000".to_owned()),
                 feature_count,
+                features_complete: true,
                 features: Vec::new(),
             }
         }
@@ -3515,6 +3953,316 @@ mod platform {
                 serial: Some("AABBCCDD".to_owned()),
                 slot_state_known: true,
             }
+        }
+
+        struct MultiSlotProbeClient;
+
+        impl HidppProbeClient for MultiSlotProbeClient {
+            fn read_receiver_pairing_device(
+                &mut self,
+                slot: u8,
+                _receiver_kind: Option<ReceiverKind>,
+            ) -> io::Result<ReceiverPairingInfo> {
+                Ok(if matches!(slot, 1 | 2) {
+                    ReceiverPairingInfo {
+                        name: Some(format!("Mouse {slot}")),
+                        kind: Some("mouse".to_owned()),
+                        wpid: Some(if slot == 1 { "B034" } else { "B035" }.to_owned()),
+                        serial: Some(format!("AABBCCD{slot}")),
+                        slot_state_known: true,
+                    }
+                } else {
+                    ReceiverPairingInfo {
+                        slot_state_known: true,
+                        ..ReceiverPairingInfo::default()
+                    }
+                })
+            }
+
+            fn ping(&mut self, devnumber: u8) -> io::Result<Option<HidppProtocolVersion>> {
+                Ok(matches!(devnumber, 1 | 2).then_some(test_protocol()))
+            }
+
+            fn read_paired_device(
+                &mut self,
+                devnumber: u8,
+                _protocol: HidppProtocolVersion,
+                _receiver_pairing: &ReceiverPairingInfo,
+            ) -> io::Result<(PairedDeviceInfo, Option<BatteryInfo>)> {
+                let mut paired = test_paired_device(24);
+                paired.slot = devnumber;
+                paired.unit_id = Some(format!("AABBCCD{devnumber}"));
+                Ok((paired, None))
+            }
+
+            fn read_battery(
+                &mut self,
+                _devnumber: u8,
+                _features: &[HidppFeatureInfo],
+            ) -> io::Result<Option<BatteryInfo>> {
+                Ok(None)
+            }
+        }
+
+        #[test]
+        fn receiver_probe_exposes_every_paired_slot() {
+            let probes =
+                probe_hidpp_devices(&mut MultiSlotProbeClient, Some(ReceiverKind::Bolt), |_| {});
+            let slots = probes
+                .iter()
+                .filter_map(|probe| probe.paired_device.as_ref().map(|paired| paired.slot))
+                .collect::<Vec<_>>();
+
+            assert_eq!(slots, vec![1, 2]);
+            assert_eq!(
+                probes[0].paired_device.as_ref().unwrap().wpid.as_deref(),
+                Some("B034")
+            );
+            assert_eq!(
+                probes[1].paired_device.as_ref().unwrap().wpid.as_deref(),
+                Some("B035")
+            );
+        }
+
+        #[test]
+        fn prepared_identity_rejects_a_repaired_device() {
+            let transaction = test_transaction();
+            let mut current = test_paired_device(24);
+            current.wpid = Some("B034".to_owned());
+            let mut current = VerifiedSettingsTarget {
+                paired: current,
+                pairing_serial: Some("PAIRING-1".to_owned()),
+            };
+            assert!(
+                validate_prepared_identity(&transaction.identity, &current, Some("receiver-1"))
+                    .is_ok()
+            );
+
+            current.paired.unit_id = Some("DEADBEEF".to_owned());
+            assert!(
+                validate_prepared_identity(&transaction.identity, &current, Some("receiver-1"))
+                    .is_err()
+            );
+        }
+
+        #[test]
+        fn prepared_identity_survives_receiver_port_and_slot_changes() {
+            let mut transaction = test_transaction();
+            transaction.identity.receiver_id = "old-usb-port".to_owned();
+            transaction.identity.slot = 1;
+            let mut paired = test_paired_device(24);
+            paired.slot = 3;
+            paired.wpid = transaction.identity.wpid.clone();
+            paired.model_id = transaction.identity.model_id.clone();
+            let current = VerifiedSettingsTarget {
+                paired,
+                pairing_serial: Some("new-pairing-value".to_owned()),
+            };
+
+            assert!(
+                validate_prepared_identity(
+                    &transaction.identity,
+                    &current,
+                    Some("receiver-on-new-port")
+                )
+                .is_ok()
+            );
+            assert_eq!(transaction.stable_device_key(), "unit-AABBCCDD");
+        }
+
+        #[test]
+        fn prepared_identity_rejects_another_device_of_the_same_model() {
+            let transaction = test_transaction();
+            let mut paired = test_paired_device(24);
+            paired.wpid = transaction.identity.wpid.clone();
+            paired.model_id = transaction.identity.model_id.clone();
+            paired.unit_id = Some("11223344".to_owned());
+            let current = VerifiedSettingsTarget {
+                paired,
+                pairing_serial: transaction.identity.pairing_serial.clone(),
+            };
+
+            assert!(
+                validate_prepared_identity(
+                    &transaction.identity,
+                    &current,
+                    transaction.identity.receiver_serial.as_deref()
+                )
+                .is_err()
+            );
+        }
+
+        #[test]
+        fn incomplete_probe_cache_has_a_short_lifetime() {
+            let path = format!("test-cache-{}", std::process::id());
+            let mut paired = test_paired_device(1);
+            paired.features_complete = false;
+            hidpp_probe_cache().lock().unwrap().insert(
+                path.clone(),
+                CachedHidppProbes {
+                    receiver_kind: Some(ReceiverKind::Bolt),
+                    depth: HidppScanDepth::DogiFeatures,
+                    cached_at: Instant::now() - Duration::from_secs(2),
+                    probes: vec![HidppDeviceProbe {
+                        paired_device: Some(paired),
+                        pairing_serial: None,
+                        battery: None,
+                        detail: None,
+                    }],
+                },
+            );
+
+            assert!(
+                cached_hidpp_probes(
+                    &path,
+                    Some(ReceiverKind::Bolt),
+                    HidppScanDepth::DogiFeatures
+                )
+                .is_none()
+            );
+        }
+
+        #[test]
+        fn released_listener_lock_does_not_block_a_settings_client() {
+            let path =
+                std::env::temp_dir().join(format!("dogi-hid-endpoint-lock-{}", std::process::id()));
+            fs::write(&path, []).unwrap();
+            let mut listener = HidppClient::open_with_lock_timeout(
+                path.to_str().unwrap(),
+                HidppScanDepth::Inventory,
+                Duration::from_millis(20),
+            )
+            .unwrap();
+            listener.release_endpoint_lock().unwrap();
+
+            let settings = HidppClient::open_with_lock_timeout(
+                path.to_str().unwrap(),
+                HidppScanDepth::Full,
+                Duration::from_millis(20),
+            );
+            assert!(settings.is_ok());
+
+            drop(settings);
+            drop(listener);
+            let _ = fs::remove_file(path);
+        }
+
+        #[test]
+        fn endpoint_lock_times_out_instead_of_blocking_forever() {
+            let path =
+                std::env::temp_dir().join(format!("dogi-hid-endpoint-busy-{}", std::process::id()));
+            fs::write(&path, []).unwrap();
+            let first = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
+            let second = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
+            lock_endpoint(&first, Duration::from_millis(20)).unwrap();
+
+            let error = EndpointLockGuard::acquire(&second, Duration::from_millis(20))
+                .err()
+                .unwrap();
+            assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+
+            unlock_endpoint(&first).unwrap();
+            let _ = fs::remove_file(path);
+        }
+
+        #[test]
+        fn endpoint_allows_only_one_runtime_event_consumer() {
+            let directory = std::env::temp_dir().join(format!(
+                "dogi-hid-consumer-{}-{:?}",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            let first = EndpointConsumerLease::acquire_in(&directory, "receiver:1").unwrap();
+            let error = EndpointConsumerLease::acquire_in(&directory, "receiver:1")
+                .err()
+                .unwrap();
+            assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+
+            let other = EndpointConsumerLease::acquire_in(&directory, "receiver:2").unwrap();
+            drop(first);
+            let replacement = EndpointConsumerLease::acquire_in(&directory, "receiver:1").unwrap();
+            drop((replacement, other));
+            fs::remove_dir_all(directory).unwrap();
+        }
+
+        #[test]
+        fn listener_waits_within_its_deadline_for_a_long_transaction() {
+            let path = std::env::temp_dir().join(format!(
+                "dogi-hid-long-transaction-{}-{:?}",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            fs::write(&path, []).unwrap();
+            let transaction_file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
+            let listener_file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
+            let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+            let holder = std::thread::spawn(move || {
+                lock_endpoint(&transaction_file, Duration::from_millis(20)).unwrap();
+                ready_tx.send(()).unwrap();
+                std::thread::sleep(Duration::from_millis(120));
+                unlock_endpoint(&transaction_file).unwrap();
+            });
+            ready_rx.recv().unwrap();
+            let started = Instant::now();
+            let lease =
+                acquire_listener_lease(&listener_file, Instant::now() + Duration::from_millis(500))
+                    .unwrap();
+            assert!(lease.is_some());
+            assert!(started.elapsed() >= Duration::from_millis(80));
+            drop(lease);
+            holder.join().unwrap();
+            fs::remove_file(path).unwrap();
+        }
+
+        #[test]
+        fn probe_cache_requires_and_keys_strong_endpoint_identity() {
+            let sysfs = "/sys/devices/example/hidraw0";
+            assert!(endpoint_probe_cache_key(0x046d, 0xc548, sysfs, None, None).is_none());
+            let first = endpoint_probe_cache_key(
+                0x046d,
+                0xc548,
+                sysfs,
+                Some("usb-1/receiver"),
+                Some("SERIAL-A"),
+            )
+            .unwrap();
+            let second = endpoint_probe_cache_key(
+                0x046d,
+                0xc548,
+                sysfs,
+                Some("usb-1/receiver"),
+                Some("SERIAL-B"),
+            )
+            .unwrap();
+            assert_ne!(first, second);
+        }
+
+        #[test]
+        fn recoverable_transaction_requires_a_physical_instance_identifier() {
+            let mut transaction = test_transaction();
+            transaction.identity.unit_id = None;
+            transaction.identity.pairing_serial = None;
+            assert!(validate_recoverable_identity(&transaction).is_err());
+
+            transaction.identity.pairing_serial = Some("PAIRING-1".to_owned());
+            assert!(validate_recoverable_identity(&transaction).is_ok());
+            assert!(transaction.stable_device_key().contains("PAIRING1"));
         }
 
         #[test]

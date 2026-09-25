@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::io;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use dogi_core::{BatteryInfo, BatterySource, BatteryStatus, DogiError, Result};
@@ -10,6 +10,7 @@ use dogi_ui::ApplicationLanguage;
 use serde::{Deserialize, Serialize};
 
 use crate::desktop::notifications::{self, BatteryNotificationLevel};
+use crate::persistence;
 
 pub(crate) const BATTERY_POLL_INTERVAL: std::time::Duration =
     std::time::Duration::from_secs(15 * 60);
@@ -148,21 +149,41 @@ impl BatteryNotificationMonitor {
         low_battery_enabled: bool,
         full_battery_enabled: bool,
     ) -> Result<()> {
-        self.next_preference_check = Instant::now() + PREFERENCE_POLL_INTERVAL;
         let low_battery_changed = self.low_battery_notifications_enabled != low_battery_enabled;
         let full_battery_changed = self.full_battery_notifications_enabled != full_battery_enabled;
         if !low_battery_changed && !full_battery_changed {
+            self.next_preference_check = Instant::now() + PREFERENCE_POLL_INTERVAL;
             return Ok(());
         }
 
-        self.low_battery_notifications_enabled = low_battery_enabled;
-        self.full_battery_notifications_enabled = full_battery_enabled;
+        let mut staged_state = self.state.clone();
+        let mut staged_pending = self.pending.clone();
+        let close_low_battery_notification = low_battery_changed && !low_battery_enabled;
         if low_battery_changed && !low_battery_enabled {
-            self.clear_low_battery(device_id)?;
-            self.close_active_notification(device_id);
+            remove_pending_low_battery_from(&mut staged_pending, device_id);
+            let mut device_state = device_state_in(&staged_state, device_id);
+            device_state.low_battery_alert = None;
+            set_device_state_in(&mut staged_state, device_id, device_state);
         }
         if full_battery_changed && !full_battery_enabled {
-            self.remove_pending(device_id, PendingObservationKind::FullyCharged);
+            remove_pending_from(
+                &mut staged_pending,
+                device_id,
+                PendingObservationKind::FullyCharged,
+            );
+        }
+
+        if let Err(error) = self.save_state(&staged_state) {
+            self.next_preference_check = Instant::now() + PREFERENCE_POLL_INTERVAL;
+            return Err(error);
+        }
+        self.state = staged_state;
+        self.pending = staged_pending;
+        self.low_battery_notifications_enabled = low_battery_enabled;
+        self.full_battery_notifications_enabled = full_battery_enabled;
+        self.next_preference_check = Instant::now() + PREFERENCE_POLL_INTERVAL;
+        if close_low_battery_notification {
+            self.close_active_notification(device_id);
         }
         if low_battery_enabled || full_battery_enabled {
             self.next_check = Instant::now();
@@ -245,9 +266,14 @@ impl BatteryNotificationMonitor {
             BatteryAlertDecision::NotifyFullyCharged => {
                 let replaces_id = self.notification_ids.get(device_id).copied();
                 notifications::show_fully_charged(language, device_name, replaces_id).and_then(
-                    |_| {
-                        self.notification_ids.remove(device_id);
-                        self.mark_fully_charged_notified(device_id)
+                    |notification_id| {
+                        self.notification_ids
+                            .insert(device_id.to_owned(), notification_id);
+                        let result = self.mark_fully_charged_notified(device_id);
+                        if result.is_ok() {
+                            self.notification_ids.remove(device_id);
+                        }
+                        result
                     },
                 )
             }
@@ -275,6 +301,7 @@ impl BatteryNotificationMonitor {
             return Ok(BatteryAlertDecision::None);
         };
 
+        let previous_pending = self.pending.clone();
         let mut device_state = self.device_state(device_id);
         let mut decision = BatteryAlertDecision::None;
 
@@ -334,8 +361,13 @@ impl BatteryNotificationMonitor {
             self.remove_pending_low_battery(device_id);
         }
 
-        self.set_device_state(device_id, device_state)?;
-        Ok(decision)
+        match self.set_device_state(device_id, device_state) {
+            Ok(_) => Ok(decision),
+            Err(error) => {
+                self.pending = previous_pending;
+                Err(error)
+            }
+        }
     }
 
     pub(crate) fn mark_low_battery_notified(
@@ -343,17 +375,27 @@ impl BatteryNotificationMonitor {
         device_id: &str,
         level: BatteryAlertLevel,
     ) -> Result<()> {
+        let previous_pending = self.pending.clone();
         self.pending.remove(device_id);
         let mut state = self.device_state(device_id);
         state.low_battery_alert = Some(level);
-        self.set_device_state(device_id, state).map(|_| ())
+        if let Err(error) = self.set_device_state(device_id, state) {
+            self.pending = previous_pending;
+            return Err(error);
+        }
+        Ok(())
     }
 
     pub(crate) fn mark_fully_charged_notified(&mut self, device_id: &str) -> Result<()> {
+        let previous_pending = self.pending.clone();
         self.remove_pending(device_id, PendingObservationKind::FullyCharged);
         let mut state = self.device_state(device_id);
         state.charge_cycle = ChargeCycleState::FullNotified;
-        self.set_device_state(device_id, state).map(|_| ())
+        if let Err(error) = self.set_device_state(device_id, state) {
+            self.pending = previous_pending;
+            return Err(error);
+        }
+        Ok(())
     }
 
     pub(crate) fn awaiting_confirmation(&self, device_id: &str) -> bool {
@@ -377,37 +419,15 @@ impl BatteryNotificationMonitor {
     }
 
     fn remove_pending(&mut self, device_id: &str, kind: PendingObservationKind) {
-        if self.pending.get(device_id).map(|pending| pending.kind) == Some(kind) {
-            self.pending.remove(device_id);
-        }
+        remove_pending_from(&mut self.pending, device_id, kind);
     }
 
     fn remove_pending_low_battery(&mut self, device_id: &str) {
-        if matches!(
-            self.pending.get(device_id),
-            Some(PendingObservation {
-                kind: PendingObservationKind::LowBattery(_),
-                ..
-            })
-        ) {
-            self.pending.remove(device_id);
-        }
-    }
-
-    fn clear_low_battery(&mut self, device_id: &str) -> Result<bool> {
-        self.remove_pending_low_battery(device_id);
-        let mut state = self.device_state(device_id);
-        let changed = state.low_battery_alert.take().is_some();
-        self.set_device_state(device_id, state)?;
-        Ok(changed)
+        remove_pending_low_battery_from(&mut self.pending, device_id);
     }
 
     fn device_state(&self, device_id: &str) -> StoredDeviceNotificationState {
-        self.state
-            .devices
-            .get(device_id)
-            .copied()
-            .unwrap_or_default()
+        device_state_in(&self.state, device_id)
     }
 
     fn set_device_state(
@@ -419,12 +439,10 @@ impl BatteryNotificationMonitor {
         if previous == state {
             return Ok(false);
         }
-        if state == StoredDeviceNotificationState::default() {
-            self.state.devices.remove(device_id);
-        } else {
-            self.state.devices.insert(device_id.to_owned(), state);
-        }
-        self.save()?;
+        let mut staged = self.state.clone();
+        set_device_state_in(&mut staged, device_id, state);
+        self.save_state(&staged)?;
+        self.state = staged;
         Ok(true)
     }
 
@@ -434,48 +452,60 @@ impl BatteryNotificationMonitor {
         }
     }
 
-    fn save(&self) -> Result<()> {
-        let parent = self.path.parent().ok_or_else(|| {
+    fn save_state(&self, state: &StoredBatteryNotificationState) -> Result<()> {
+        let mut bytes = serde_json::to_vec_pretty(state).map_err(|error| {
             DogiError::Config(format!(
-                "battery notification state path has no parent: {}",
+                "failed to encode battery notification state {}: {error}",
                 self.path.display()
             ))
         })?;
-        fs::create_dir_all(parent).map_err(|error| {
-            DogiError::Config(format!(
-                "failed to create battery notification cache {}: {error}",
-                parent.display()
-            ))
-        })?;
-        let temporary_path = temporary_path(&self.path);
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&temporary_path)
-            .map_err(|error| state_write_error(&temporary_path, error))?;
-        let mut writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(&mut writer, &self.state).map_err(|error| {
-            DogiError::Config(format!(
-                "failed to encode battery notification state {}: {error}",
-                temporary_path.display()
-            ))
-        })?;
-        writer
-            .write_all(b"\n")
-            .and_then(|()| writer.flush())
-            .map_err(|error| state_write_error(&temporary_path, error))?;
-        writer
-            .into_inner()
-            .map_err(|error| state_write_error(&temporary_path, error.into_error()))?
-            .sync_all()
-            .map_err(|error| state_write_error(&temporary_path, error))?;
-        fs::rename(&temporary_path, &self.path)
-            .map_err(|error| state_write_error(&self.path, error))?;
-        if let Ok(directory) = File::open(parent) {
-            let _ = directory.sync_all();
-        }
-        Ok(())
+        bytes.push(b'\n');
+        persistence::atomic_write(&self.path, &bytes, None)
+            .map_err(|error| DogiError::Config(error.to_string()))
+    }
+}
+
+fn device_state_in(
+    state: &StoredBatteryNotificationState,
+    device_id: &str,
+) -> StoredDeviceNotificationState {
+    state.devices.get(device_id).copied().unwrap_or_default()
+}
+
+fn set_device_state_in(
+    stored: &mut StoredBatteryNotificationState,
+    device_id: &str,
+    state: StoredDeviceNotificationState,
+) {
+    if state == StoredDeviceNotificationState::default() {
+        stored.devices.remove(device_id);
+    } else {
+        stored.devices.insert(device_id.to_owned(), state);
+    }
+}
+
+fn remove_pending_from(
+    pending: &mut HashMap<String, PendingObservation>,
+    device_id: &str,
+    kind: PendingObservationKind,
+) {
+    if pending.get(device_id).map(|pending| pending.kind) == Some(kind) {
+        pending.remove(device_id);
+    }
+}
+
+fn remove_pending_low_battery_from(
+    pending: &mut HashMap<String, PendingObservation>,
+    device_id: &str,
+) {
+    if matches!(
+        pending.get(device_id),
+        Some(PendingObservation {
+            kind: PendingObservationKind::LowBattery(_),
+            ..
+        })
+    ) {
+        pending.remove(device_id);
     }
 }
 
@@ -543,24 +573,10 @@ impl Default for StoredBatteryNotificationState {
     }
 }
 
-fn temporary_path(path: &Path) -> PathBuf {
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("state");
-    path.with_file_name(format!(".{file_name}.tmp-{}", std::process::id()))
-}
-
-fn state_write_error(path: &Path, error: io::Error) -> DogiError {
-    DogiError::Config(format!(
-        "failed to write battery notification state {}: {error}",
-        path.display()
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn low_and_critical_alerts_require_confirmation_and_only_escalate() {
@@ -606,7 +622,7 @@ mod tests {
             BatteryAlertDecision::None
         );
 
-        let _ = fs::remove_file(path);
+        remove_test_state(&path);
     }
 
     #[test]
@@ -637,7 +653,7 @@ mod tests {
         );
         assert!(monitor.awaiting_confirmation("mouse"));
 
-        let _ = fs::remove_file(path);
+        remove_test_state(&path);
     }
 
     #[test]
@@ -669,7 +685,7 @@ mod tests {
             BatteryAlertDecision::None
         );
 
-        let _ = fs::remove_file(path);
+        remove_test_state(&path);
     }
 
     #[test]
@@ -690,7 +706,52 @@ mod tests {
         );
         assert!(reloaded.awaiting_confirmation("mouse"));
 
-        let _ = fs::remove_file(path);
+        remove_test_state(&path);
+    }
+
+    #[test]
+    fn preference_state_save_failure_rolls_back_memory_and_retries_cleanly() {
+        let path = unique_path("preference-save-retry");
+        let parent = path.parent().unwrap().to_path_buf();
+        let mut monitor = BatteryNotificationMonitor::empty(path.clone());
+        monitor
+            .mark_low_battery_notified("mouse", BatteryAlertLevel::Low)
+            .unwrap();
+        monitor.pending.insert(
+            "mouse".to_owned(),
+            PendingObservation {
+                kind: PendingObservationKind::LowBattery(BatteryAlertLevel::Critical),
+                count: 1,
+            },
+        );
+        fs::remove_file(&path).unwrap();
+        fs::remove_dir(&parent).unwrap();
+        fs::write(&parent, b"blocks the state directory").unwrap();
+
+        assert!(monitor.update_preferences("mouse", false, true).is_err());
+        assert!(monitor.low_battery_notifications_enabled);
+        assert_eq!(
+            monitor.device_state("mouse").low_battery_alert,
+            Some(BatteryAlertLevel::Low)
+        );
+        assert!(monitor.awaiting_confirmation("mouse"));
+
+        fs::remove_file(&parent).unwrap();
+        fs::create_dir(&parent).unwrap();
+        monitor.update_preferences("mouse", false, true).unwrap();
+        assert!(!monitor.low_battery_notifications_enabled);
+        assert_eq!(
+            monitor.device_state("mouse"),
+            StoredDeviceNotificationState::default()
+        );
+        assert!(!monitor.awaiting_confirmation("mouse"));
+        let reloaded = BatteryNotificationMonitor::load(path.clone()).unwrap();
+        assert_eq!(
+            reloaded.device_state("mouse"),
+            StoredDeviceNotificationState::default()
+        );
+
+        remove_test_state(&path);
     }
 
     #[test]
@@ -729,7 +790,7 @@ mod tests {
             BatteryAlertDecision::None
         );
 
-        let _ = fs::remove_file(path);
+        remove_test_state(&path);
     }
 
     #[test]
@@ -776,7 +837,7 @@ mod tests {
             BatteryAlertDecision::NotifyFullyCharged
         );
 
-        let _ = fs::remove_file(path);
+        remove_test_state(&path);
     }
 
     #[test]
@@ -801,7 +862,7 @@ mod tests {
             BatteryAlertDecision::NotifyFullyCharged
         );
 
-        let _ = fs::remove_file(path);
+        remove_test_state(&path);
     }
 
     #[test]
@@ -827,7 +888,7 @@ mod tests {
             BatteryAlertDecision::None
         );
 
-        let _ = fs::remove_file(path);
+        remove_test_state(&path);
     }
 
     fn battery(percent: u8, status: BatteryStatus) -> BatteryInfo {
@@ -849,13 +910,22 @@ mod tests {
     }
 
     fn unique_path(label: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "dogi-battery-notification-{label}-{}-{}.json",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ))
+        std::env::temp_dir()
+            .join(format!(
+                "dogi-battery-notification-{label}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ))
+            .join("state.json")
+    }
+
+    fn remove_test_state(path: &Path) {
+        let _ = fs::remove_file(path);
+        if let Some(parent) = path.parent() {
+            let _ = fs::remove_dir(parent);
+        }
     }
 }

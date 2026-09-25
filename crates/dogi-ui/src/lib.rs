@@ -1,3 +1,8 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::expect_used, clippy::panic, clippy::unwrap_used)
+)]
+
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -16,10 +21,23 @@ use dogi_core::{
     known_logitech_wpid_name, resolved_logitech_device_name, settings_apply_step_scope,
 };
 
-slint::include_modules!();
+// Slint emits placeholder trait methods for component embedding, which is not used by Dogi.
+// Keep the exception on generated code so handwritten production paths retain strict lints.
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::unwrap_used
+)]
+mod generated_ui {
+    slint::include_modules!();
+}
+pub use generated_ui::*;
 
 mod desktop_preferences;
 mod preferences;
+mod settings_merge;
 
 pub const APPLICATION_ID: &str = "io.github.oksyd.dogi";
 pub const DEVELOPMENT_APPLICATION_ID: &str = "io.github.oksyd.dogi.Development";
@@ -44,6 +62,8 @@ pub type SettingsTransactionCommitter = Arc<
         + Sync,
 >;
 pub type DeviceScanner = Arc<dyn Fn() -> Result<Vec<DeviceInfo>> + Send + Sync>;
+pub type HorizontalScrollPreviewHandler =
+    Arc<dyn Fn(HorizontalScrollPreviewCommand) -> Result<()> + Send + Sync>;
 
 #[derive(Clone, Debug)]
 pub struct SettingsCommitResult {
@@ -87,6 +107,7 @@ const HIDPP_RECOVERY_SCAN_DELAYS: [Duration; 3] = [
     Duration::from_secs(2),
     Duration::from_secs(5),
 ];
+const DESKTOP_RUNTIME_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DeviceScanIntent {
@@ -131,17 +152,18 @@ pub enum DesktopRuntimePauseReason {
 pub enum DesktopRuntimeOperation {
     Reconcile { enabled: bool },
     Restart,
+    Status,
 }
 
 #[derive(Clone)]
 pub struct DesktopRuntimeManager {
     pub supported: bool,
+    pub app_profiles_supported: bool,
     pub pause_reason: DesktopRuntimePauseReason,
     pub availability: DesktopRuntimeAvailability,
     pub detail: String,
     pub manage: Arc<dyn Fn(DesktopRuntimeOperation) -> Result<DesktopRuntimeStatus> + Send + Sync>,
-    pub horizontal_scroll_preview:
-        Arc<dyn Fn(HorizontalScrollPreviewCommand) -> Result<()> + Send + Sync>,
+    pub horizontal_scroll_preview: HorizontalScrollPreviewHandler,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -178,8 +200,43 @@ pub enum ApplicationUpdateResult {
     UpToDate,
     Ready { version: String },
     Cancelled,
-    Restarting,
+    InstalledNeedsRestart { version: String, detail: String },
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApplicationUpdateErrorKind {
+    Unavailable,
+    Network,
+    Verification,
+    Storage,
+    Authorization,
+    Installation,
+    State,
+    Internal,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ApplicationUpdateError {
+    pub kind: ApplicationUpdateErrorKind,
+    detail: String,
+}
+
+impl ApplicationUpdateError {
+    pub fn new(kind: ApplicationUpdateErrorKind, detail: impl Into<String>) -> Self {
+        Self {
+            kind,
+            detail: detail.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for ApplicationUpdateError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.detail)
+    }
+}
+
+impl std::error::Error for ApplicationUpdateError {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ApplicationUpdateNotification {
@@ -192,8 +249,15 @@ pub struct ApplicationUpdateManager {
     pub supported: bool,
     pub current_version: String,
     pub detail: String,
-    pub manage:
-        Arc<dyn Fn(ApplicationUpdateOperation) -> Result<ApplicationUpdateResult> + Send + Sync>,
+    pub manage: Arc<
+        dyn Fn(
+                ApplicationUpdateOperation,
+            ) -> std::result::Result<ApplicationUpdateResult, ApplicationUpdateError>
+            + Send
+            + Sync,
+    >,
+    pub relaunch_after_exit:
+        Arc<dyn Fn() -> std::result::Result<(), ApplicationUpdateError> + Send + Sync>,
     pub notify_ready: Arc<dyn Fn(ApplicationUpdateNotification) -> Result<()> + Send + Sync>,
 }
 
@@ -201,11 +265,23 @@ impl ApplicationUpdateManager {
     pub fn unavailable(detail: impl Into<String>) -> Self {
         let detail = detail.into();
         let operation_detail = detail.clone();
+        let relaunch_detail = detail.clone();
         Self {
             supported: false,
             current_version: env!("CARGO_PKG_VERSION").to_owned(),
             detail,
-            manage: Arc::new(move |_| Err(DogiError::BackendUnavailable(operation_detail.clone()))),
+            manage: Arc::new(move |_| {
+                Err(ApplicationUpdateError::new(
+                    ApplicationUpdateErrorKind::Unavailable,
+                    operation_detail.clone(),
+                ))
+            }),
+            relaunch_after_exit: Arc::new(move || {
+                Err(ApplicationUpdateError::new(
+                    ApplicationUpdateErrorKind::Unavailable,
+                    relaunch_detail.clone(),
+                ))
+            }),
             notify_ready: Arc::new(|_| Ok(())),
         }
     }
@@ -245,12 +321,13 @@ struct LaunchIntegrations {
 
 #[derive(Debug)]
 struct DesktopRuntimeCompletion {
+    operation: DesktopRuntimeOperation,
     result: Result<DesktopRuntimeStatus>,
 }
 
 #[derive(Debug)]
 struct ApplicationUpdateCompletion {
-    result: Result<ApplicationUpdateResult>,
+    result: std::result::Result<ApplicationUpdateResult, ApplicationUpdateError>,
 }
 
 enum NetworkPreferencesWork {
@@ -272,10 +349,13 @@ pub enum HorizontalScrollPreviewCommand {
     Clear,
 }
 
+const PREVIEW_EXIT_CLEAR_TIMEOUT: Duration = Duration::from_secs(2);
+
 #[derive(Debug)]
 struct HorizontalScrollPreviewWork {
     sequence: u64,
     command: HorizontalScrollPreviewCommand,
+    acknowledgement: Option<mpsc::SyncSender<HorizontalScrollPreviewAcknowledgement>>,
 }
 
 #[derive(Debug)]
@@ -283,6 +363,153 @@ struct HorizontalScrollPreviewCompletion {
     sequence: u64,
     command: HorizontalScrollPreviewCommand,
     result: Result<()>,
+    active: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct HorizontalScrollPreviewAcknowledgement {
+    result: std::result::Result<(), String>,
+    active: bool,
+}
+
+#[derive(Clone)]
+struct HorizontalScrollPreviewSession {
+    sender: Option<mpsc::Sender<HorizontalScrollPreviewWork>>,
+    sequence: Rc<Cell<u64>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum HorizontalScrollPreviewCleanupError {
+    Unavailable,
+    Failed { detail: String, active: bool },
+    TimedOut,
+}
+
+impl std::fmt::Display for HorizontalScrollPreviewCleanupError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unavailable => {
+                formatter.write_str("horizontal scroll preview worker is unavailable")
+            }
+            Self::Failed { detail, .. } => formatter.write_str(detail),
+            Self::TimedOut => {
+                formatter.write_str("timed out while stopping the horizontal scroll preview")
+            }
+        }
+    }
+}
+
+impl HorizontalScrollPreviewSession {
+    fn new(sender: Option<mpsc::Sender<HorizontalScrollPreviewWork>>) -> Self {
+        Self {
+            sender,
+            sequence: Rc::new(Cell::new(0)),
+        }
+    }
+
+    fn dispatch(&self, command: HorizontalScrollPreviewCommand) -> bool {
+        self.send(command, None).is_ok()
+    }
+
+    fn clear_and_wait(
+        &self,
+        timeout: Duration,
+    ) -> std::result::Result<(), HorizontalScrollPreviewCleanupError> {
+        if self.sender.is_none() {
+            return Ok(());
+        }
+        let (acknowledgement_sender, acknowledgement_receiver) = mpsc::sync_channel(1);
+        self.send(
+            HorizontalScrollPreviewCommand::Clear,
+            Some(acknowledgement_sender),
+        )?;
+        match acknowledgement_receiver.recv_timeout(timeout) {
+            Ok(HorizontalScrollPreviewAcknowledgement { result: Ok(()), .. }) => Ok(()),
+            Ok(HorizontalScrollPreviewAcknowledgement {
+                result: Err(detail),
+                active,
+            }) => Err(HorizontalScrollPreviewCleanupError::Failed { detail, active }),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                Err(HorizontalScrollPreviewCleanupError::TimedOut)
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Err(HorizontalScrollPreviewCleanupError::Unavailable)
+            }
+        }
+    }
+
+    fn send(
+        &self,
+        command: HorizontalScrollPreviewCommand,
+        acknowledgement: Option<mpsc::SyncSender<HorizontalScrollPreviewAcknowledgement>>,
+    ) -> std::result::Result<(), HorizontalScrollPreviewCleanupError> {
+        let Some(sender) = &self.sender else {
+            return Err(HorizontalScrollPreviewCleanupError::Unavailable);
+        };
+        let next = self.sequence.get().wrapping_add(1).max(1);
+        self.sequence.set(next);
+        sender
+            .send(HorizontalScrollPreviewWork {
+                sequence: next,
+                command,
+                acknowledgement,
+            })
+            .map_err(|_| HorizontalScrollPreviewCleanupError::Unavailable)
+    }
+}
+
+fn start_horizontal_scroll_preview_worker(
+    handler: Option<HorizontalScrollPreviewHandler>,
+) -> (
+    HorizontalScrollPreviewSession,
+    mpsc::Receiver<HorizontalScrollPreviewCompletion>,
+    bool,
+) {
+    let (work_sender, work_receiver) = mpsc::channel::<HorizontalScrollPreviewWork>();
+    let (completion_sender, completion_receiver) =
+        mpsc::channel::<HorizontalScrollPreviewCompletion>();
+    let worker_available = handler.is_some_and(|handler| {
+        std::thread::Builder::new()
+            .name("dogi-horizontal-scroll-preview".to_owned())
+            .spawn(move || {
+                let mut active = false;
+                while let Ok(work) = work_receiver.recv() {
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        handler(work.command.clone())
+                    }))
+                    .unwrap_or_else(|_| {
+                        Err(DogiError::Ui(
+                            "horizontal scroll preview worker panicked".to_owned(),
+                        ))
+                    });
+                    if result.is_ok() {
+                        active =
+                            matches!(&work.command, HorizontalScrollPreviewCommand::Set { .. });
+                    }
+                    if let Some(acknowledgement) = work.acknowledgement {
+                        let _ = acknowledgement.send(HorizontalScrollPreviewAcknowledgement {
+                            result: match &result {
+                                Ok(()) => Ok(()),
+                                Err(error) => Err(error.to_string()),
+                            },
+                            active,
+                        });
+                    }
+                    let _ = completion_sender.send(HorizontalScrollPreviewCompletion {
+                        sequence: work.sequence,
+                        command: work.command,
+                        result,
+                        active,
+                    });
+                }
+            })
+            .is_ok()
+    });
+    (
+        HorizontalScrollPreviewSession::new(worker_available.then_some(work_sender)),
+        completion_receiver,
+        worker_available,
+    )
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -354,6 +581,87 @@ fn set_window_status(window: &MainWindow, status: UiStatus) {
     window.set_status(status);
 }
 
+fn clear_horizontal_scroll_preview_before_exit(
+    window: &MainWindow,
+    session: &HorizontalScrollPreviewSession,
+    poll_timer: &slint::Timer,
+    heartbeat_timer: &slint::Timer,
+    timeout: Duration,
+) -> bool {
+    let was_open = window.get_horizontal_scroll_test_open();
+    let was_active = window.get_horizontal_scroll_test_active();
+    heartbeat_timer.stop();
+    poll_timer.stop();
+    window.set_horizontal_scroll_test_open(false);
+    window.set_horizontal_scroll_test_busy(true);
+    window.set_horizontal_scroll_test_detail("".into());
+
+    match session.clear_and_wait(timeout) {
+        Ok(()) => {
+            window.set_horizontal_scroll_test_active(false);
+            window.set_horizontal_scroll_test_busy(false);
+            true
+        }
+        Err(HorizontalScrollPreviewCleanupError::Failed { detail, active }) => {
+            window.set_horizontal_scroll_test_open(was_open || active);
+            window.set_horizontal_scroll_test_active(active);
+            window.set_horizontal_scroll_test_busy(false);
+            set_window_status(
+                window,
+                UiStatus::presentation(UiStatusKind::Error, UiMessage::PreviewCleanupFailed)
+                    .with_detail(detail),
+            );
+            let _ = window.show();
+            false
+        }
+        Err(HorizontalScrollPreviewCleanupError::TimedOut) => {
+            window.set_horizontal_scroll_test_open(was_open || was_active);
+            window.set_horizontal_scroll_test_active(was_active);
+            // The command is still in flight. Keep the UI honest and let the normal
+            // completion path settle the state if the worker recovers after the deadline.
+            window.set_horizontal_scroll_test_busy(true);
+            poll_timer.restart();
+            set_window_status(
+                window,
+                UiStatus::presentation(UiStatusKind::Error, UiMessage::PreviewCleanupTimedOut),
+            );
+            let _ = window.show();
+            false
+        }
+        Err(HorizontalScrollPreviewCleanupError::Unavailable) => {
+            window.set_horizontal_scroll_test_open(was_open || was_active);
+            window.set_horizontal_scroll_test_active(was_active);
+            window.set_horizontal_scroll_test_busy(false);
+            set_window_status(
+                window,
+                UiStatus::presentation(UiStatusKind::Error, UiMessage::PreviewCleanupFailed),
+            );
+            let _ = window.show();
+            false
+        }
+    }
+}
+
+fn relaunch_after_preview_cleanup(
+    window: &MainWindow,
+    session: &HorizontalScrollPreviewSession,
+    poll_timer: &slint::Timer,
+    heartbeat_timer: &slint::Timer,
+    timeout: Duration,
+    relauncher: &(dyn Fn() -> std::result::Result<(), ApplicationUpdateError> + Send + Sync),
+) -> std::result::Result<bool, ApplicationUpdateError> {
+    if !clear_horizontal_scroll_preview_before_exit(
+        window,
+        session,
+        poll_timer,
+        heartbeat_timer,
+        timeout,
+    ) {
+        return Ok(false);
+    }
+    relauncher().map(|()| true)
+}
+
 fn set_desktop_runtime_status(window: &MainWindow, status: &DesktopRuntimeStatus) {
     window.set_runtime_state(desktop_runtime_state(status));
     window.set_runtime_pause_reason(runtime_pause_reason(status.pause_reason));
@@ -371,6 +679,16 @@ fn desktop_runtime_state(status: &DesktopRuntimeStatus) -> DesktopRuntimeState {
     } else {
         DesktopRuntimeState::Degraded
     }
+}
+
+fn should_refresh_desktop_runtime_status(
+    worker_available: bool,
+    window_visible: bool,
+    startup_pending: bool,
+    runtime_busy: bool,
+    status_in_flight: bool,
+) -> bool {
+    worker_available && window_visible && !startup_pending && !runtime_busy && !status_in_flight
 }
 
 fn runtime_pause_reason(reason: DesktopRuntimePauseReason) -> RuntimePauseReason {
@@ -401,24 +719,6 @@ fn horizontal_scroll_preview_command(
         device_id: device.primary.id.clone(),
         speed_percent,
     })
-}
-
-fn dispatch_horizontal_scroll_preview(
-    sender: Option<&mpsc::Sender<HorizontalScrollPreviewWork>>,
-    sequence: &Cell<u64>,
-    command: HorizontalScrollPreviewCommand,
-) -> bool {
-    let Some(sender) = sender else {
-        return false;
-    };
-    let next = sequence.get().wrapping_add(1).max(1);
-    sequence.set(next);
-    sender
-        .send(HorizontalScrollPreviewWork {
-            sequence: next,
-            command,
-        })
-        .is_ok()
 }
 
 fn dispatch_settings_transaction(
@@ -453,10 +753,7 @@ fn persist_application_setting(
     change: ApplicationPreferenceChange,
 ) -> bool {
     match save(change) {
-        Ok(()) => {
-            set_window_status(window, UiStatus::default());
-            true
-        }
+        Ok(()) => true,
         Err(error) => {
             set_window_status(
                 window,
@@ -471,7 +768,6 @@ fn persist_application_setting(
 fn present_settings_commit(
     window: &MainWindow,
     session: &Rc<RefCell<DeviceUiSession>>,
-    devices: &[LogicalDevice],
     settings_id: &str,
     settings: &Master3sSettings,
     result: Result<SettingsCommitResult>,
@@ -479,7 +775,7 @@ fn present_settings_commit(
     match result {
         Ok(result) if result.report.committed() => {
             let mut session = session.borrow_mut();
-            session.mark_device_saved(settings_id, settings, devices);
+            session.mark_device_saved(settings_id, settings);
             window.set_draft_dirty(session.current_dirty());
             drop(session);
             if result.report.outcomes.is_empty() {
@@ -574,8 +870,13 @@ fn request_language_change(
         let Some(window) = window.upgrade() else {
             return;
         };
+        let previous = active_language.get();
+        if language == previous {
+            window.set_language_index(previous.index());
+            return;
+        }
         if let Err(error) = slint::select_bundled_translation(language.locale()) {
-            window.set_language_index(active_language.get().index());
+            window.set_language_index(previous.index());
             set_window_status(
                 &window,
                 UiStatus::presentation(UiStatusKind::Error, UiMessage::LanguageUnavailable)
@@ -584,13 +885,24 @@ fn request_language_change(
             return;
         }
 
-        active_language.set(language);
-        window.set_language_index(language.index());
-        persist_application_setting(
+        if persist_application_setting(
             &window,
             &save,
             ApplicationPreferenceChange::Language(language),
-        );
+        ) {
+            active_language.set(language);
+            window.set_language_index(language.index());
+            return;
+        }
+
+        window.set_language_index(previous.index());
+        if let Err(error) = slint::select_bundled_translation(previous.locale()) {
+            set_window_status(
+                &window,
+                UiStatus::presentation(UiStatusKind::Error, UiMessage::LanguageUnavailable)
+                    .with_detail(error.to_string()),
+            );
+        }
     });
 }
 
@@ -606,6 +918,10 @@ fn dispatch_desktop_runtime_operation(
     window.set_runtime_state(DesktopRuntimeState::Starting);
     window.set_runtime_detail("".into());
     sender.send(operation).is_ok()
+}
+
+fn has_blocking_exit_task(settings: bool, runtime: bool, update: bool, network: bool) -> bool {
+    settings || runtime || update || network
 }
 
 fn dispatch_application_update(
@@ -694,7 +1010,9 @@ impl UiState {
 #[derive(Clone, Debug)]
 struct DeviceDraft {
     transport_key: String,
+    paired_key: Option<String>,
     strong_key: Option<String>,
+    settings_id: String,
     settings: Master3sSettings,
     saved_settings: Master3sSettings,
     dirty: bool,
@@ -705,7 +1023,9 @@ impl DeviceDraft {
         let settings = settings.normalized();
         Self {
             transport_key: logical_device_transport_key(device),
+            paired_key: logical_device_paired_key(device),
             strong_key: logical_device_strong_key(device),
+            settings_id: device_settings_id(&device.primary),
             saved_settings: settings.clone(),
             settings,
             dirty: false,
@@ -724,16 +1044,35 @@ impl DeviceDraft {
             return None;
         }
 
-        match (&self.strong_key, next_strong.as_ref()) {
-            (Some(current), Some(next)) if current != next => None,
-            _ => Some(1),
+        if let (Some(current), Some(next)) = (&self.strong_key, next_strong.as_ref())
+            && current != next
+        {
+            return None;
         }
+        if let (Some(current), Some(next)) = (&self.paired_key, logical_device_paired_key(device))
+            && current != &next
+        {
+            return None;
+        }
+        Some(1)
     }
 
     fn carried_to(&self, device: &LogicalDevice) -> Self {
+        let next_strong = logical_device_strong_key(device);
+        let next_paired = logical_device_paired_key(device);
+        // An inventory-only or incomplete probe must not downgrade a loaded identity.
+        let settings_id = if (self.strong_key.is_some() && next_strong.is_none())
+            || (self.paired_key.is_some() && next_paired.is_none())
+        {
+            self.settings_id.clone()
+        } else {
+            device_settings_id(&device.primary)
+        };
         Self {
             transport_key: logical_device_transport_key(device),
-            strong_key: logical_device_strong_key(device).or_else(|| self.strong_key.clone()),
+            paired_key: next_paired.or_else(|| self.paired_key.clone()),
+            strong_key: next_strong.or_else(|| self.strong_key.clone()),
+            settings_id,
             settings: self.settings.clone(),
             saved_settings: self.saved_settings.clone(),
             dirty: self.dirty,
@@ -813,31 +1152,22 @@ impl DeviceUiSession {
             || self.detached_drafts.values().any(|draft| draft.dirty)
     }
 
-    fn dirty_settings(&self, devices: &[LogicalDevice]) -> Vec<(Option<String>, Master3sSettings)> {
+    fn dirty_settings(&self) -> Vec<(Option<String>, Master3sSettings)> {
         let mut settings = Vec::new();
         if self.fallback_dirty {
             settings.push((None, self.fallback.clone()));
         }
 
-        let mut connected_keys = HashSet::new();
-        for (index, draft) in self.drafts.iter().enumerate() {
-            let settings_id = draft.strong_key.clone().or_else(|| {
-                devices
-                    .get(index)
-                    .map(|device| device_settings_id(&device.primary))
-            });
-            if let Some(key) = &settings_id {
-                connected_keys.insert(key.clone());
-            }
+        for draft in &self.drafts {
             if draft.dirty {
-                settings.push((settings_id, draft.settings.clone()));
+                settings.push((Some(draft.settings_id.clone()), draft.settings.clone()));
             }
         }
 
         settings.extend(
             self.detached_drafts
                 .iter()
-                .filter(|(key, draft)| draft.dirty && !connected_keys.contains(*key))
+                .filter(|(_, draft)| draft.dirty)
                 .map(|(key, draft)| (Some(key.clone()), draft.settings.clone())),
         );
         settings
@@ -870,25 +1200,13 @@ impl DeviceUiSession {
         }
     }
 
-    fn mark_device_saved(
-        &mut self,
-        settings_id: &str,
-        settings: &Master3sSettings,
-        devices: &[LogicalDevice],
-    ) {
+    fn mark_device_saved(&mut self, settings_id: &str, settings: &Master3sSettings) {
         let settings = settings.normalized();
-        if let Some((_, draft)) = self.drafts.iter_mut().enumerate().find(|(index, draft)| {
-            draft.strong_key.as_deref().map_or_else(
-                || {
-                    devices
-                        .get(*index)
-                        .map(|device| device_settings_id(&device.primary))
-                        .as_deref()
-                        == Some(settings_id)
-                },
-                |key| key == settings_id,
-            )
-        }) {
+        if let Some(draft) = self
+            .drafts
+            .iter_mut()
+            .find(|draft| draft.settings_id == settings_id)
+        {
             draft.saved_settings = settings;
             draft.dirty = draft.settings != draft.saved_settings;
         } else if let Some(draft) = self.detached_drafts.get_mut(settings_id) {
@@ -903,13 +1221,6 @@ impl DeviceUiSession {
         for draft in &mut self.drafts {
             draft.saved_settings = draft.settings.clone();
             draft.dirty = false;
-            if let Some(strong_key) = &draft.strong_key
-                && let Some(detached) = self.detached_drafts.get_mut(strong_key)
-            {
-                detached.settings = draft.settings.clone();
-                detached.saved_settings = draft.settings.clone();
-                detached.dirty = false;
-            }
         }
         for draft in self.detached_drafts.values_mut() {
             draft.saved_settings = draft.settings.clone();
@@ -951,9 +1262,9 @@ impl DeviceUiSession {
         let mut detached_drafts = self.detached_drafts.clone();
 
         for draft in &current_drafts {
-            if let Some(strong_key) = &draft.strong_key {
+            if draft.paired_key.is_some() {
                 detached_drafts.insert(
-                    strong_key.clone(),
+                    draft.settings_id.clone(),
                     DetachedDraft {
                         settings: draft.settings.clone(),
                         saved_settings: draft.saved_settings.clone(),
@@ -976,13 +1287,33 @@ impl DeviceUiSession {
 
             if let Some(index) = current_match {
                 consumed[index] = true;
-                next_drafts.push(current_drafts[index].carried_to(device));
+                let previous = &current_drafts[index];
+                let mut draft = previous.carried_to(device);
+                if draft.settings_id != previous.settings_id {
+                    if let Some(detached) = detached_drafts.get(&draft.settings_id) {
+                        draft.settings = settings_merge::rebase(
+                            &previous.saved_settings,
+                            &previous.settings,
+                            &detached.settings,
+                        );
+                        draft.saved_settings = detached.saved_settings.clone();
+                    } else if let Some(loader) = loader {
+                        let saved = loader(&draft.settings_id)?.normalized();
+                        draft.settings = settings_merge::rebase(
+                            &previous.saved_settings,
+                            &previous.settings,
+                            &saved,
+                        );
+                        draft.saved_settings = saved;
+                    }
+                    draft.dirty = draft.settings != draft.saved_settings;
+                    detached_drafts.remove(&previous.settings_id);
+                }
+                next_drafts.push(draft);
                 continue;
             }
 
-            if let Some(strong_key) = logical_device_strong_key(device)
-                && let Some(detached) = detached_drafts.get(&strong_key)
-            {
+            if let Some(detached) = detached_drafts.get(&device_settings_id(&device.primary)) {
                 let mut draft = DeviceDraft::new(device, detached.settings.clone());
                 draft.saved_settings = detached.saved_settings.clone();
                 draft.dirty = detached.dirty;
@@ -995,6 +1326,11 @@ impl DeviceUiSession {
                 None => self.fallback.clone(),
             };
             next_drafts.push(DeviceDraft::new(device, settings));
+        }
+
+        // Connected drafts have one owner; the cache holds only detached devices.
+        for draft in &next_drafts {
+            detached_drafts.remove(&draft.settings_id);
         }
 
         self.selected_index = selected_draft
@@ -1255,6 +1591,9 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let settings_work_sender = settings_worker_available.then_some(settings_work_sender);
     let settings_sequence = Rc::new(Cell::new(0_u64));
     let runtime_supported = runtime.as_ref().is_some_and(|runtime| runtime.supported);
+    let initial_app_profiles_supported = runtime
+        .as_ref()
+        .is_some_and(|runtime| runtime.app_profiles_supported);
     let initial_runtime_pause_reason = runtime
         .as_ref()
         .map(|runtime| runtime.pause_reason)
@@ -1270,57 +1609,49 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         .as_ref()
         .filter(|runtime| runtime.supported)
         .map(|runtime| runtime.manage.clone());
-    let (preview_work_sender, preview_work_receiver) =
-        mpsc::channel::<HorizontalScrollPreviewWork>();
-    let (preview_completion_sender, preview_completion_receiver) =
-        mpsc::channel::<HorizontalScrollPreviewCompletion>();
-    let preview_worker_available = preview_handler.is_some_and(|handler| {
-        std::thread::Builder::new()
-            .name("dogi-horizontal-scroll-preview".to_owned())
-            .spawn(move || {
-                while let Ok(work) = preview_work_receiver.recv() {
-                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        handler(work.command.clone())
-                    }))
-                    .unwrap_or_else(|_| {
-                        Err(DogiError::Ui(
-                            "horizontal scroll preview worker panicked".to_owned(),
-                        ))
-                    });
-                    let _ = preview_completion_sender.send(HorizontalScrollPreviewCompletion {
-                        sequence: work.sequence,
-                        command: work.command,
-                        result,
-                    });
-                }
-            })
-            .is_ok()
-    });
-    let preview_work_sender = preview_worker_available.then_some(preview_work_sender);
-    let preview_sequence = Rc::new(Cell::new(0_u64));
+    let (preview_session, preview_completion_receiver, preview_worker_available) =
+        start_horizontal_scroll_preview_worker(preview_handler);
+    let preview_heartbeat_timer = Rc::new(slint::Timer::default());
+    let preview_poll_timer = Rc::new(slint::Timer::default());
+    let update_in_flight = Rc::new(Cell::new(false));
+    let network_in_flight = Rc::new(Cell::new(false));
     window.set_horizontal_scroll_test_supported(preview_worker_available);
 
     let confirm_quit_window = window.as_weak();
     let confirm_quit_tray = tray.as_ref().map(|tray| tray.as_weak());
+    let confirm_quit_update = update_in_flight.clone();
+    let confirm_quit_network = network_in_flight.clone();
+    let confirm_quit_preview = preview_session.clone();
+    let confirm_quit_preview_poll = preview_poll_timer.clone();
+    let confirm_quit_preview_heartbeat = preview_heartbeat_timer.clone();
     window.on_confirm_quit(move || {
-        if let Some(window) = confirm_quit_window.upgrade()
-            && window.get_apply_busy()
-        {
+        let Some(window) = confirm_quit_window.upgrade() else {
+            return;
+        };
+        if has_blocking_exit_task(
+            window.get_apply_busy(),
+            window.get_runtime_busy(),
+            confirm_quit_update.get(),
+            confirm_quit_network.get(),
+        ) {
             window.set_quit_confirm_visible(false);
             let _ = window.show();
+            return;
+        }
+        window.set_quit_confirm_visible(false);
+        if !clear_horizontal_scroll_preview_before_exit(
+            &window,
+            &confirm_quit_preview,
+            &confirm_quit_preview_poll,
+            &confirm_quit_preview_heartbeat,
+            PREVIEW_EXIT_CLEAR_TIMEOUT,
+        ) {
             return;
         }
         if let Some(tray) = confirm_quit_tray.as_ref().and_then(|tray| tray.upgrade()) {
             tray.set_enabled(false);
         }
-        if let Some(window) = confirm_quit_window.upgrade() {
-            if window.get_horizontal_scroll_test_open() {
-                window.set_horizontal_scroll_test_open(false);
-                window.invoke_horizontal_scroll_test_toggled(false);
-            }
-            window.set_quit_confirm_visible(false);
-            let _ = window.hide();
-        }
+        let _ = window.hide();
         let _ = slint::quit_event_loop();
     });
 
@@ -1335,11 +1666,21 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         let tray_quit_window = window.as_weak();
         let tray_quit_session = session.clone();
         let tray_quit_icon = tray.as_weak();
+        let tray_quit_update = update_in_flight.clone();
+        let tray_quit_network = network_in_flight.clone();
+        let tray_quit_preview = preview_session.clone();
+        let tray_quit_preview_poll = preview_poll_timer.clone();
+        let tray_quit_preview_heartbeat = preview_heartbeat_timer.clone();
         tray.on_quit_app(move || {
             let Some(window) = tray_quit_window.upgrade() else {
                 return;
             };
-            if window.get_apply_busy() {
+            if has_blocking_exit_task(
+                window.get_apply_busy(),
+                window.get_runtime_busy(),
+                tray_quit_update.get(),
+                tray_quit_network.get(),
+            ) {
                 let _ = window.show();
                 return;
             }
@@ -1348,12 +1689,17 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                 window.set_quit_confirm_visible(true);
                 return;
             }
+            if !clear_horizontal_scroll_preview_before_exit(
+                &window,
+                &tray_quit_preview,
+                &tray_quit_preview_poll,
+                &tray_quit_preview_heartbeat,
+                PREVIEW_EXIT_CLEAR_TIMEOUT,
+            ) {
+                return;
+            }
             if let Some(tray) = tray_quit_icon.upgrade() {
                 tray.set_enabled(false);
-            }
-            if window.get_horizontal_scroll_test_open() {
-                window.set_horizontal_scroll_test_open(false);
-                window.invoke_horizontal_scroll_test_toggled(false);
             }
             let _ = window.hide();
             let _ = slint::quit_event_loop();
@@ -1363,24 +1709,43 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let close_request_window = window.as_weak();
     let close_request_session = session.clone();
     let close_request_behavior = active_close_behavior.clone();
+    let close_request_update = update_in_flight.clone();
+    let close_request_network = network_in_flight.clone();
+    let close_request_preview = preview_session.clone();
+    let close_request_preview_poll = preview_poll_timer.clone();
+    let close_request_preview_heartbeat = preview_heartbeat_timer.clone();
     window.window().on_close_requested(move || {
-        if let Some(window) = close_request_window.upgrade()
-            && window.get_horizontal_scroll_test_open()
-        {
-            window.set_horizontal_scroll_test_open(false);
-            window.invoke_horizontal_scroll_test_toggled(false);
-        }
         if close_request_behavior.get() == CloseBehavior::MinimizeToTray {
+            if let Some(window) = close_request_window.upgrade()
+                && (window.get_horizontal_scroll_test_open()
+                    || window.get_horizontal_scroll_test_active())
+            {
+                window.set_horizontal_scroll_test_open(false);
+                window.invoke_horizontal_scroll_test_toggled(false);
+            }
             return slint::CloseRequestResponse::HideWindow;
         }
         let Some(window) = close_request_window.upgrade() else {
             return slint::CloseRequestResponse::HideWindow;
         };
-        if window.get_apply_busy() {
+        if has_blocking_exit_task(
+            window.get_apply_busy(),
+            window.get_runtime_busy(),
+            close_request_update.get(),
+            close_request_network.get(),
+        ) {
             return slint::CloseRequestResponse::KeepWindowShown;
         }
         if close_request_session.borrow().any_dirty() {
             window.set_quit_confirm_visible(true);
+            slint::CloseRequestResponse::KeepWindowShown
+        } else if !clear_horizontal_scroll_preview_before_exit(
+            &window,
+            &close_request_preview,
+            &close_request_preview_poll,
+            &close_request_preview_heartbeat,
+            PREVIEW_EXIT_CLEAR_TIMEOUT,
+        ) {
             slint::CloseRequestResponse::KeepWindowShown
         } else {
             let _ = slint::quit_event_loop();
@@ -1420,7 +1785,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
             .map(|runtime| runtime.availability)
             .unwrap_or(DesktopRuntimeAvailability::Unmanaged),
     );
-    window.set_app_profiles_supported(!runtime_supported);
+    window.set_app_profiles_supported(initial_app_profiles_supported);
 
     let (runtime_work_sender, runtime_work_receiver) = mpsc::channel::<DesktopRuntimeOperation>();
     let (runtime_completion_sender, runtime_completion_receiver) =
@@ -1438,7 +1803,8 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                             "Dogi desktop runtime manager panicked".to_owned(),
                         ))
                     });
-                    let _ = runtime_completion_sender.send(DesktopRuntimeCompletion { result });
+                    let _ = runtime_completion_sender
+                        .send(DesktopRuntimeCompletion { operation, result });
                 }
             })
             .is_ok()
@@ -1446,36 +1812,62 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let runtime_work_sender = runtime_worker_available.then_some(runtime_work_sender);
     window.set_runtime_management_supported(runtime_worker_available);
 
+    let runtime_status_in_flight = Rc::new(Cell::new(false));
     let runtime_timer = Rc::new(slint::Timer::default());
     let runtime_timer_control = Rc::downgrade(&runtime_timer);
     let runtime_timer_window = window.as_weak();
+    let runtime_timer_status_in_flight = runtime_status_in_flight.clone();
     runtime_timer.start(
         slint::TimerMode::Repeated,
         Duration::from_millis(40),
-        move || {
+        move || loop {
             let completion = match runtime_completion_receiver.try_recv() {
                 Ok(result) => result,
-                Err(mpsc::TryRecvError::Empty) => return,
+                Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
+                    runtime_timer_status_in_flight.set(false);
                     if let Some(timer) = runtime_timer_control.upgrade() {
                         timer.stop();
+                    }
+                    if let Some(window) = runtime_timer_window.upgrade() {
+                        window.set_runtime_busy(false);
+                        window.set_runtime_management_supported(false);
+                        window.set_runtime_state(DesktopRuntimeState::Degraded);
+                        window.set_runtime_detail("Dogi runtime manager is unavailable".into());
                     }
                     return;
                 }
             };
-            if let Some(timer) = runtime_timer_control.upgrade() {
-                timer.stop();
-            }
             let Some(window) = runtime_timer_window.upgrade() else {
+                if let Some(timer) = runtime_timer_control.upgrade() {
+                    timer.stop();
+                }
                 return;
             };
-            window.set_runtime_busy(false);
+
+            let is_status_refresh = completion.operation == DesktopRuntimeOperation::Status;
+            if is_status_refresh {
+                runtime_timer_status_in_flight.set(false);
+            } else {
+                window.set_runtime_busy(false);
+            }
+
+            if is_status_refresh && window.get_runtime_busy() {
+                continue;
+            }
             match completion.result {
                 Ok(status) => set_desktop_runtime_status(&window, &status),
                 Err(error) => {
                     window.set_runtime_state(DesktopRuntimeState::Degraded);
                     window.set_runtime_detail(error.to_string().into());
                 }
+            }
+
+            if !window.get_runtime_busy() && !runtime_timer_status_in_flight.get() {
+                if let Some(timer) = runtime_timer_control.upgrade() {
+                    timer.stop();
+                }
+                return;
             }
         },
     );
@@ -1499,10 +1891,50 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         }
     }
 
-    let preview_poll_timer = Rc::new(slint::Timer::default());
+    let runtime_refresh_timer = Rc::new(slint::Timer::default());
+    if runtime_worker_available {
+        let runtime_refresh_window = window.as_weak();
+        let runtime_refresh_sender = runtime_work_sender.clone();
+        let runtime_refresh_poll_timer = runtime_timer.clone();
+        let runtime_refresh_startup_pending = runtime_startup_pending.clone();
+        let runtime_refresh_in_flight = runtime_status_in_flight.clone();
+        runtime_refresh_timer.start(
+            slint::TimerMode::Repeated,
+            DESKTOP_RUNTIME_REFRESH_INTERVAL,
+            move || {
+                let Some(window) = runtime_refresh_window.upgrade() else {
+                    return;
+                };
+                if !should_refresh_desktop_runtime_status(
+                    true,
+                    window.window().is_visible(),
+                    runtime_refresh_startup_pending.get(),
+                    window.get_runtime_busy(),
+                    runtime_refresh_in_flight.get(),
+                ) {
+                    return;
+                }
+                let Some(sender) = runtime_refresh_sender.as_ref() else {
+                    return;
+                };
+
+                runtime_refresh_in_flight.set(true);
+                runtime_refresh_poll_timer.restart();
+                if sender.send(DesktopRuntimeOperation::Status).is_err() {
+                    runtime_refresh_in_flight.set(false);
+                    runtime_refresh_poll_timer.stop();
+                    window.set_runtime_management_supported(false);
+                    window.set_runtime_state(DesktopRuntimeState::Degraded);
+                    window.set_runtime_detail("Dogi runtime manager is unavailable".into());
+                }
+            },
+        );
+    }
+
     let preview_poll_control = Rc::downgrade(&preview_poll_timer);
+    let preview_heartbeat_control = Rc::downgrade(&preview_heartbeat_timer);
     let preview_poll_window = window.as_weak();
-    let preview_poll_sequence = preview_sequence.clone();
+    let preview_poll_sequence = preview_session.sequence.clone();
     preview_poll_timer.start(
         slint::TimerMode::Repeated,
         Duration::from_millis(40),
@@ -1515,7 +1947,6 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                         timer.stop();
                     }
                     if let Some(window) = preview_poll_window.upgrade() {
-                        window.set_horizontal_scroll_test_active(false);
                         window.set_horizontal_scroll_test_busy(false);
                         window.set_horizontal_scroll_test_detail(
                             "Horizontal scroll preview stopped unexpectedly".into(),
@@ -1528,67 +1959,76 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                 continue;
             }
             let Some(window) = preview_poll_window.upgrade() else {
+                if let Some(timer) = preview_poll_control.upgrade() {
+                    timer.stop();
+                }
                 return;
             };
             window.set_horizontal_scroll_test_busy(false);
+            window.set_horizontal_scroll_test_active(completion.active);
+            let keep_heartbeat_running = matches!(
+                (&completion.command, &completion.result),
+                (HorizontalScrollPreviewCommand::Set { .. }, Ok(()))
+            );
             match (completion.command, completion.result) {
-                (HorizontalScrollPreviewCommand::Set { .. }, Ok(())) => {
-                    window.set_horizontal_scroll_test_active(true);
-                    window.set_horizontal_scroll_test_detail("".into());
-                }
-                (HorizontalScrollPreviewCommand::Clear, Ok(())) => {
-                    window.set_horizontal_scroll_test_active(false);
+                (_, Ok(())) => {
                     window.set_horizontal_scroll_test_detail("".into());
                 }
                 (_, Err(error)) => {
-                    window.set_horizontal_scroll_test_active(false);
                     window.set_horizontal_scroll_test_detail(error.to_string().into());
                 }
             }
+            if !keep_heartbeat_running && let Some(timer) = preview_heartbeat_control.upgrade() {
+                timer.stop();
+            }
+            if let Some(timer) = preview_poll_control.upgrade() {
+                timer.stop();
+            }
+            return;
         },
     );
-    if !preview_worker_available {
-        preview_poll_timer.stop();
-    }
+    preview_poll_timer.stop();
 
-    let preview_toggle_sender = preview_work_sender.clone();
-    let preview_toggle_sequence = preview_sequence.clone();
+    let preview_toggle_worker = preview_session.clone();
     let preview_toggle_devices = logical_devices.clone();
-    let preview_toggle_session = session.clone();
+    let preview_toggle_device_session = session.clone();
     let preview_toggle_window = window.as_weak();
+    let preview_toggle_timer = preview_poll_timer.clone();
+    let preview_toggle_heartbeat = preview_heartbeat_timer.clone();
     window.on_horizontal_scroll_test_toggled(move |open| {
         let Some(window) = preview_toggle_window.upgrade() else {
             return;
         };
         window.set_horizontal_scroll_test_detail("".into());
         if !open {
-            window.set_horizontal_scroll_test_active(false);
-            window.set_horizontal_scroll_test_busy(false);
-            let _ = dispatch_horizontal_scroll_preview(
-                preview_toggle_sender.as_ref(),
-                &preview_toggle_sequence,
-                HorizontalScrollPreviewCommand::Clear,
-            );
+            preview_toggle_heartbeat.stop();
+            window.set_horizontal_scroll_test_busy(true);
+            if preview_toggle_worker.dispatch(HorizontalScrollPreviewCommand::Clear) {
+                preview_toggle_timer.restart();
+            } else {
+                window.set_horizontal_scroll_test_busy(false);
+                window.set_horizontal_scroll_test_detail(
+                    "Horizontal scroll preview is unavailable".into(),
+                );
+            }
             return;
         }
 
         let command = horizontal_scroll_preview_command(
             &window,
             &preview_toggle_devices.borrow(),
-            &preview_toggle_session.borrow(),
+            &preview_toggle_device_session.borrow(),
         );
         let Some(command) = command else {
             window.set_horizontal_scroll_test_open(false);
             window.set_horizontal_scroll_test_detail("No active mouse is available".into());
             return;
         };
-        window.set_horizontal_scroll_test_active(false);
         window.set_horizontal_scroll_test_busy(true);
-        if !dispatch_horizontal_scroll_preview(
-            preview_toggle_sender.as_ref(),
-            &preview_toggle_sequence,
-            command,
-        ) {
+        if preview_toggle_worker.dispatch(command) {
+            preview_toggle_timer.restart();
+            preview_toggle_heartbeat.restart();
+        } else {
             window.set_horizontal_scroll_test_busy(false);
             window.set_horizontal_scroll_test_detail(
                 "Horizontal scroll preview is unavailable".into(),
@@ -1596,11 +2036,11 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         }
     });
 
-    let preview_mode_sender = preview_work_sender.clone();
-    let preview_mode_sequence = preview_sequence.clone();
+    let preview_mode_worker = preview_session.clone();
     let preview_mode_devices = logical_devices.clone();
     let preview_mode_session = session.clone();
     let preview_mode_window = window.as_weak();
+    let preview_mode_timer = preview_poll_timer.clone();
     window.on_horizontal_scroll_test_mode_selected(move |_index| {
         let Some(window) = preview_mode_window.upgrade() else {
             return;
@@ -1615,14 +2055,11 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         ) else {
             return;
         };
-        window.set_horizontal_scroll_test_active(false);
         window.set_horizontal_scroll_test_busy(true);
         window.set_horizontal_scroll_test_detail("".into());
-        if !dispatch_horizontal_scroll_preview(
-            preview_mode_sender.as_ref(),
-            &preview_mode_sequence,
-            command,
-        ) {
+        if preview_mode_worker.dispatch(command) {
+            preview_mode_timer.restart();
+        } else {
             window.set_horizontal_scroll_test_busy(false);
             window.set_horizontal_scroll_test_detail(
                 "Horizontal scroll preview is unavailable".into(),
@@ -1631,11 +2068,11 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     });
 
     let preview_speed_timer = Rc::new(slint::Timer::default());
-    let preview_speed_sender = preview_work_sender.clone();
-    let preview_speed_sequence = preview_sequence.clone();
+    let preview_speed_worker = preview_session.clone();
     let preview_speed_devices = logical_devices.clone();
     let preview_speed_session = session.clone();
     let preview_speed_window = window.as_weak();
+    let preview_speed_poll_timer = preview_poll_timer.clone();
     preview_speed_timer.start(
         slint::TimerMode::SingleShot,
         Duration::from_millis(140),
@@ -1655,14 +2092,11 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
             ) else {
                 return;
             };
-            window.set_horizontal_scroll_test_active(false);
             window.set_horizontal_scroll_test_busy(true);
             window.set_horizontal_scroll_test_detail("".into());
-            if !dispatch_horizontal_scroll_preview(
-                preview_speed_sender.as_ref(),
-                &preview_speed_sequence,
-                command,
-            ) {
+            if preview_speed_worker.dispatch(command) {
+                preview_speed_poll_timer.restart();
+            } else {
                 window.set_horizontal_scroll_test_busy(false);
                 window.set_horizontal_scroll_test_detail(
                     "Horizontal scroll preview is unavailable".into(),
@@ -1684,12 +2118,11 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         }
     });
 
-    let preview_heartbeat_timer = Rc::new(slint::Timer::default());
-    let preview_heartbeat_sender = preview_work_sender.clone();
-    let preview_heartbeat_sequence = preview_sequence.clone();
+    let preview_heartbeat_worker = preview_session.clone();
     let preview_heartbeat_devices = logical_devices.clone();
     let preview_heartbeat_session = session.clone();
     let preview_heartbeat_window = window.as_weak();
+    let preview_heartbeat_poll_timer = preview_poll_timer.clone();
     preview_heartbeat_timer.start(
         slint::TimerMode::Repeated,
         Duration::from_secs(3),
@@ -1710,16 +2143,12 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
             ) else {
                 return;
             };
-            let _ = dispatch_horizontal_scroll_preview(
-                preview_heartbeat_sender.as_ref(),
-                &preview_heartbeat_sequence,
-                command,
-            );
+            if preview_heartbeat_worker.dispatch(command) {
+                preview_heartbeat_poll_timer.restart();
+            }
         },
     );
-    if !preview_worker_available {
-        preview_heartbeat_timer.stop();
-    }
+    preview_heartbeat_timer.stop();
 
     let active_background_operations = Rc::new(Cell::new(background_operations_enabled));
     let background_save = preferences.save.clone();
@@ -1850,7 +2279,6 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         })
         .is_ok();
     let network_work_sender = network_worker_available.then_some(network_work_sender);
-    let network_in_flight = Rc::new(Cell::new(false));
     let network_poll_timer = Rc::new(slint::Timer::default());
     let network_poll_control = Rc::downgrade(&network_poll_timer);
     let network_poll_window = window.as_weak();
@@ -2028,8 +2456,9 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                         handler(operation)
                     }))
                     .unwrap_or_else(|_| {
-                        Err(DogiError::Ui(
-                            "Dogi update manager panicked unexpectedly".to_owned(),
+                        Err(ApplicationUpdateError::new(
+                            ApplicationUpdateErrorKind::Internal,
+                            "Dogi update manager panicked unexpectedly",
                         ))
                     });
                     let _ = update_completion_sender.send(ApplicationUpdateCompletion { result });
@@ -2052,13 +2481,16 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         updates.detail.clone().into()
     });
 
-    let update_in_flight = Rc::new(Cell::new(false));
     let update_poll_timer = Rc::new(slint::Timer::default());
     let update_poll_control = Rc::downgrade(&update_poll_timer);
     let update_poll_window = window.as_weak();
     let update_poll_in_flight = update_in_flight.clone();
     let update_poll_tray = tray.as_ref().map(|tray| tray.as_weak());
     let update_notifier = updates.notify_ready.clone();
+    let update_relauncher = updates.relaunch_after_exit.clone();
+    let update_poll_preview = preview_session.clone();
+    let update_poll_preview_timer = preview_poll_timer.clone();
+    let update_poll_preview_heartbeat = preview_heartbeat_timer.clone();
     let notified_update_version = Rc::new(RefCell::new(None::<String>));
     let update_poll_notified_version = notified_update_version.clone();
     update_poll_timer.start(
@@ -2130,12 +2562,34 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                     window.set_update_detail("".into());
                     window.set_update_state(UpdateState::Ready);
                 }
-                Ok(ApplicationUpdateResult::Restarting) => {
-                    if let Some(tray) = update_poll_tray.as_ref().and_then(|tray| tray.upgrade()) {
-                        tray.set_enabled(false);
+                Ok(ApplicationUpdateResult::InstalledNeedsRestart { version, detail }) => {
+                    window.set_available_version(version.into());
+                    window.set_update_state(UpdateState::RestartRequired);
+                    window.set_update_detail(detail.clone().into());
+                    if detail.is_empty() {
+                        match relaunch_after_preview_cleanup(
+                            &window,
+                            &update_poll_preview,
+                            &update_poll_preview_timer,
+                            &update_poll_preview_heartbeat,
+                            PREVIEW_EXIT_CLEAR_TIMEOUT,
+                            update_relauncher.as_ref(),
+                        ) {
+                            Ok(true) => {
+                                if let Some(tray) =
+                                    update_poll_tray.as_ref().and_then(|tray| tray.upgrade())
+                                {
+                                    tray.set_enabled(false);
+                                }
+                                let _ = window.hide();
+                                let _ = slint::quit_event_loop();
+                            }
+                            Ok(false) => {}
+                            Err(error) => {
+                                window.set_update_detail(error.to_string().into());
+                            }
+                        }
                     }
-                    let _ = window.hide();
-                    let _ = slint::quit_event_loop();
                 }
                 Err(error) => {
                     window.set_update_detail(error.to_string().into());
@@ -2224,10 +2678,39 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let install_request_window = window.as_weak();
     let install_request_session = session.clone();
     let install_request_action = install_update.clone();
+    let install_request_relauncher = updates.relaunch_after_exit.clone();
+    let install_request_tray = tray.as_ref().map(|tray| tray.as_weak());
+    let install_request_preview = preview_session.clone();
+    let install_request_preview_timer = preview_poll_timer.clone();
+    let install_request_preview_heartbeat = preview_heartbeat_timer.clone();
     window.on_install_update_requested(move || {
         let Some(window) = install_request_window.upgrade() else {
             return;
         };
+        if window.get_update_state() == UpdateState::RestartRequired {
+            match relaunch_after_preview_cleanup(
+                &window,
+                &install_request_preview,
+                &install_request_preview_timer,
+                &install_request_preview_heartbeat,
+                PREVIEW_EXIT_CLEAR_TIMEOUT,
+                install_request_relauncher.as_ref(),
+            ) {
+                Ok(true) => {
+                    if let Some(tray) = install_request_tray
+                        .as_ref()
+                        .and_then(|tray| tray.upgrade())
+                    {
+                        tray.set_enabled(false);
+                    }
+                    let _ = window.hide();
+                    let _ = slint::quit_event_loop();
+                }
+                Ok(false) => {}
+                Err(error) => window.set_update_detail(error.to_string().into()),
+            }
+            return;
+        }
         {
             let mut session = install_request_session.borrow_mut();
             session.capture_window(&window);
@@ -2258,16 +2741,13 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
 
     let save_install_window = window.as_weak();
     let save_install_session = session.clone();
-    let save_install_devices = logical_devices.clone();
     let save_install_saver = saver.clone();
     let save_install_action = install_update;
     window.on_save_and_install_update(move || {
         let Some(window) = save_install_window.upgrade() else {
             return;
         };
-        let dirty_settings = save_install_session
-            .borrow()
-            .dirty_settings(&save_install_devices.borrow());
+        let dirty_settings = save_install_session.borrow().dirty_settings();
         let result = match &save_install_saver {
             Some(saver) => dirty_settings
                 .iter()
@@ -2356,17 +2836,28 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
 
     let theme_save = preferences.save.clone();
     let theme_window = window.as_weak();
+    let active_theme = Rc::new(Cell::new(theme));
+    let selected_theme = active_theme.clone();
     window.on_theme_selected(move |index| {
         let Some(window) = theme_window.upgrade() else {
             return;
         };
         let theme = ApplicationTheme::from_index(index);
-        window.set_theme_index(theme.index());
-        persist_application_setting(
+        let previous = selected_theme.get();
+        if theme == previous {
+            window.set_theme_index(previous.index());
+            return;
+        }
+        if !persist_application_setting(
             &window,
             &theme_save,
             ApplicationPreferenceChange::Theme(theme),
-        );
+        ) {
+            window.set_theme_index(previous.index());
+            return;
+        }
+        selected_theme.set(theme);
+        window.set_theme_index(theme.index());
     });
 
     let close_save = preferences.save;
@@ -2378,13 +2869,26 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
             return;
         };
         let close_behavior = CloseBehavior::from_index(index);
+        let previous = selected_close_behavior.get();
+        if close_behavior == previous {
+            window.set_close_behavior_index(previous.index());
+            return;
+        }
         let tray = close_tray.as_ref().and_then(|tray| tray.upgrade());
         if close_behavior == CloseBehavior::MinimizeToTray && tray.is_none() {
-            window.set_close_behavior_index(CloseBehavior::Quit.index());
+            window.set_close_behavior_index(previous.index());
             set_window_status(
                 &window,
                 UiStatus::presentation(UiStatusKind::Warning, UiMessage::TrayUnavailable),
             );
+            return;
+        }
+        if !persist_application_setting(
+            &window,
+            &close_save,
+            ApplicationPreferenceChange::CloseBehavior(close_behavior),
+        ) {
+            window.set_close_behavior_index(previous.index());
             return;
         }
         if let Some(tray) = tray {
@@ -2392,11 +2896,6 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         }
         selected_close_behavior.set(close_behavior);
         window.set_close_behavior_index(close_behavior.index());
-        persist_application_setting(
-            &window,
-            &close_save,
-            ApplicationPreferenceChange::CloseBehavior(close_behavior),
-        );
     });
 
     let pending_apply = Rc::new(RefCell::new(None::<PendingApplyConfirmation>));
@@ -2512,7 +3011,6 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                         } else if devices_need_hidpp_recovery(&timer_devices.borrow()) {
                             schedule_hidpp_recovery_scan(
                                 timer_window.clone(),
-                                timer_session.clone(),
                                 timer_in_flight.clone(),
                                 timer_scan_intent.clone(),
                                 timer_recovery_attempt.clone(),
@@ -2524,7 +3022,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                 };
 
                 if completion.intent == DeviceScanIntent::HidppRecovery
-                    && (timer_session.borrow().any_dirty() || window.get_confirm_visible())
+                    && (window.get_apply_busy() || window.get_confirm_visible())
                 {
                     return;
                 }
@@ -2573,7 +3071,6 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                 if devices_need_hidpp_recovery(&devices) {
                     schedule_hidpp_recovery_scan(
                         timer_window.clone(),
-                        timer_session.clone(),
                         timer_in_flight.clone(),
                         timer_scan_intent.clone(),
                         timer_recovery_attempt.clone(),
@@ -2856,6 +3353,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         }
     });
 
+    let settings_poll_timer = Rc::new(slint::Timer::default());
     let apply_session = session.clone();
     let apply_devices = logical_devices.clone();
     let apply_window = window.as_weak();
@@ -2863,6 +3361,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let apply_settings_sender = settings_work_sender.clone();
     let apply_settings_sequence = settings_sequence.clone();
     let apply_pending_apply = pending_apply.clone();
+    let apply_settings_timer = settings_poll_timer.clone();
     window.on_apply_requested(move || {
         if let Some(window) = apply_window.upgrade() {
             if window.get_horizontal_scroll_test_open() {
@@ -2965,7 +3464,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                 .settings_id
                 .clone()
                 .unwrap_or_else(|| device_id.to_owned());
-            if !dispatch_settings_transaction(
+            if dispatch_settings_transaction(
                 apply_settings_sender.as_ref(),
                 &apply_settings_sequence,
                 work_kind,
@@ -2974,6 +3473,8 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                 target.settings,
                 plan,
             ) {
+                apply_settings_timer.restart();
+            } else {
                 window.set_apply_busy(false);
                 set_window_status(
                     &window,
@@ -2984,7 +3485,7 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         }
     });
 
-    let settings_poll_timer = Rc::new(slint::Timer::default());
+    let settings_poll_control = Rc::downgrade(&settings_poll_timer);
     let settings_poll_window = window.as_weak();
     let settings_poll_session = session.clone();
     let settings_poll_devices = logical_devices.clone();
@@ -2994,114 +3495,147 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     settings_poll_timer.start(
         slint::TimerMode::Repeated,
         Duration::from_millis(40),
-        move || {
-            let Some(window) = settings_poll_window.upgrade() else {
-                return;
-            };
-            while let Ok(completion) = settings_completion_receiver.try_recv() {
-                if completion.work.sequence != settings_poll_sequence.get() {
-                    continue;
-                }
-                if matches!(
-                    &completion.result,
-                    SettingsTransactionCompletionResult::Prepared(_)
-                ) {
-                    let current = capture_settings_target(
-                        &window,
-                        &settings_poll_session,
-                        &settings_poll_devices,
-                    );
-                    if current.device_id() != Some(completion.work.device_id.as_str())
-                        || current.settings != completion.work.settings
-                    {
-                        settings_poll_pending.borrow_mut().take();
+        move || loop {
+            let completion = match settings_completion_receiver.try_recv() {
+                Ok(completion) => completion,
+                Err(mpsc::TryRecvError::Empty) => return,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    if let Some(timer) = settings_poll_control.upgrade() {
+                        timer.stop();
+                    }
+                    if let Some(window) = settings_poll_window.upgrade() {
                         window.set_apply_busy(false);
                         window.set_confirm_visible(false);
                         set_window_status(
                             &window,
-                            UiStatus::presentation(UiStatusKind::Warning, UiMessage::ApplyRejected),
+                            UiStatus::presentation(
+                                UiStatusKind::Error,
+                                UiMessage::ApplyBackendUnavailable,
+                            ),
                         );
-                        continue;
                     }
+                    return;
                 }
+            };
+            if completion.work.sequence != settings_poll_sequence.get() {
+                continue;
+            }
+            let Some(window) = settings_poll_window.upgrade() else {
+                if let Some(timer) = settings_poll_control.upgrade() {
+                    timer.stop();
+                }
+                return;
+            };
+            let stop_polling = |timer: &std::rc::Weak<slint::Timer>| {
+                if let Some(timer) = timer.upgrade() {
+                    timer.stop();
+                }
+            };
+            if matches!(
+                &completion.result,
+                SettingsTransactionCompletionResult::Prepared(_)
+            ) {
+                let current = capture_settings_target(
+                    &window,
+                    &settings_poll_session,
+                    &settings_poll_devices,
+                );
+                if current.device_id() != Some(completion.work.device_id.as_str())
+                    || current.settings != completion.work.settings
+                {
+                    settings_poll_pending.borrow_mut().take();
+                    window.set_apply_busy(false);
+                    window.set_confirm_visible(false);
+                    set_window_status(
+                        &window,
+                        UiStatus::presentation(UiStatusKind::Warning, UiMessage::ApplyRejected),
+                    );
+                    stop_polling(&settings_poll_control);
+                    return;
+                }
+            }
 
-                match completion.result {
-                    SettingsTransactionCompletionResult::Prepared(Ok(preview)) => {
-                        let plan_rows =
-                            device_plan_rows_from_preview(&preview, &completion.work.settings);
-                        let step_count = plan_rows.len();
-                        window.set_plan_rows(Rc::new(slint::VecModel::from(plan_rows)).into());
-                        *settings_poll_pending.borrow_mut() = Some(PendingApplyConfirmation::new(
-                            Some(completion.work.device_id.clone()),
-                            completion.work.settings.clone(),
-                        ));
-                        if step_count == 0 {
+            match completion.result {
+                SettingsTransactionCompletionResult::Prepared(Ok(preview)) => {
+                    let plan_rows =
+                        device_plan_rows_from_preview(&preview, &completion.work.settings);
+                    let step_count = plan_rows.len();
+                    window.set_plan_rows(Rc::new(slint::VecModel::from(plan_rows)).into());
+                    *settings_poll_pending.borrow_mut() = Some(PendingApplyConfirmation::new(
+                        Some(completion.work.device_id.clone()),
+                        completion.work.settings.clone(),
+                    ));
+                    if step_count == 0 {
+                        set_window_status(
+                            &window,
+                            UiStatus::presentation(
+                                UiStatusKind::Info,
+                                UiMessage::CommittingSettings,
+                            ),
+                        );
+                        if !dispatch_settings_transaction(
+                            settings_poll_sender.as_ref(),
+                            &settings_poll_sequence,
+                            SettingsTransactionWorkKind::Commit,
+                            completion.work.device_id,
+                            completion.work.settings_id,
+                            completion.work.settings,
+                            completion.work.plan,
+                        ) {
+                            settings_poll_pending.borrow_mut().take();
+                            window.set_apply_busy(false);
                             set_window_status(
                                 &window,
                                 UiStatus::presentation(
-                                    UiStatusKind::Info,
-                                    UiMessage::CommittingSettings,
+                                    UiStatusKind::Error,
+                                    UiMessage::ApplyBackendUnavailable,
                                 ),
                             );
-                            if !dispatch_settings_transaction(
-                                settings_poll_sender.as_ref(),
-                                &settings_poll_sequence,
-                                SettingsTransactionWorkKind::Commit,
-                                completion.work.device_id,
-                                completion.work.settings_id,
-                                completion.work.settings,
-                                completion.work.plan,
-                            ) {
-                                settings_poll_pending.borrow_mut().take();
-                                window.set_apply_busy(false);
-                                set_window_status(
-                                    &window,
-                                    UiStatus::presentation(
-                                        UiStatusKind::Error,
-                                        UiMessage::ApplyBackendUnavailable,
-                                    ),
-                                );
-                            }
-                        } else {
-                            window.set_apply_busy(false);
-                            window.set_confirm_change_count(
-                                i32::try_from(step_count).unwrap_or(i32::MAX),
-                            );
-                            window.set_confirm_visible(true);
-                            set_window_status(
-                                &window,
-                                UiStatus::presentation(UiStatusKind::Info, UiMessage::ReviewPlan)
-                                    .with_count(step_count),
-                            );
+                            stop_polling(&settings_poll_control);
                         }
-                    }
-                    SettingsTransactionCompletionResult::Prepared(Err(error)) => {
-                        settings_poll_pending.borrow_mut().take();
+                    } else {
                         window.set_apply_busy(false);
-                        window.set_confirm_visible(false);
+                        window.set_confirm_change_count(
+                            i32::try_from(step_count).unwrap_or(i32::MAX),
+                        );
+                        window.set_confirm_visible(true);
                         set_window_status(
                             &window,
-                            UiStatus::presentation(UiStatusKind::Error, UiMessage::ApplyFailed)
-                                .with_detail(error.to_string()),
+                            UiStatus::presentation(UiStatusKind::Info, UiMessage::ReviewPlan)
+                                .with_count(step_count),
                         );
-                    }
-                    SettingsTransactionCompletionResult::Committed(result) => {
-                        settings_poll_pending.borrow_mut().take();
-                        window.set_apply_busy(false);
-                        window.set_confirm_visible(false);
-                        present_settings_commit(
-                            &window,
-                            &settings_poll_session,
-                            &settings_poll_devices.borrow(),
-                            &completion.work.settings_id,
-                            &completion.work.settings,
-                            result,
-                        );
+                        stop_polling(&settings_poll_control);
                     }
                 }
+                SettingsTransactionCompletionResult::Prepared(Err(error)) => {
+                    settings_poll_pending.borrow_mut().take();
+                    window.set_apply_busy(false);
+                    window.set_confirm_visible(false);
+                    set_window_status(
+                        &window,
+                        UiStatus::presentation(UiStatusKind::Error, UiMessage::ApplyFailed)
+                            .with_detail(error.to_string()),
+                    );
+                    stop_polling(&settings_poll_control);
+                }
+                SettingsTransactionCompletionResult::Committed(result) => {
+                    settings_poll_pending.borrow_mut().take();
+                    window.set_apply_busy(false);
+                    window.set_confirm_visible(false);
+                    present_settings_commit(
+                        &window,
+                        &settings_poll_session,
+                        &completion.work.settings_id,
+                        &completion.work.settings,
+                        result,
+                    );
+                    stop_polling(&settings_poll_control);
+                }
             }
+            return;
         },
     );
+    settings_poll_timer.stop();
 
     let cancel_pending_apply = pending_apply;
     let cancel_window = window.as_weak();
@@ -3116,12 +3650,9 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let result = window
         .run()
         .map_err(|error| DogiError::Ui(error.to_string()));
-    let _ = dispatch_horizontal_scroll_preview(
-        preview_work_sender.as_ref(),
-        &preview_sequence,
-        HorizontalScrollPreviewCommand::Clear,
-    );
+    let preview_cleanup = preview_session.clear_and_wait(PREVIEW_EXIT_CLEAR_TIMEOUT);
     runtime_timer.stop();
+    runtime_refresh_timer.stop();
     update_poll_timer.stop();
     update_schedule_timer.stop();
     preview_poll_timer.stop();
@@ -3129,7 +3660,13 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     preview_heartbeat_timer.stop();
     settings_poll_timer.stop();
     rescan_timer.stop();
-    result
+    match (result, preview_cleanup) {
+        (Err(error), _) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+        (Ok(()), Err(error)) => Err(DogiError::Ui(format!(
+            "failed to stop the horizontal scroll preview after the UI event loop ended: {error}"
+        ))),
+    }
 }
 
 fn refresh_selected_device_view(
@@ -3240,7 +3777,6 @@ fn pending_apply_matches(
 
 fn schedule_hidpp_recovery_scan(
     window: slint::Weak<MainWindow>,
-    session: Rc<RefCell<DeviceUiSession>>,
     scan_in_flight: Rc<Cell<bool>>,
     scan_intent: Rc<Cell<DeviceScanIntent>>,
     attempt: Rc<Cell<usize>>,
@@ -3255,16 +3791,13 @@ fn schedule_hidpp_recovery_scan(
     let scheduled_generation = generation.get().wrapping_add(1);
     generation.set(scheduled_generation);
     slint::Timer::single_shot(delay, move || {
-        if generation.get() != scheduled_generation
-            || scan_in_flight.get()
-            || session.borrow().any_dirty()
-        {
+        if generation.get() != scheduled_generation || scan_in_flight.get() {
             return;
         }
         let Some(window) = window.upgrade() else {
             return;
         };
-        if window.get_confirm_visible() {
+        if window.get_apply_busy() || window.get_confirm_visible() {
             return;
         }
 
@@ -3314,7 +3847,7 @@ fn capture_settings_target(
         let selected_index = session.selected_index;
         let known_settings_id = selected_index
             .and_then(|index| session.drafts.get(index))
-            .and_then(|draft| draft.strong_key.clone());
+            .map(|draft| draft.settings_id.clone());
         (settings, selected_index, known_settings_id)
     };
     let device = selected_index.and_then(|index| devices.borrow().get(index).cloned());
@@ -3333,8 +3866,20 @@ fn capture_settings_target(
 
 fn logical_devices(devices: &[DeviceInfo]) -> Vec<LogicalDevice> {
     let mut groups = Vec::<(String, LogicalDevice)>::new();
+    let paired_transports = devices
+        .iter()
+        .filter(|device| device.paired_device.is_some())
+        .filter_map(receiver_transport_key)
+        .collect::<HashSet<_>>();
 
     for device in devices {
+        if device.paired_device.is_none()
+            && receiver_transport_key(device)
+                .as_ref()
+                .is_some_and(|key| paired_transports.contains(key))
+        {
+            continue;
+        }
         let key = logical_device_key(device);
 
         if let Some((_, group)) = groups.iter_mut().find(|(group_key, _)| group_key == &key) {
@@ -3375,12 +3920,12 @@ fn devices_need_hidpp_recovery(devices: &[LogicalDevice]) -> bool {
 }
 
 fn logical_device_key(device: &DeviceInfo) -> String {
-    if let Some(physical_path) = &device.physical_path {
-        if let Some((base, _)) = physical_path.split_once("/input") {
-            return format!("{}:{}:{base}", device.vendor_id, device.product_id);
-        }
+    if device.paired_device.is_some() {
+        return device.id.clone();
+    }
 
-        return format!("{}:{}:{physical_path}", device.vendor_id, device.product_id);
+    if let Some(key) = receiver_transport_key(device) {
+        return key;
     }
 
     if let Some(serial_number) = &device.serial_number {
@@ -3393,13 +3938,30 @@ fn logical_device_key(device: &DeviceInfo) -> String {
     )
 }
 
+fn receiver_transport_key(device: &DeviceInfo) -> Option<String> {
+    device.physical_path.as_deref().map(|physical_path| {
+        let base = physical_path
+            .split_once("/input")
+            .map_or(physical_path, |(base, _)| base);
+        format!("{}:{}:{base}", device.vendor_id, device.product_id)
+    })
+}
+
 fn logical_device_transport_key(device: &LogicalDevice) -> String {
-    logical_device_key(&device.primary)
+    receiver_transport_key(&device.primary).unwrap_or_else(|| logical_device_key(&device.primary))
 }
 
 fn logical_device_strong_key(device: &LogicalDevice) -> Option<String> {
     let settings_id = device_settings_id(&device.primary);
     (settings_id != device.primary.id).then_some(settings_id)
+}
+
+fn logical_device_paired_key(device: &LogicalDevice) -> Option<String> {
+    device
+        .primary
+        .paired_device
+        .as_ref()
+        .map(|_| device.primary.id.clone())
 }
 
 fn should_prefer_device(candidate: &DeviceInfo, current: &DeviceInfo) -> bool {
@@ -3885,7 +4447,10 @@ fn settings_from_window(window: &MainWindow, base: &Master3sSettings) -> Master3
         Master3sButton::Middle,
         action_from_index(window.get_middle_action_index()),
     );
-    settings.gestures = gestures_from_window(window, false);
+    settings.gestures = GestureBindings {
+        threshold: base.gestures.threshold,
+        ..gestures_from_window(window, false)
+    };
     settings
 }
 
@@ -3931,19 +4496,13 @@ fn upsert_app_profile_from_window(
         application_match_field_from_index(window.get_app_profile_editor_match_field_index()),
         overrides,
     )?;
-    let profile = settings
-        .app_profiles
-        .iter()
-        .find(|profile| {
-            normalize_app_profile_key(&profile.name) == normalize_app_profile_key(&profile_name)
-        })
-        .expect("updated app profile exists");
+    let Some((index, profile)) = settings.app_profiles.iter().enumerate().find(|profile| {
+        normalize_app_profile_key(&profile.1.name) == normalize_app_profile_key(&profile_name)
+    }) else {
+        return Err(ProfileEditError::InconsistentState);
+    };
     set_app_profile_editor_from_profile(window, profile);
-    if let Some(index) = settings.app_profiles.iter().position(|profile| {
-        normalize_app_profile_key(&profile.name) == normalize_app_profile_key(&profile_name)
-    }) {
-        window.set_selected_app_profile_index(index as i32);
-    }
+    window.set_selected_app_profile_index(i32::try_from(index).unwrap_or(i32::MAX));
 
     Ok(profile_name)
 }
@@ -4088,6 +4647,7 @@ fn remove_app_profile(
 enum ProfileEditError {
     NameRequired,
     NotFound(String),
+    InconsistentState,
 }
 
 impl ProfileEditError {
@@ -4099,6 +4659,10 @@ impl ProfileEditError {
             Self::NotFound(name) => {
                 UiStatus::presentation(UiStatusKind::Error, UiMessage::ProfileNotFound)
                     .with_subject(name)
+            }
+            Self::InconsistentState => {
+                UiStatus::presentation(UiStatusKind::Error, UiMessage::ApplyBackendUnavailable)
+                    .with_detail("application profile state became inconsistent")
             }
         }
     }
@@ -4245,6 +4809,19 @@ fn button_index(button: Master3sButton) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn non_preview_mutating_tasks_block_window_exit() {
+        assert!(!has_blocking_exit_task(false, false, false, false));
+        for state in [
+            (true, false, false, false),
+            (false, true, false, false),
+            (false, false, true, false),
+            (false, false, false, true),
+        ] {
+            assert!(has_blocking_exit_task(state.0, state.1, state.2, state.3));
+        }
+    }
     use dogi_core::{
         BusKind, ConnectionKind, DeviceAccess, DeviceCapabilities, HidppFeature,
         HidppProtocolVersion, PairedDeviceInfo, ReceiverKind, ReportDescriptorInfo,
@@ -4252,7 +4829,202 @@ mod tests {
     };
     use slint::ComponentHandle;
     use slint_snapshot::{SnapshotRuntime, runtime::ClockMode};
-    use std::{cell::Cell, path::Path};
+    use std::{
+        cell::Cell,
+        path::Path,
+        sync::{
+            Mutex,
+            atomic::{AtomicBool, Ordering},
+        },
+        thread,
+    };
+
+    #[test]
+    fn active_preview_quit_cleanup_is_serial_and_confirmed() {
+        let commands = Arc::new(Mutex::new(Vec::new()));
+        let handled_commands = commands.clone();
+        let handler: HorizontalScrollPreviewHandler = Arc::new(move |command| {
+            handled_commands.lock().unwrap().push(command);
+            Ok(())
+        });
+        let (session, completions, available) =
+            start_horizontal_scroll_preview_worker(Some(handler));
+        assert!(available);
+
+        assert!(session.dispatch(HorizontalScrollPreviewCommand::Set {
+            device_id: "mouse-1".to_owned(),
+            speed_percent: 160,
+        }));
+        session.clear_and_wait(Duration::from_secs(1)).unwrap();
+
+        let set_completion = completions.recv_timeout(Duration::from_secs(1)).unwrap();
+        let clear_completion = completions.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(set_completion.active);
+        assert!(!clear_completion.active);
+        assert_eq!(
+            commands.lock().unwrap().as_slice(),
+            &[
+                HorizontalScrollPreviewCommand::Set {
+                    device_id: "mouse-1".to_owned(),
+                    speed_percent: 160,
+                },
+                HorizontalScrollPreviewCommand::Clear,
+            ]
+        );
+    }
+
+    #[test]
+    fn preview_cleanup_gates_relaunch_and_keeps_the_component_open_on_errors() {
+        let _runtime = SnapshotRuntime::builder()
+            .clock_mode(ClockMode::Manual)
+            .build()
+            .unwrap();
+        let window = MainWindow::new().unwrap();
+        let poll_timer = slint::Timer::default();
+        let heartbeat_timer = slint::Timer::default();
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let handled_events = events.clone();
+        let handler: HorizontalScrollPreviewHandler = Arc::new(move |command| {
+            handled_events.lock().unwrap().push(match command {
+                HorizontalScrollPreviewCommand::Set { .. } => "set",
+                HorizontalScrollPreviewCommand::Clear => "clear",
+            });
+            Ok(())
+        });
+        let (session, completions, _) = start_horizontal_scroll_preview_worker(Some(handler));
+        assert!(session.dispatch(HorizontalScrollPreviewCommand::Set {
+            device_id: "mouse-1".to_owned(),
+            speed_percent: 140,
+        }));
+        assert!(
+            completions
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap()
+                .active
+        );
+        window.set_horizontal_scroll_test_open(true);
+        window.set_horizontal_scroll_test_active(true);
+        let relaunched_events = events.clone();
+        let relauncher = move || {
+            relaunched_events.lock().unwrap().push("relaunch");
+            Ok(())
+        };
+
+        assert!(
+            relaunch_after_preview_cleanup(
+                &window,
+                &session,
+                &poll_timer,
+                &heartbeat_timer,
+                Duration::from_secs(1),
+                &relauncher,
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            &["set", "clear", "relaunch"]
+        );
+        assert!(!window.get_horizontal_scroll_test_open());
+        assert!(!window.get_horizontal_scroll_test_active());
+        assert!(!window.get_horizontal_scroll_test_busy());
+
+        let failing_handler: HorizontalScrollPreviewHandler = Arc::new(|command| match command {
+            HorizontalScrollPreviewCommand::Set { .. } => Ok(()),
+            HorizontalScrollPreviewCommand::Clear => {
+                Err(DogiError::Ui("simulated clear failure".to_owned()))
+            }
+        });
+        let (failing_session, failing_completions, _) =
+            start_horizontal_scroll_preview_worker(Some(failing_handler));
+        assert!(
+            failing_session.dispatch(HorizontalScrollPreviewCommand::Set {
+                device_id: "mouse-1".to_owned(),
+                speed_percent: 140,
+            })
+        );
+        assert!(
+            failing_completions
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap()
+                .active
+        );
+        window.set_horizontal_scroll_test_open(true);
+        window.set_horizontal_scroll_test_active(true);
+        let failed_relaunch = Arc::new(AtomicBool::new(false));
+        let failed_relaunch_called = failed_relaunch.clone();
+        let relauncher = move || {
+            failed_relaunch_called.store(true, Ordering::SeqCst);
+            Ok(())
+        };
+
+        assert!(
+            !relaunch_after_preview_cleanup(
+                &window,
+                &failing_session,
+                &poll_timer,
+                &heartbeat_timer,
+                Duration::from_secs(1),
+                &relauncher,
+            )
+            .unwrap()
+        );
+        assert!(!failed_relaunch.load(Ordering::SeqCst));
+        assert_eq!(window.get_status().message, UiMessage::PreviewCleanupFailed);
+        assert!(window.get_horizontal_scroll_test_open());
+        assert!(window.get_horizontal_scroll_test_active());
+        assert!(!window.get_horizontal_scroll_test_busy());
+
+        let timeout_handler: HorizontalScrollPreviewHandler = Arc::new(|command| {
+            if matches!(command, HorizontalScrollPreviewCommand::Clear) {
+                thread::sleep(Duration::from_millis(80));
+            }
+            Ok(())
+        });
+        let (timeout_session, timeout_completions, _) =
+            start_horizontal_scroll_preview_worker(Some(timeout_handler));
+        assert!(
+            timeout_session.dispatch(HorizontalScrollPreviewCommand::Set {
+                device_id: "mouse-1".to_owned(),
+                speed_percent: 140,
+            })
+        );
+        assert!(
+            timeout_completions
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap()
+                .active
+        );
+        window.set_horizontal_scroll_test_open(true);
+        window.set_horizontal_scroll_test_active(true);
+        let timed_out_relaunch = Arc::new(AtomicBool::new(false));
+        let timed_out_relaunch_called = timed_out_relaunch.clone();
+        let relauncher = move || {
+            timed_out_relaunch_called.store(true, Ordering::SeqCst);
+            Ok(())
+        };
+
+        assert!(
+            !relaunch_after_preview_cleanup(
+                &window,
+                &timeout_session,
+                &poll_timer,
+                &heartbeat_timer,
+                Duration::from_millis(5),
+                &relauncher,
+            )
+            .unwrap()
+        );
+        assert!(!timed_out_relaunch.load(Ordering::SeqCst));
+        assert_eq!(
+            window.get_status().message,
+            UiMessage::PreviewCleanupTimedOut
+        );
+        assert!(window.get_horizontal_scroll_test_open());
+        assert!(window.get_horizontal_scroll_test_active());
+        assert!(window.get_horizontal_scroll_test_busy());
+    }
 
     fn test_app_profile(name: &str) -> AppProfile {
         AppProfile {
@@ -4271,7 +5043,16 @@ mod tests {
 
     #[test]
     fn expected_runtime_pause_is_presented_as_a_pause_not_a_failure() {
-        let status = DesktopRuntimeStatus {
+        let running = DesktopRuntimeStatus {
+            enabled: true,
+            active: true,
+            ready: true,
+            paused: false,
+            pause_reason: DesktopRuntimePauseReason::None,
+            app_profiles_supported: true,
+            detail: String::new(),
+        };
+        let paused = DesktopRuntimeStatus {
             enabled: true,
             active: true,
             ready: false,
@@ -4280,12 +5061,48 @@ mod tests {
             app_profiles_supported: false,
             detail: "remote session".to_owned(),
         };
+        let degraded = DesktopRuntimeStatus {
+            paused: false,
+            pause_reason: DesktopRuntimePauseReason::None,
+            detail: "control endpoint unavailable".to_owned(),
+            ..paused.clone()
+        };
 
-        assert_eq!(desktop_runtime_state(&status), DesktopRuntimeState::Paused);
         assert_eq!(
-            runtime_pause_reason(status.pause_reason),
+            desktop_runtime_state(&running),
+            DesktopRuntimeState::Running
+        );
+        assert_eq!(desktop_runtime_state(&paused), DesktopRuntimeState::Paused);
+        assert_eq!(
+            desktop_runtime_state(&degraded),
+            DesktopRuntimeState::Degraded
+        );
+        assert_eq!(
+            runtime_pause_reason(paused.pause_reason),
             RuntimePauseReason::RemoteLogin
         );
+    }
+
+    #[test]
+    fn runtime_status_refresh_only_runs_while_idle_and_visible() {
+        assert!(should_refresh_desktop_runtime_status(
+            true, true, false, false, false
+        ));
+        assert!(!should_refresh_desktop_runtime_status(
+            false, true, false, false, false
+        ));
+        assert!(!should_refresh_desktop_runtime_status(
+            true, false, false, false, false
+        ));
+        assert!(!should_refresh_desktop_runtime_status(
+            true, true, true, false, false
+        ));
+        assert!(!should_refresh_desktop_runtime_status(
+            true, true, false, true, false
+        ));
+        assert!(!should_refresh_desktop_runtime_status(
+            true, true, false, false, true
+        ));
     }
 
     #[test]
@@ -4339,6 +5156,7 @@ mod tests {
             unit_id: Some("AABBCCDD".to_owned()),
             model_id: Some("B03400000000".to_owned()),
             feature_count: 0,
+            features_complete: false,
             features: Vec::new(),
         });
 
@@ -4347,6 +5165,32 @@ mod tests {
         assert_eq!(logical.len(), 1);
         assert_eq!(logical_device_name(&logical[0]), "MX Master 3S");
         assert_eq!(logical[0].primary.path, "/dev/hidraw3");
+    }
+
+    #[test]
+    fn logical_devices_keep_receiver_slots_as_distinct_devices() {
+        let physical_path = "usb-0000:06:00.0-3/input2";
+        let receiver = make_device(
+            "/dev/hidraw0",
+            "usb-0000:06:00.0-3/input0",
+            CapabilityState::Unknown,
+        );
+        let mut first = make_paired_device("/dev/hidraw2", physical_path, "AABBCCDD");
+        first.id = "receiver:slot:01:wpid:b034".to_owned();
+        let mut second = make_paired_device("/dev/hidraw2", physical_path, "EEFF0011");
+        second.id = "receiver:slot:02:wpid:b034".to_owned();
+        second.paired_device.as_mut().unwrap().slot = 2;
+
+        let logical = logical_devices(&[receiver, first, second]);
+
+        assert_eq!(logical.len(), 2);
+        assert_eq!(logical[0].primary.paired_device.as_ref().unwrap().slot, 1);
+        assert_eq!(logical[1].primary.paired_device.as_ref().unwrap().slot, 2);
+        assert!(
+            logical
+                .iter()
+                .all(|device| device.primary.paired_device.is_some())
+        );
     }
 
     #[test]
@@ -4454,6 +5298,7 @@ mod tests {
             unit_id: Some("AABBCCDD".to_owned()),
             model_id: Some("B03400000000".to_owned()),
             feature_count: 0,
+            features_complete: false,
             features: Vec::new(),
         });
         let logical = logical_devices(&[endpoint]);
@@ -4495,6 +5340,7 @@ mod tests {
             unit_id: Some("AABBCCDD".to_owned()),
             model_id: Some("B03400000000".to_owned()),
             feature_count: 0,
+            features_complete: false,
             features: Vec::new(),
         });
 
@@ -4520,6 +5366,7 @@ mod tests {
             unit_id: None,
             model_id: None,
             feature_count: 0,
+            features_complete: false,
             features: Vec::new(),
         });
 
@@ -4631,7 +5478,7 @@ mod tests {
         session.replace_current(target.clone());
         let settings_id = device_settings_id(&devices[0].primary);
 
-        session.mark_device_saved(&settings_id, &target, &devices);
+        session.mark_device_saved(&settings_id, &target);
 
         assert!(!session.current_dirty());
         assert_eq!(session.current_saved().pointer_speed_percent, 130);
@@ -4676,12 +5523,12 @@ mod tests {
         second.pointer_speed_percent = 140;
         session.replace_current(second);
 
-        let dirty = session.dirty_settings(&devices);
+        let dirty = session.dirty_settings();
         assert_eq!(dirty.len(), 2);
         assert!(dirty.iter().all(|(settings_id, _)| settings_id.is_some()));
         session.mark_all_saved();
         assert!(!session.any_dirty());
-        assert!(session.dirty_settings(&devices).is_empty());
+        assert!(session.dirty_settings().is_empty());
     }
 
     #[test]
@@ -4735,7 +5582,7 @@ mod tests {
     }
 
     #[test]
-    fn device_session_migrates_unknown_receiver_draft_when_mouse_is_identified() {
+    fn device_session_loads_saved_settings_after_staged_startup() {
         let current = logical_devices(&[make_device(
             "/dev/hidraw2",
             "usb-0000:06:00.0-3/input2",
@@ -4743,7 +5590,7 @@ mod tests {
         )]);
         let mut session = DeviceUiSession::new(
             &current,
-            vec![settings_with_speed(121)],
+            vec![Master3sSettings::default()],
             Master3sSettings::default(),
         );
         let next = logical_devices(&[make_paired_device(
@@ -4753,19 +5600,306 @@ mod tests {
         )]);
         let loads = Rc::new(Cell::new(0));
         let load_count = loads.clone();
-        let loader: SettingsLoader = Rc::new(move |_| {
+        let saved = Master3sSettings {
+            pointer_speed_percent: 87,
+            thumb_wheel_speed_percent: 392,
+            ..Master3sSettings::default()
+        };
+        let stored = saved.clone();
+        let loader: SettingsLoader = Rc::new(move |settings_id| {
+            assert_eq!(settings_id, "046d:unit:AABBCCDD");
             load_count.set(load_count.get() + 1);
-            Ok(settings_with_speed(87))
+            Ok(stored.clone())
         });
 
         session.reconcile_devices(&next, Some(&loader)).unwrap();
 
-        assert_eq!(loads.get(), 0);
-        assert_eq!(session.current().pointer_speed_percent, 121);
+        assert_eq!(loads.get(), 1);
+        assert_eq!(session.current(), &saved);
+        assert_eq!(session.current_saved(), &saved);
+        assert!(!session.any_dirty());
         assert_eq!(
             session.drafts[0].strong_key.as_deref(),
             Some("046d:unit:AABBCCDD")
         );
+
+        let mut direct = DeviceUiSession::new(&[], vec![], Master3sSettings::default());
+        direct.reconcile_devices(&next, Some(&loader)).unwrap();
+        assert_eq!(session.current(), direct.current());
+
+        // A later metadata refresh must not replace an already loaded draft.
+        session.reconcile_devices(&next, Some(&loader)).unwrap();
+        assert_eq!(loads.get(), 2);
+    }
+
+    #[test]
+    fn device_session_rebases_edits_when_the_unit_id_arrives() {
+        let identified =
+            make_paired_device("/dev/hidraw2", "usb-0000:06:00.0-3/input2", "AABBCCDD");
+        for paired in [false, true] {
+            let mut provisional = identified.clone();
+            if paired {
+                provisional.paired_device.as_mut().unwrap().unit_id = None;
+            } else {
+                provisional.paired_device = None;
+            }
+            let current = logical_devices(&[provisional]);
+            let next = logical_devices(std::slice::from_ref(&identified));
+            let mut session = DeviceUiSession::new(
+                &current,
+                vec![Master3sSettings::default()],
+                Master3sSettings::default(),
+            );
+            let mut edited = session.current().clone();
+            edited.natural_scroll = true;
+            session.replace_current(edited);
+            let saved = Master3sSettings {
+                pointer_speed_percent: 87,
+                thumb_wheel_speed_percent: 392,
+                ..Master3sSettings::default()
+            };
+            let stored = saved.clone();
+            let loader: SettingsLoader = Rc::new(move |_| Ok(stored.clone()));
+
+            session.reconcile_devices(&next, Some(&loader)).unwrap();
+
+            let expected = Master3sSettings {
+                natural_scroll: true,
+                ..saved.clone()
+            };
+            assert_eq!(session.current(), &expected);
+            assert_eq!(session.current_saved(), &saved);
+            assert!(session.current_dirty());
+            assert_eq!(
+                session.dirty_settings(),
+                vec![(Some("046d:unit:AABBCCDD".to_owned()), expected)]
+            );
+            let plan =
+                device_apply_plan(&identified.id, session.current_saved(), session.current());
+            assert_eq!(plan.steps.len(), 1);
+
+            session.revert_current();
+            assert_eq!(session.current(), &saved);
+            assert!(!session.current_dirty());
+        }
+    }
+
+    #[test]
+    fn device_session_identity_load_failure_preserves_the_previous_draft() {
+        let current = logical_devices(&[make_device(
+            "/dev/hidraw2",
+            "usb-0000:06:00.0-3/input2",
+            CapabilityState::Supported,
+        )]);
+        let next = logical_devices(&[make_paired_device(
+            "/dev/hidraw2",
+            "usb-0000:06:00.0-3/input2",
+            "AABBCCDD",
+        )]);
+        let mut session = DeviceUiSession::new(
+            &current,
+            vec![Master3sSettings::default()],
+            Master3sSettings::default(),
+        );
+        session.replace_current(settings_with_speed(135));
+        let failing: SettingsLoader = Rc::new(|_| Err(DogiError::Config("read failed".to_owned())));
+
+        assert!(session.reconcile_devices(&next, Some(&failing)).is_err());
+        assert_eq!(session.current().pointer_speed_percent, 135);
+        assert_eq!(session.current_saved(), &Master3sSettings::default());
+        assert!(session.current_dirty());
+        assert!(session.drafts[0].strong_key.is_none());
+        assert!(session.detached_drafts.is_empty());
+
+        let saved = Master3sSettings {
+            thumb_wheel_speed_percent: 392,
+            ..Master3sSettings::default()
+        };
+        let loader: SettingsLoader = Rc::new(move |_| Ok(saved.clone()));
+        session.reconcile_devices(&next, Some(&loader)).unwrap();
+        assert_eq!(session.current().pointer_speed_percent, 135);
+        assert_eq!(session.current().thumb_wheel_speed_percent, 392);
+    }
+
+    #[test]
+    fn device_session_restores_detached_edits_after_inventory_then_identification() {
+        let identified =
+            make_paired_device("/dev/hidraw2", "usb-0000:06:00.0-3/input2", "AABBCCDD");
+        let devices = logical_devices(std::slice::from_ref(&identified));
+        let saved = Master3sSettings {
+            thumb_wheel_speed_percent: 392,
+            ..Master3sSettings::default()
+        };
+        let mut session =
+            DeviceUiSession::new(&devices, vec![saved.clone()], Master3sSettings::default());
+        let edited = Master3sSettings {
+            pointer_speed_percent: 135,
+            ..saved.clone()
+        };
+        session.replace_current(edited.clone());
+        session.reconcile_devices(&[], None).unwrap();
+        let inventory = logical_devices(&[make_device(
+            "/dev/hidraw2",
+            "usb-0000:06:00.0-3/input2",
+            CapabilityState::Supported,
+        )]);
+        session.reconcile_devices(&inventory, None).unwrap();
+        let loader: SettingsLoader = Rc::new(|_| panic!("the detached draft is already loaded"));
+
+        session.reconcile_devices(&devices, Some(&loader)).unwrap();
+
+        assert_eq!(session.current(), &edited);
+        assert_eq!(session.current_saved(), &saved);
+        assert!(session.current_dirty());
+    }
+
+    #[test]
+    fn device_session_keeps_receiver_slots_separate_during_identity_promotion() {
+        let mut first = make_paired_device("/dev/hidraw2", "usb-0000:06:00.0-3/input2", "AAAAAAAA");
+        let mut second =
+            make_paired_device("/dev/hidraw2", "usb-0000:06:00.0-3/input2", "BBBBBBBB");
+        second.paired_device.as_mut().unwrap().slot = 2;
+        for device in [&mut first, &mut second] {
+            device.id = dogi_core::logical_hidpp_device_id(
+                &device.id,
+                device.paired_device.as_ref().unwrap(),
+            );
+        }
+        let mut provisional = [first.clone(), second.clone()];
+        for device in &mut provisional {
+            device.paired_device.as_mut().unwrap().unit_id = None;
+        }
+        let current = logical_devices(&provisional);
+        let next = logical_devices(&[second, first]);
+        let mut session = DeviceUiSession::new(
+            &current,
+            vec![Master3sSettings::default(); 2],
+            Master3sSettings::default(),
+        );
+        session.select(1);
+        session.replace_current(settings_with_speed(135));
+        let loader: SettingsLoader = Rc::new(|id| {
+            let speed = match id {
+                "046d:unit:AAAAAAAA" => 392,
+                "046d:unit:BBBBBBBB" => 225,
+                _ => panic!("unexpected settings identifier: {id}"),
+            };
+            Ok(Master3sSettings {
+                thumb_wheel_speed_percent: speed,
+                ..Master3sSettings::default()
+            })
+        });
+
+        session.reconcile_devices(&next, Some(&loader)).unwrap();
+
+        assert_eq!(session.selected_index, Some(0));
+        assert_eq!(session.current().thumb_wheel_speed_percent, 225);
+        assert_eq!(session.current().pointer_speed_percent, 135);
+        assert_eq!(session.drafts[1].settings.thumb_wheel_speed_percent, 392);
+        assert_eq!(session.drafts[1].settings.pointer_speed_percent, 100);
+        let dirty = session.dirty_settings();
+        assert_eq!(dirty.len(), 1);
+        assert_eq!(dirty[0].0.as_deref(), Some("046d:unit:BBBBBBBB"));
+    }
+
+    #[test]
+    fn saved_settings_survive_gui_reload_and_saving_an_unrelated_edit() {
+        let runtime = SnapshotRuntime::builder()
+            .clock_mode(ClockMode::Manual)
+            .build()
+            .unwrap();
+        let window = MainWindow::new().unwrap();
+        let inventory = logical_devices(&[make_device(
+            "/dev/hidraw2",
+            "usb-0000:06:00.0-3/input2",
+            CapabilityState::Supported,
+        )]);
+        let identified = logical_devices(&[make_paired_device(
+            "/dev/hidraw2",
+            "usb-0000:06:00.0-3/input2",
+            "AABBCCDD",
+        )]);
+        let settings_id = "046d:unit:AABBCCDD";
+        let saved = Master3sSettings {
+            thumb_wheel_speed_percent: 392,
+            gestures: GestureBindings {
+                threshold: 90,
+                ..Default::default()
+            },
+            ..Master3sSettings::default()
+        };
+        let store = Rc::new(RefCell::new(HashMap::from([(
+            settings_id.to_owned(),
+            saved.clone(),
+        )])));
+        let load_store = store.clone();
+        let loader: SettingsLoader =
+            Rc::new(move |id| Ok(load_store.borrow().get(id).cloned().unwrap_or_default()));
+
+        for restart in 0..2 {
+            let session = Rc::new(RefCell::new(DeviceUiSession::new(
+                &[],
+                vec![],
+                Master3sSettings::default(),
+            )));
+            for devices in [&inventory, &identified] {
+                session
+                    .borrow_mut()
+                    .reconcile_devices(devices, Some(&loader))
+                    .unwrap();
+                refresh_selected_device_view(&window, devices, &session.borrow());
+            }
+            assert_eq!(window.get_thumb_wheel_speed(), 392.0);
+            assert!(!window.get_draft_dirty());
+            assert_eq!(
+                session.borrow_mut().capture_window(&window),
+                store.borrow()[settings_id]
+            );
+            assert!(!session.borrow().current_dirty());
+            if restart == 1 {
+                assert_eq!(window.get_pointer_speed(), 135.0);
+                break;
+            }
+
+            window.set_pointer_speed(135.0);
+            session.borrow_mut().capture_window(&window);
+            window.set_draft_dirty(session.borrow().current_dirty());
+
+            // Background identity recovery remains available while editing, without real HID I/O.
+            let scans = Rc::new(Cell::new(0));
+            let callback_scans = scans.clone();
+            window.on_rescan_devices(move || callback_scans.set(callback_scans.get() + 1));
+            schedule_hidpp_recovery_scan(
+                window.as_weak(),
+                Rc::new(Cell::new(false)),
+                Rc::new(Cell::new(DeviceScanIntent::User)),
+                Rc::new(Cell::new(0)),
+                Rc::new(Cell::new(0)),
+            );
+            runtime.advance_time(HIDPP_RECOVERY_SCAN_DELAYS[0]).unwrap();
+            slint::platform::update_timers_and_animations();
+            assert_eq!(scans.get(), 1);
+
+            // A subsequent inventory-only probe must retain the known save target and draft.
+            session
+                .borrow_mut()
+                .reconcile_devices(&inventory, Some(&loader))
+                .unwrap();
+            refresh_selected_device_view(&window, &inventory, &session.borrow());
+            let target = capture_settings_target(
+                &window,
+                &session,
+                &Rc::new(RefCell::new(inventory.clone())),
+            );
+            assert_eq!(target.settings_id.as_deref(), Some(settings_id));
+            assert_eq!(target.settings.thumb_wheel_speed_percent, 392);
+            assert_eq!(target.settings.gestures.threshold, 90);
+            store
+                .borrow_mut()
+                .insert(target.settings_id.unwrap(), target.settings);
+            session.borrow_mut().mark_current_saved();
+            assert!(!session.borrow().any_dirty());
+        }
     }
 
     #[test]
@@ -5165,11 +6299,12 @@ mod tests {
             Ok(())
         });
         let active_language = Rc::new(Cell::new(ApplicationLanguage::System));
+        let active_language_handler = active_language.clone();
         let language_window = window.as_weak();
         window.on_language_selected(move |index| {
             request_language_change(
                 language_window.clone(),
-                active_language.clone(),
+                active_language_handler.clone(),
                 language_save.clone(),
                 ApplicationLanguage::from_index(index),
             );
@@ -5323,6 +6458,39 @@ mod tests {
             saved_language.get(),
             Some(ApplicationLanguage::SimplifiedChinese)
         );
+        assert_eq!(
+            active_language.get(),
+            ApplicationLanguage::SimplifiedChinese
+        );
+
+        let failed_language_window = window.as_weak();
+        let failed_language = Rc::new(Cell::new(ApplicationLanguage::SimplifiedChinese));
+        let failed_language_handler = failed_language.clone();
+        let failing_save: ApplicationPreferenceSaver = Rc::new(|_| {
+            Err(DogiError::Config(
+                "simulated application preference failure".to_owned(),
+            ))
+        });
+        window.on_language_selected(move |index| {
+            request_language_change(
+                failed_language_window.clone(),
+                failed_language_handler.clone(),
+                failing_save.clone(),
+                ApplicationLanguage::from_index(index),
+            );
+        });
+        window.invoke_language_selected(ApplicationLanguage::English.index());
+        slint::platform::update_timers_and_animations();
+        assert_eq!(
+            failed_language.get(),
+            ApplicationLanguage::SimplifiedChinese
+        );
+        assert_eq!(
+            window.get_language_index(),
+            ApplicationLanguage::SimplifiedChinese.index()
+        );
+        assert_eq!(window.get_status().message, UiMessage::AppConfigSaveFailed);
+
         slint::select_bundled_translation("en").unwrap();
         window.set_language_index(0);
         runtime.render(window.window()).unwrap();
@@ -5340,10 +6508,7 @@ mod tests {
     }
 
     #[test]
-    fn render_preview_snapshot_when_requested() {
-        let Some(path) = std::env::var_os("DOGI_UI_SNAPSHOT") else {
-            return;
-        };
+    fn renders_preview() {
         let runtime = SnapshotRuntime::builder()
             .clock_mode(ClockMode::Manual)
             .build()
@@ -5364,6 +6529,11 @@ mod tests {
             .ok()
             .and_then(|height| height.parse::<u32>().ok())
             .unwrap_or(780);
+        let pixel_count = u64::from(snapshot_width) * u64::from(snapshot_height);
+        assert!(
+            (1..=2_000_000).contains(&pixel_count),
+            "preview dimensions must contain between 1 and 2,000,000 pixels"
+        );
         runtime
             .set_size(window.window(), (snapshot_width, snapshot_height), 1.0)
             .unwrap();
@@ -5704,7 +6874,7 @@ mod tests {
             if proxy_preview == "manual" || proxy_preview == "authenticated" {
                 window.set_network_proxy_mode_index(2);
                 window.set_network_proxy_protocol_index(0);
-                window.set_network_proxy_host("192.168.88.90".into());
+                window.set_network_proxy_host("192.0.2.1".into());
                 window.set_network_proxy_port("7890".into());
             }
             if proxy_preview == "authenticated" {
@@ -5746,11 +6916,11 @@ mod tests {
             }
         }
 
-        runtime
-            .render(window.window())
-            .unwrap()
-            .write_png(Path::new(&path))
-            .unwrap();
+        let frame = runtime.render(window.window()).unwrap();
+        assert_eq!(frame.dimensions(), (snapshot_width, snapshot_height));
+        if let Some(path) = std::env::var_os("DOGI_UI_SNAPSHOT") {
+            frame.write_png(Path::new(&path)).unwrap();
+        }
     }
 
     fn preview_device_row(
@@ -5827,6 +6997,7 @@ mod tests {
             unit_id: Some(unit_id.to_owned()),
             model_id: Some("B03400000000".to_owned()),
             feature_count: 0,
+            features_complete: false,
             features: Vec::new(),
         });
         device

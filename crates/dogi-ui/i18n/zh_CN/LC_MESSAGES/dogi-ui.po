@@ -192,6 +192,9 @@ msgstr "可以更新"
 msgid "Installing…"
 msgstr "正在安装…"
 
+msgid "Restart required"
+msgstr "需要重启"
+
 #: crates/dogi-ui/ui/app.slint:1867
 msgid "Automatic"
 msgstr "自动更新"
@@ -200,6 +203,10 @@ msgstr "自动更新"
 #, python-brace-format
 msgid "Version {} is ready to install"
 msgstr "{} 版本已可安装"
+
+#, python-brace-format
+msgid "Version {} is installed; restart Dogi to finish"
+msgstr "{} 版本已安装；重启 Dogi 即可完成更新"
 
 #: crates/dogi-ui/ui/app.slint:1877 crates/dogi-ui/ui/app.slint:1878
 #, python-brace-format
@@ -213,6 +220,9 @@ msgstr "Dogi 更新"
 #: crates/dogi-ui/ui/app.slint:1933
 msgid "Install & Restart"
 msgstr "安装并重启"
+
+msgid "Restart now"
+msgstr "立即重启"
 
 #: crates/dogi-ui/ui/app.slint:1937
 msgid "Check now"
@@ -704,7 +714,7 @@ msgstr "设置已保存"
 
 #: crates/dogi-ui/ui/app.slint:3696
 msgid "Working…"
-msgstr ""
+msgstr "正在处理…"
 
 #: crates/dogi-ui/ui/app.slint:3696
 msgid "Apply Changes…"
@@ -1033,41 +1043,41 @@ msgstr[0] "{n} 项覆盖"
 #: crates/dogi-ui/ui/i18n.slint:132
 #, python-brace-format
 msgid "SmartShift {}"
-msgstr ""
+msgstr "SmartShift {}"
 
 #: crates/dogi-ui/ui/i18n.slint:136
 msgid "Smooth · Natural"
-msgstr ""
+msgstr "平滑 · 自然"
 
 #: crates/dogi-ui/ui/i18n.slint:137
 msgid "Smooth · Standard"
-msgstr ""
+msgstr "平滑 · 标准"
 
 #: crates/dogi-ui/ui/i18n.slint:138
 msgid "Normal · Natural"
-msgstr ""
+msgstr "常规 · 自然"
 
 #: crates/dogi-ui/ui/i18n.slint:139
 msgid "Normal · Standard"
-msgstr ""
+msgstr "常规 · 标准"
 
 #: crates/dogi-ui/ui/i18n.slint:143
 msgid "Dogi routing"
-msgstr ""
+msgstr "Dogi 接管"
 
 #: crates/dogi-ui/ui/i18n.slint:143
 msgid "Native routing"
-msgstr ""
+msgstr "原生处理"
 
 #: crates/dogi-ui/ui/i18n.slint:149
 #, python-brace-format
 msgid "{}% → {}%"
-msgstr ""
+msgstr "{}% → {}%"
 
 #: crates/dogi-ui/ui/i18n.slint:151 crates/dogi-ui/ui/i18n.slint:153
 #, python-brace-format
 msgid "{} → {}"
-msgstr ""
+msgstr "{} → {}"
 
 #: crates/dogi-ui/ui/i18n.slint:161
 #, python-brace-format
@@ -1235,11 +1245,11 @@ msgstr[0] "暂时无法应用这 {n} 项设置"
 
 #: crates/dogi-ui/ui/i18n.slint:224
 msgid "Reading current mouse settings…"
-msgstr ""
+msgstr "正在读取鼠标当前设置…"
 
 #: crates/dogi-ui/ui/i18n.slint:225
 msgid "Applying and verifying mouse settings…"
-msgstr ""
+msgstr "正在应用并验证鼠标设置…"
 
 #: crates/dogi-ui/ui/i18n.slint:226
 #, python-brace-format
@@ -1264,20 +1274,20 @@ msgstr "应用失败：{}"
 
 #: crates/dogi-ui/ui/i18n.slint:235
 msgid "The mouse changed after review. No settings were written; review and try again."
-msgstr ""
+msgstr "鼠标状态在确认后发生了变化。未写入任何设置；请重新检查后再试。"
 
 #: crates/dogi-ui/ui/i18n.slint:237
 msgid "The settings could not be applied. The original mouse settings were restored."
-msgstr ""
+msgstr "设置未能应用，已恢复鼠标原有设置。"
 
 #: crates/dogi-ui/ui/i18n.slint:239
 #, python-brace-format
 msgid "Some mouse settings still need recovery: {}"
-msgstr ""
+msgstr "部分鼠标设置仍需恢复：{}"
 
 #: crates/dogi-ui/ui/i18n.slint:241
 msgid "Some mouse settings could not be restored. Keep the mouse connected and try again."
-msgstr ""
+msgstr "部分鼠标设置无法恢复。请保持鼠标连接后重试。"
 
 #: crates/dogi-ui/ui/i18n.slint:243
 #, python-brace-format
@@ -1302,3 +1312,13 @@ msgstr "系统托盘不可用：{}"
 #: crates/dogi-ui/ui/i18n.slint:251
 msgid "System tray is unavailable"
 msgstr "系统托盘不可用"
+
+#, python-brace-format
+msgid "Could not stop the horizontal scroll test, so Dogi will stay open: {}"
+msgstr "无法停止横向滚动测试，因此 Dogi 将保持运行：{}"
+
+msgid "Could not stop the horizontal scroll test, so Dogi will stay open"
+msgstr "无法停止横向滚动测试，因此 Dogi 将保持运行"
+
+msgid "Dogi could not confirm that the horizontal scroll test stopped, so it will stay open"
+msgstr "Dogi 无法确认横向滚动测试已停止，因此将保持运行"

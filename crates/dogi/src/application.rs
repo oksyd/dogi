@@ -9,23 +9,29 @@ use crate::environment::AppEnvironment;
 use crate::runtime::{control::RuntimeControlClient, lock::ProcessLock, service};
 
 pub(crate) fn launch_gui(environment: &AppEnvironment) -> Result<()> {
-    if environment.user.uid.is_some() {
+    if crate::desktop::context::running_as_root() {
         return Err(DogiError::InvalidArgument(
             "run the Dogi GUI as the desktop user, without sudo".to_owned(),
         ));
     }
     let _instance_lock = ProcessLock::acquire(&environment.paths.gui_instance_lock(), "window")?;
     let devices = DeviceService::for_environment(environment);
-    let settings_recovery_error = devices
+    let mut settings_recovery_error = devices
         .recover_interrupted_settings_transaction()
         .err()
         .map(|error| error.to_string());
     let application_store = ApplicationConfigStore::for_environment(environment);
     let update_store = application_store.clone();
+    let preferences = application_preferences(application_store.clone());
     let network_service = crate::network::NetworkService::new(application_store.clone());
     let network = network_preferences(network_service.clone());
-    let preferences = application_preferences(application_store);
     let settings = devices.load_master3s_settings()?;
+    if let Some(notice) = devices.take_recovery_notice() {
+        settings_recovery_error = Some(match settings_recovery_error {
+            Some(error) => format!("{error}\n{notice}"),
+            None => notice,
+        });
+    }
     let inventory_devices = devices.clone();
     let scan_devices = devices.clone();
     let load_settings = devices.clone();
@@ -83,6 +89,7 @@ pub(crate) fn launch_gui(environment: &AppEnvironment) -> Result<()> {
             },
             runtime: dogi_ui::DesktopRuntimeManager {
                 supported: runtime_supported,
+                app_profiles_supported: service::app_profiles_supported(environment),
                 pause_reason: service::current_pause_reason(),
                 availability: if runtime_supported {
                     dogi_ui::DesktopRuntimeAvailability::Available
@@ -143,10 +150,13 @@ fn application_preferences(
     store: ApplicationConfigStore,
 ) -> dogi_ui::ApplicationPreferencesIntegration {
     let fallback = store.default_preferences();
-    let (initial, load_error) = match store.load_preferences() {
+    let (initial, mut load_error) = match store.load_preferences() {
         Ok(preferences) => (preferences, None),
         Err(error) => (fallback, Some(error.to_string())),
     };
+    if let Some(notice) = store.take_recovery_notice() {
+        load_error = Some(notice);
+    }
     let integration = dogi_ui::ApplicationPreferencesIntegration::new(initial, move |change| {
         store
             .save_preference(change)

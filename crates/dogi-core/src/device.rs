@@ -150,6 +150,12 @@ pub struct PairedDeviceInfo {
     pub unit_id: Option<String>,
     pub model_id: Option<String>,
     pub feature_count: usize,
+    /// Whether the feature inventory completed without a missing or malformed reply.
+    ///
+    /// A `false` value means callers may use the positive capabilities that were
+    /// discovered, but must not treat an absent feature as unsupported.
+    #[serde(default)]
+    pub features_complete: bool,
     pub features: Vec<HidppFeatureInfo>,
 }
 
@@ -398,6 +404,27 @@ pub fn stable_device_id(vendor_id: u16, product_id: u16, path: &str) -> String {
     )
 }
 
+/// Builds the identity of one logical HID++ device exposed by a physical endpoint.
+///
+/// Receiver slots are deliberately part of the identifier. The WPID prevents a
+/// stale identifier from silently selecting a different model after re-pairing;
+/// the stronger unit/model identifiers are validated again before every write.
+pub fn logical_hidpp_device_id(endpoint_id: &str, paired: &PairedDeviceInfo) -> String {
+    let wpid = paired
+        .wpid
+        .as_deref()
+        .map(normalized_hidpp_model_code)
+        .filter(|wpid| !wpid.is_empty())
+        .unwrap_or_else(|| "unknown".to_owned());
+    format!("{endpoint_id}:slot:{:02x}:wpid:{wpid}", paired.slot)
+}
+
+pub fn hidpp_endpoint_id(device_id: &str) -> &str {
+    device_id
+        .split_once(":slot:")
+        .map_or(device_id, |(endpoint_id, _)| endpoint_id)
+}
+
 pub fn device_settings_id(device: &DeviceInfo) -> String {
     let unit_id = device
         .paired_device
@@ -504,6 +531,26 @@ mod tests {
     }
 
     #[test]
+    fn logical_hidpp_id_keeps_the_endpoint_and_slot_visible() {
+        let paired = PairedDeviceInfo {
+            slot: 2,
+            name: None,
+            kind: None,
+            wpid: Some("b0-34".to_owned()),
+            protocol: None,
+            unit_id: None,
+            model_id: None,
+            feature_count: 0,
+            features_complete: false,
+            features: Vec::new(),
+        };
+
+        let id = logical_hidpp_device_id("receiver", &paired);
+        assert_eq!(id, "receiver:slot:02:wpid:B034");
+        assert_eq!(hidpp_endpoint_id(&id), "receiver");
+    }
+
+    #[test]
     fn settings_id_prefers_normalized_paired_unit_id() {
         let mut device = test_device();
         device.paired_device = Some(PairedDeviceInfo {
@@ -515,6 +562,7 @@ mod tests {
             protocol: None,
             model_id: None,
             feature_count: 0,
+            features_complete: false,
             features: Vec::new(),
         });
 
@@ -535,6 +583,7 @@ mod tests {
             protocol: None,
             model_id: None,
             feature_count: 0,
+            features_complete: false,
             features: Vec::new(),
         });
         assert_eq!(device_settings_id(&device), "receiver-endpoint");

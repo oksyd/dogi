@@ -1865,22 +1865,27 @@ component SettingsUpdateRow inherits Rectangle {
         : root.state == UpdateState.current ? @tr("Up to date")
         : root.state == UpdateState.ready ? @tr("Ready")
         : root.state == UpdateState.installing ? @tr("Installing…")
+        : root.state == UpdateState.restart-required ? @tr("Restart required")
         : root.state == UpdateState.failed ? @tr("Needs attention")
         : root.state == UpdateState.unavailable ? @tr("Unavailable")
         : @tr("Automatic");
     property <BadgeTone> state-tone:
         root.state == UpdateState.current ? BadgeTone.success
         : root.state == UpdateState.ready ? BadgeTone.accent
+        : root.state == UpdateState.restart-required ? BadgeTone.warning
         : root.state == UpdateState.failed ? BadgeTone.warning
         : BadgeTone.neutral;
     property <string> subtitle:
         root.state == UpdateState.ready ? @tr("Version {} is ready to install", root.available-version)
+        : root.state == UpdateState.restart-required && root.detail != "" ? root.detail
+        : root.state == UpdateState.restart-required ? @tr("Version {} is installed; restart Dogi to finish", root.available-version)
         : root.state == UpdateState.failed && root.detail != "" ? root.detail
         : root.state == UpdateState.unavailable && root.detail != "" ? root.detail
         : root.state == UpdateState.unavailable ? @tr("Version {}", root.current-version)
         : @tr("Version {}", root.current-version);
 
-    height: root.state == UpdateState.failed || root.state == UpdateState.ready ? 76px : 64px;
+    height: root.state == UpdateState.failed || root.state == UpdateState.ready
+        || root.state == UpdateState.restart-required ? 76px : 64px;
     background: transparent;
     vertical-stretch: 0;
 
@@ -1905,7 +1910,8 @@ component SettingsUpdateRow inherits Rectangle {
             Text {
                 height: 18px;
                 text: root.subtitle;
-                color: root.state == UpdateState.failed ? Theme.warning : Theme.text-muted;
+                color: root.state == UpdateState.failed
+                    || root.state == UpdateState.restart-required ? Theme.warning : Theme.text-muted;
                 font-size: 10px;
                 overflow: elide;
                 vertical-alignment: center;
@@ -1934,15 +1940,18 @@ component SettingsUpdateRow inherits Rectangle {
                 height: 32px;
                 title: root.state == UpdateState.ready
                         || (root.state == UpdateState.failed && root.available-version != "") ? @tr("Install & Restart")
+                    : root.state == UpdateState.restart-required ? @tr("Restart now")
                     : root.state == UpdateState.failed ? @tr("Retry")
                     : root.state == UpdateState.checking ? @tr("Checking…")
                     : root.state == UpdateState.installing ? @tr("Installing…")
                     : @tr("Check now");
                 primary: root.state == UpdateState.ready
+                    || root.state == UpdateState.restart-required
                     || (root.state == UpdateState.failed && root.available-version != "");
                 enabled: root.supported && !root.busy;
                 clicked => {
                     if (root.state == UpdateState.ready
+                        || root.state == UpdateState.restart-required
                         || (root.state == UpdateState.failed && root.available-version != "")) {
                         root.install();
                     } else {

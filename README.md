@@ -65,9 +65,9 @@ Installed and portable releases store configuration under `$XDG_CONFIG_HOME/dogi
 - `config.json` — application, update, and non-secret network preferences.
 - `master3s.json` — default and per-device mouse profiles.
 
-Configuration writes use atomic replacement. Unsupported or malformed schemas are reported and
-left unchanged. Authenticated proxy passwords are stored in the desktop keyring, never in
-`config.json`.
+Configuration writes use atomic replacement. Unsupported or malformed schemas are preserved as a
+timestamped backup, then replaced with current defaults and reported in the UI. Authenticated proxy
+passwords are stored in the desktop keyring, never in `config.json`.
 
 Local Cargo builds, including `--release` builds, use an isolated `dogi-development` namespace for
 configuration, cache, runtime sockets, and the GUI instance lock. They never install or rewrite the
@@ -90,3 +90,22 @@ services.
 
 X11 application matching uses `xprop`. Wayland does not expose an equivalent global active-window
 API, so profiles can be edited there but automatic profile switching remains unavailable.
+
+## UI previews
+
+UI tests render in memory without a desktop session. CI checks representative states without
+saving or uploading screenshots; no PNG baselines or pixel comparisons are maintained.
+To export a local preview:
+
+```bash
+FONTCONFIG_FILE="$PWD/crates/dogi-ui/tests/preview-fontconfig.conf" \
+DOGI_UI_SNAPSHOT="$PWD/target/ui-previews/default.png" \
+cargo test --locked --package dogi-ui --lib tests::renders_preview -- --exact
+```
+
+## Releases
+
+Run `just patch` to bump the version and push the signed release tag. CI builds and verifies the
+packages, then creates a draft GitHub Release for the maintainer to review and publish manually.
+No additional release signing key is required. In-app updates verify the existing Git tag
+signature and the immutable GitHub Release asset's size and SHA-256 digest before installation.

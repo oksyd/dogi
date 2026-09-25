@@ -1,8 +1,6 @@
 use std::fmt;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufWriter, Write};
-#[cfg(unix)]
-use std::os::fd::AsRawFd;
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -15,6 +13,9 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::environment::AppEnvironment;
+use crate::persistence::{
+    ExclusiveFileLock, FileOwner, PersistenceError, atomic_write, quarantine, sibling_lock_path,
+};
 
 const APP_CONFIG_SCHEMA_VERSION: u16 = 6;
 
@@ -103,7 +104,6 @@ struct StoredBehavior {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StoredUpdates {
-    #[serde(alias = "automatic_updates_enabled")]
     automatic_update_checks_enabled: bool,
     #[serde(default)]
     last_successful_check_unix_seconds: Option<u64>,
@@ -231,9 +231,11 @@ impl Default for StoredApplicationConfig {
 #[derive(Clone, Debug)]
 pub(crate) struct ApplicationConfigStore {
     path: PathBuf,
+    lock_path: PathBuf,
     owner: Option<FileOwner>,
     defaults: StoredApplicationConfig,
     write_lock: Arc<Mutex<()>>,
+    recovery_notice: Arc<Mutex<Option<String>>>,
 }
 
 impl ApplicationConfigStore {
@@ -242,32 +244,78 @@ impl ApplicationConfigStore {
             .user
             .uid
             .zip(environment.user.gid)
-            .map(|(uid, gid)| FileOwner { uid, gid });
+            .map(|(uid, gid)| FileOwner::new(uid, gid));
         let mut defaults = StoredApplicationConfig::default();
         defaults.behavior.background_operations_enabled =
             environment.default_background_operations_enabled();
         defaults.updates.automatic_update_checks_enabled = environment.updates.enabled;
+        let path = environment.paths.application_config();
         Self {
-            path: environment.paths.application_config(),
+            lock_path: sibling_lock_path(&path),
+            path,
             owner,
             defaults,
             write_lock: Arc::new(Mutex::new(())),
+            recovery_notice: Arc::default(),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn at(path: PathBuf) -> Self {
         Self {
+            lock_path: sibling_lock_path(&path),
             path,
             owner: None,
             defaults: StoredApplicationConfig::default(),
             write_lock: Arc::new(Mutex::new(())),
+            recovery_notice: Arc::default(),
         }
     }
 
     fn load(&self) -> Result<StoredApplicationConfig, ApplicationConfigError> {
-        read_json::<StoredApplicationConfig>(&self.path)?
-            .map_or_else(|| Ok(self.defaults.clone()), validate_schema)
+        let _guard = self
+            .write_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _file_lock = ExclusiveFileLock::acquire(&self.lock_path, self.owner)?;
+        self.load_locked()
+    }
+
+    fn load_locked(&self) -> Result<StoredApplicationConfig, ApplicationConfigError> {
+        let loaded = read_json::<StoredApplicationConfig>(&self.path)
+            .and_then(|config| config.map_or_else(|| Ok(self.defaults.clone()), validate_schema));
+        match loaded {
+            Ok(config) => Ok(config),
+            Err(error) if error.recoverable() => self.recover_invalid_config(error.to_string()),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn recover_invalid_config(
+        &self,
+        reason: String,
+    ) -> Result<StoredApplicationConfig, ApplicationConfigError> {
+        let backup = quarantine(&self.path, "incompatible-config")?;
+        let defaults = self.defaults.clone();
+        self.save(&defaults)?;
+        let backup_detail = backup
+            .as_deref()
+            .map(|path| format!(" The original was preserved at {}.", path.display()))
+            .unwrap_or_default();
+        *self
+            .recovery_notice
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(format!(
+            "Application settings were restored to defaults because {reason}.{backup_detail}"
+        ));
+        Ok(defaults)
+    }
+
+    pub(crate) fn take_recovery_notice(&self) -> Option<String> {
+        self.recovery_notice
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 
     pub(crate) fn load_preferences(
@@ -441,65 +489,20 @@ impl ApplicationConfigStore {
             .write_lock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut config = self.load()?;
-        config.schema_version = APP_CONFIG_SCHEMA_VERSION;
+        let _file_lock = ExclusiveFileLock::acquire(&self.lock_path, self.owner)?;
+        let mut config = self.load_locked()?;
         mutate(&mut config);
         self.save(&config)
     }
 
     fn save(&self, config: &StoredApplicationConfig) -> Result<(), ApplicationConfigError> {
-        let parent = self
-            .path
-            .parent()
-            .ok_or_else(|| ApplicationConfigError::InvalidPath {
-                path: self.path.clone(),
-            })?;
-        create_config_directory(parent, self.owner)?;
-
-        let temporary_path = temporary_path(&self.path);
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&temporary_path)
-            .map_err(|source| ApplicationConfigError::Write {
-                path: temporary_path.clone(),
-                source,
-            })?;
-        set_owner(&file, self.owner, &temporary_path)?;
-        let mut writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(&mut writer, config).map_err(|source| {
-            ApplicationConfigError::Encode {
-                path: temporary_path.clone(),
-                source,
-            }
-        })?;
-        writer
-            .write_all(b"\n")
-            .and_then(|()| writer.flush())
-            .map_err(|source| ApplicationConfigError::Write {
-                path: temporary_path.clone(),
-                source,
-            })?;
-        writer
-            .into_inner()
-            .map_err(|error| ApplicationConfigError::Write {
-                path: temporary_path.clone(),
-                source: error.into_error(),
-            })?
-            .sync_all()
-            .map_err(|source| ApplicationConfigError::Write {
-                path: temporary_path.clone(),
-                source,
-            })?;
-        fs::rename(&temporary_path, &self.path).map_err(|source| {
-            ApplicationConfigError::Write {
+        let mut encoded =
+            serde_json::to_vec_pretty(config).map_err(|source| ApplicationConfigError::Encode {
                 path: self.path.clone(),
                 source,
-            }
-        })?;
-        sync_directory(parent);
-        Ok(())
+            })?;
+        encoded.push(b'\n');
+        atomic_write(&self.path, &encoded, self.owner).map_err(ApplicationConfigError::from)
     }
 }
 
@@ -552,12 +555,6 @@ impl From<NetworkProxyProtocol> for StoredProxyProtocol {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct FileOwner {
-    uid: u32,
-    gid: u32,
-}
-
 fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, ApplicationConfigError> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
@@ -578,103 +575,23 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, ApplicationC
 }
 
 fn validate_schema(
-    mut config: StoredApplicationConfig,
+    config: StoredApplicationConfig,
 ) -> Result<StoredApplicationConfig, ApplicationConfigError> {
-    if !(1..=APP_CONFIG_SCHEMA_VERSION).contains(&config.schema_version) {
+    if config.schema_version != APP_CONFIG_SCHEMA_VERSION {
         return Err(ApplicationConfigError::UnsupportedSchemaVersion {
             found: config.schema_version,
             supported: APP_CONFIG_SCHEMA_VERSION,
         });
     }
-    config.schema_version = APP_CONFIG_SCHEMA_VERSION;
     Ok(config)
-}
-
-fn temporary_path(path: &Path) -> PathBuf {
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("config.json");
-    path.with_file_name(format!(".{file_name}.tmp-{}", std::process::id()))
 }
 
 const fn enabled_by_default() -> bool {
     true
 }
 
-fn create_config_directory(
-    path: &Path,
-    owner: Option<FileOwner>,
-) -> Result<(), ApplicationConfigError> {
-    let mut missing = Vec::new();
-    let mut current = Some(path);
-    while let Some(candidate) = current {
-        if candidate.exists() {
-            break;
-        }
-        missing.push(candidate.to_owned());
-        current = candidate.parent();
-    }
-
-    fs::create_dir_all(path).map_err(|source| ApplicationConfigError::Write {
-        path: path.to_owned(),
-        source,
-    })?;
-    for directory in missing.iter().rev() {
-        let file = File::open(directory).map_err(|source| ApplicationConfigError::Write {
-            path: directory.clone(),
-            source,
-        })?;
-        set_owner(&file, owner, directory)?;
-    }
-
-    let file = File::open(path).map_err(|source| ApplicationConfigError::Write {
-        path: path.to_owned(),
-        source,
-    })?;
-    set_owner(&file, owner, path)
-}
-
-#[cfg(unix)]
-fn set_owner(
-    file: &File,
-    owner: Option<FileOwner>,
-    path: &Path,
-) -> Result<(), ApplicationConfigError> {
-    let Some(owner) = owner else {
-        return Ok(());
-    };
-    let result = unsafe { libc::fchown(file.as_raw_fd(), owner.uid, owner.gid) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(ApplicationConfigError::Ownership {
-            path: path.to_owned(),
-            source: io::Error::last_os_error(),
-        })
-    }
-}
-
-#[cfg(not(unix))]
-fn set_owner(
-    _file: &File,
-    _owner: Option<FileOwner>,
-    _path: &Path,
-) -> Result<(), ApplicationConfigError> {
-    Ok(())
-}
-
-fn sync_directory(path: &Path) {
-    if let Ok(directory) = File::open(path) {
-        let _ = directory.sync_all();
-    }
-}
-
 #[derive(Debug)]
 pub(crate) enum ApplicationConfigError {
-    InvalidPath {
-        path: PathBuf,
-    },
     Read {
         path: PathBuf,
         source: io::Error,
@@ -687,14 +604,7 @@ pub(crate) enum ApplicationConfigError {
         path: PathBuf,
         source: serde_json::Error,
     },
-    Write {
-        path: PathBuf,
-        source: io::Error,
-    },
-    Ownership {
-        path: PathBuf,
-        source: io::Error,
-    },
+    Persistence(PersistenceError),
     UnsupportedSchemaVersion {
         found: u16,
         supported: u16,
@@ -704,7 +614,6 @@ pub(crate) enum ApplicationConfigError {
 impl fmt::Display for ApplicationConfigError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidPath { path } => write!(formatter, "invalid path {}", path.display()),
             Self::Read { path, source } => {
                 write!(formatter, "could not read {}: {source}", path.display())
             }
@@ -714,16 +623,7 @@ impl fmt::Display for ApplicationConfigError {
             Self::Encode { path, source } => {
                 write!(formatter, "could not encode {}: {source}", path.display())
             }
-            Self::Write { path, source } => {
-                write!(formatter, "could not write {}: {source}", path.display())
-            }
-            Self::Ownership { path, source } => {
-                write!(
-                    formatter,
-                    "could not preserve ownership of {}: {source}",
-                    path.display()
-                )
-            }
+            Self::Persistence(error) => error.fmt(formatter),
             Self::UnsupportedSchemaVersion { found, supported } => write!(
                 formatter,
                 "unsupported application config schema {found}; expected {supported}"
@@ -735,12 +635,26 @@ impl fmt::Display for ApplicationConfigError {
 impl std::error::Error for ApplicationConfigError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Read { source, .. }
-            | Self::Write { source, .. }
-            | Self::Ownership { source, .. } => Some(source),
+            Self::Read { source, .. } => Some(source),
             Self::Decode { source, .. } | Self::Encode { source, .. } => Some(source),
-            Self::InvalidPath { .. } | Self::UnsupportedSchemaVersion { .. } => None,
+            Self::Persistence(error) => Some(error),
+            Self::UnsupportedSchemaVersion { .. } => None,
         }
+    }
+}
+
+impl ApplicationConfigError {
+    fn recoverable(&self) -> bool {
+        matches!(
+            self,
+            Self::Decode { .. } | Self::UnsupportedSchemaVersion { .. }
+        )
+    }
+}
+
+impl From<PersistenceError> for ApplicationConfigError {
+    fn from(error: PersistenceError) -> Self {
+        Self::Persistence(error)
     }
 }
 
@@ -869,8 +783,8 @@ mod tests {
     }
 
     #[test]
-    fn schema_one_is_migrated_with_safe_update_defaults() {
-        let root = unique_test_root("schema-one");
+    fn incompatible_schema_is_preserved_and_replaced_with_defaults() {
+        let root = unique_test_root("incompatible-schema");
         fs::create_dir_all(&root).unwrap();
         fs::write(
             root.join("config.json"),
@@ -884,88 +798,18 @@ mod tests {
         let store = ApplicationConfigStore::at(root.join("config.json"));
 
         let config = store.load().unwrap();
-        assert_eq!(config.schema_version, APP_CONFIG_SCHEMA_VERSION);
-        assert!(config.updates.automatic_update_checks_enabled);
-        assert!(config.behavior.low_battery_notifications_enabled);
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn schema_two_update_preference_is_migrated_without_losing_its_value() {
-        let root = unique_test_root("schema-two");
-        fs::create_dir_all(&root).unwrap();
-        fs::write(
-            root.join("config.json"),
-            r#"{
-                "schema_version": 2,
-                "appearance": {"language": "system", "theme": "system"},
-                "behavior": {"close_behavior": "quit", "background_operations_enabled": true},
-                "updates": {"automatic_updates_enabled": false}
-            }"#,
-        )
-        .unwrap();
-        let store = ApplicationConfigStore::at(root.join("config.json"));
-
-        let config = store.load().unwrap();
-        assert!(!config.updates.automatic_update_checks_enabled);
-        assert_eq!(config.updates.last_successful_check_unix_seconds, None);
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn schema_three_is_migrated_with_system_proxy_defaults() {
-        let root = unique_test_root("schema-three");
-        fs::create_dir_all(&root).unwrap();
-        fs::write(
-            root.join("config.json"),
-            r#"{
-                "schema_version": 3,
-                "appearance": {"language": "system", "theme": "system"},
-                "behavior": {"close_behavior": "quit", "background_operations_enabled": true},
-                "updates": {"automatic_update_checks_enabled": true}
-            }"#,
-        )
-        .unwrap();
-        let store = ApplicationConfigStore::at(root.join("config.json"));
-
-        assert_eq!(
-            store.load_network_proxy().unwrap(),
-            NetworkProxyPreferences::default()
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn schema_four_enables_low_battery_notifications_by_default() {
-        let root = unique_test_root("schema-four");
-        fs::create_dir_all(&root).unwrap();
-        fs::write(
-            root.join("config.json"),
-            r#"{
-                "schema_version": 4,
-                "appearance": {"language": "system", "theme": "system"},
-                "behavior": {"close_behavior": "quit", "background_operations_enabled": true},
-                "updates": {"automatic_update_checks_enabled": true},
-                "network": {"proxy": {"mode": "system", "manual": {"protocol": "http", "host": "", "port": 7890, "authentication_enabled": false, "username": "", "password_saved": false}}}
-            }"#,
-        )
-        .unwrap();
-        let store = ApplicationConfigStore::at(root.join("config.json"));
-
+        assert_eq!(config, StoredApplicationConfig::default());
+        assert!(store.take_recovery_notice().is_some_and(|notice| {
+            notice.contains("restored to defaults") && notice.contains("preserved")
+        }));
+        let files = fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
         assert!(
-            store
-                .load_preferences()
-                .unwrap()
-                .low_battery_notifications_enabled
-        );
-        assert!(
-            store
-                .load_preferences()
-                .unwrap()
-                .full_battery_notifications_enabled
+            files
+                .iter()
+                .any(|name| name.contains("incompatible-config"))
         );
 
         let _ = fs::remove_dir_all(root);
@@ -1026,7 +870,7 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_current_schema_is_rejected() {
+    fn malformed_config_is_preserved_and_replaced_with_defaults() {
         let root = unique_test_root("incomplete-schema");
         fs::create_dir_all(&root).unwrap();
         fs::write(
@@ -1036,16 +880,14 @@ mod tests {
         .unwrap();
         let store = ApplicationConfigStore::at(root.join("config.json"));
 
-        assert!(matches!(
-            store.load(),
-            Err(ApplicationConfigError::Decode { .. })
-        ));
+        assert_eq!(store.load().unwrap(), StoredApplicationConfig::default());
+        assert!(store.take_recovery_notice().is_some());
 
         let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn unsupported_app_config_schema_is_not_overwritten() {
+    fn future_app_config_schema_is_preserved_and_replaced_with_defaults() {
         let root = unique_test_root("unsupported-schema");
         let store = ApplicationConfigStore::at(root.join("config.json"));
         store
@@ -1055,10 +897,8 @@ mod tests {
             })
             .unwrap();
 
-        assert!(matches!(
-            store.load(),
-            Err(ApplicationConfigError::UnsupportedSchemaVersion { .. })
-        ));
+        assert_eq!(store.load().unwrap(), StoredApplicationConfig::default());
+        assert!(store.take_recovery_notice().is_some());
 
         let _ = fs::remove_dir_all(root);
     }

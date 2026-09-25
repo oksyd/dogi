@@ -40,6 +40,7 @@ impl ProcessLock {
 fn lock_exclusive(file: &File) -> std::io::Result<()> {
     use std::os::fd::AsRawFd;
 
+    // SAFETY: `file` owns a live descriptor for the duration of the advisory-lock call.
     let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
     if result == 0 {
         Ok(())
@@ -62,6 +63,7 @@ impl Drop for ProcessLock {
         {
             use std::os::fd::AsRawFd;
 
+            // SAFETY: `self.file` owns a live descriptor until Drop completes.
             let _ = unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) };
         }
     }

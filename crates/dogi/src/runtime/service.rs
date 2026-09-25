@@ -12,7 +12,7 @@ use dogi_ui::{DesktopRuntimeOperation, DesktopRuntimePauseReason, DesktopRuntime
 use crate::desktop::UserContext;
 use crate::environment::{AppEnvironment, RuntimeIntegration};
 
-use super::{UINPUT_PATH, session};
+use super::{UINPUT_PATH, control::RuntimeControlClient, session};
 
 const SERVICE_NAME: &str = "dogi-runtime.service";
 const VENDOR_UNIT_PATH: &str = "/usr/lib/systemd/user/dogi-runtime.service";
@@ -25,11 +25,20 @@ pub(crate) fn manage(
     environment: &AppEnvironment,
     operation: DesktopRuntimeOperation,
 ) -> Result<DesktopRuntimeStatus> {
-    ensure_persistent_integration(environment)?;
     match operation {
-        DesktopRuntimeOperation::Reconcile { enabled: true } => ensure_running(environment),
-        DesktopRuntimeOperation::Restart => restart(environment),
-        DesktopRuntimeOperation::Reconcile { enabled: false } => stop(environment),
+        DesktopRuntimeOperation::Status => Ok(service_status(environment)),
+        DesktopRuntimeOperation::Reconcile { enabled: true } => {
+            ensure_persistent_integration(environment)?;
+            ensure_running(environment)
+        }
+        DesktopRuntimeOperation::Restart => {
+            ensure_persistent_integration(environment)?;
+            restart(environment)
+        }
+        DesktopRuntimeOperation::Reconcile { enabled: false } => {
+            ensure_persistent_integration(environment)?;
+            stop(environment)
+        }
     }
 }
 
@@ -68,7 +77,7 @@ fn ensure_running(environment: &AppEnvironment) -> Result<DesktopRuntimeStatus> 
         "start the Dogi runtime",
     )?;
 
-    let status = service_status(environment);
+    let status = settled_service_status(environment);
     if !status.active {
         return Err(DogiError::BackendUnavailable(service_failure_detail(
             context,
@@ -78,16 +87,13 @@ fn ensure_running(environment: &AppEnvironment) -> Result<DesktopRuntimeStatus> 
 }
 
 fn restart(environment: &AppEnvironment) -> Result<DesktopRuntimeStatus> {
-    let status = ensure_running(environment)?;
+    ensure_running(environment)?;
     systemctl(
         &environment.user,
         &["restart", SERVICE_NAME],
         "restart the Dogi runtime",
     )?;
-    Ok(DesktopRuntimeStatus {
-        active: true,
-        ..status
-    })
+    Ok(settled_service_status(environment))
 }
 
 fn stop(environment: &AppEnvironment) -> Result<DesktopRuntimeStatus> {
@@ -104,7 +110,8 @@ fn stop(environment: &AppEnvironment) -> Result<DesktopRuntimeStatus> {
     Ok(service_status(environment))
 }
 
-fn service_status(environment: &AppEnvironment) -> DesktopRuntimeStatus {
+/// Reads the installed runtime and control-endpoint state without reconciling the service.
+pub(crate) fn service_status(environment: &AppEnvironment) -> DesktopRuntimeStatus {
     let context = &environment.user;
     let enabled = systemctl_succeeds(context, &["is-enabled", "--quiet", SERVICE_NAME]);
     let active = systemctl_succeeds(context, &["is-active", "--quiet", SERVICE_NAME]);
@@ -115,11 +122,34 @@ fn service_status(environment: &AppEnvironment) -> DesktopRuntimeStatus {
         DesktopRuntimePauseReason::None
     };
     let paused = pause_reason != DesktopRuntimePauseReason::None;
-    let uinput_error = (active && !paused)
+    let health = active
+        .then(|| {
+            RuntimeControlClient::for_environment(environment).and_then(|client| client.status())
+        })
+        .transpose();
+    let (runtime_ready, runtime_detail) = match health {
+        Ok(Some(health)) if health.version != env!("CARGO_PKG_VERSION") => (
+            false,
+            format!(
+                "Dogi runtime {} does not match application {}; restart the background service",
+                health.version,
+                env!("CARGO_PKG_VERSION")
+            ),
+        ),
+        Ok(Some(health)) => (health.ready(), health.last_error.unwrap_or_default()),
+        Ok(None) => (false, String::new()),
+        Err(error) => (
+            false,
+            format!("Dogi runtime is active but its control endpoint is unavailable: {error}"),
+        ),
+    };
+    let uinput_error = (active && !paused && runtime_ready)
         .then(|| uinput_access(context).err().map(|error| error.to_string()))
         .flatten();
     let detail = if paused {
         session.detail
+    } else if !runtime_detail.is_empty() {
+        runtime_detail
     } else {
         uinput_error.unwrap_or_default()
     };
@@ -127,11 +157,28 @@ fn service_status(environment: &AppEnvironment) -> DesktopRuntimeStatus {
     DesktopRuntimeStatus {
         enabled,
         active,
-        ready: active && !paused && detail.is_empty(),
+        ready: active && !paused && runtime_ready && detail.is_empty(),
         paused,
         pause_reason,
-        app_profiles_supported: app_profiles_supported(context),
+        app_profiles_supported: app_profiles_supported_for_context(context),
         detail,
+    }
+}
+
+fn settled_service_status(environment: &AppEnvironment) -> DesktopRuntimeStatus {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+    loop {
+        let status = service_status(environment);
+        let control_is_starting = status.detail.contains("control endpoint is unavailable");
+        if !status.active
+            || status.ready
+            || status.paused
+            || !control_is_starting
+            || std::time::Instant::now() >= deadline
+        {
+            return status;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }
 
@@ -400,7 +447,11 @@ fn uinput_access(context: &UserContext) -> Result<()> {
         })
 }
 
-fn app_profiles_supported(context: &UserContext) -> bool {
+pub(crate) fn app_profiles_supported(environment: &AppEnvironment) -> bool {
+    app_profiles_supported_for_context(&environment.user)
+}
+
+fn app_profiles_supported_for_context(context: &UserContext) -> bool {
     env::var("XDG_SESSION_TYPE").is_ok_and(|session| session.eq_ignore_ascii_case("x11"))
         && context
             .run("xprop", &["-version"])
@@ -490,7 +541,10 @@ mod tests {
         assert!(STATIC_DEBIAN_UNIT.contains("Restart=on-failure"));
         assert!(STATIC_DEBIAN_UNIT.contains("RuntimeDirectory=dogi"));
         assert!(STATIC_DEBIAN_UNIT.contains("CacheDirectory=dogi"));
+        assert!(STATIC_DEBIAN_UNIT.contains("StateDirectory=dogi"));
+        assert!(STATIC_DEBIAN_UNIT.contains("UMask=0077"));
         assert!(STATIC_DEBIAN_UNIT.contains("ProtectSystem=strict"));
+        assert!(STATIC_DEBIAN_UNIT.contains("ProtectHome=read-only"));
     }
 
     #[test]

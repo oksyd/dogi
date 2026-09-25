@@ -8,6 +8,51 @@ use crate::environment::{AppEnvironment, AppPaths};
 
 const PREVIEW_LEASE_TTL: Duration = Duration::from_secs(8);
 const CONTROL_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
+#[cfg(unix)]
+const CONTROL_IO_TIMEOUT: Duration = Duration::from_millis(750);
+#[cfg(unix)]
+const CONTROL_MAX_FRAME_BYTES: usize = 8 * 1024;
+#[cfg(unix)]
+const CONTROL_MAX_CONNECTIONS: usize = 8;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RuntimeReadiness {
+    Starting,
+    Ready,
+    Paused,
+    Reconnecting,
+    Degraded,
+    Terminal,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct RuntimeHealthSnapshot {
+    pub(crate) version: String,
+    pub(crate) readiness: RuntimeReadiness,
+    pub(crate) degraded: bool,
+    pub(crate) last_error: Option<String>,
+}
+
+impl RuntimeHealthSnapshot {
+    fn new(readiness: RuntimeReadiness, last_error: Option<String>) -> Self {
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            readiness,
+            degraded: matches!(
+                readiness,
+                RuntimeReadiness::Reconnecting
+                    | RuntimeReadiness::Degraded
+                    | RuntimeReadiness::Terminal
+            ),
+            last_error,
+        }
+    }
+
+    pub(crate) fn ready(&self) -> bool {
+        self.readiness == RuntimeReadiness::Ready && !self.degraded
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct HorizontalScrollPreview {
@@ -70,6 +115,10 @@ impl RuntimeControlClient {
         )?;
         response.into_result()
     }
+
+    pub(crate) fn status(&self) -> Result<RuntimeHealthSnapshot> {
+        send_request(&self.socket_path, &RuntimeControlRequest::Status)?.into_status()
+    }
 }
 
 #[derive(Clone)]
@@ -120,11 +169,18 @@ impl RuntimePreviewState {
         #[cfg(unix)]
         self.shared.fail_pending(detail.into());
     }
+
+    pub(crate) fn publish_health(&self, readiness: RuntimeReadiness, last_error: Option<String>) {
+        #[cfg(unix)]
+        self.shared
+            .publish_health(RuntimeHealthSnapshot::new(readiness, last_error));
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
 enum RuntimeControlRequest {
+    Status,
     SetHorizontalScrollPreview {
         lease_id: String,
         device_id: String,
@@ -139,6 +195,8 @@ enum RuntimeControlRequest {
 struct RuntimeControlResponse {
     ok: bool,
     detail: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    status: Option<RuntimeHealthSnapshot>,
 }
 
 impl RuntimeControlResponse {
@@ -146,6 +204,7 @@ impl RuntimeControlResponse {
         Self {
             ok: true,
             detail: String::new(),
+            status: None,
         }
     }
 
@@ -153,6 +212,15 @@ impl RuntimeControlResponse {
         Self {
             ok: false,
             detail: detail.into(),
+            status: None,
+        }
+    }
+
+    fn status(status: RuntimeHealthSnapshot) -> Self {
+        Self {
+            ok: true,
+            detail: String::new(),
+            status: Some(status),
         }
     }
 
@@ -162,6 +230,15 @@ impl RuntimeControlResponse {
         } else {
             Err(DogiError::BackendUnavailable(self.detail))
         }
+    }
+
+    fn into_status(self) -> Result<RuntimeHealthSnapshot> {
+        if !self.ok {
+            return Err(DogiError::BackendUnavailable(self.detail));
+        }
+        self.status.ok_or_else(|| {
+            DogiError::Protocol("runtime status response did not include health data".to_owned())
+        })
     }
 }
 
@@ -173,12 +250,26 @@ struct PreviewLease {
 }
 
 #[cfg(unix)]
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct PreviewState {
     generation: u64,
     requested: Option<PreviewLease>,
     completed_generation: u64,
     completion: Option<std::result::Result<(), String>>,
+    health: RuntimeHealthSnapshot,
+}
+
+#[cfg(unix)]
+impl Default for PreviewState {
+    fn default() -> Self {
+        Self {
+            generation: 0,
+            requested: None,
+            completed_generation: 0,
+            completion: None,
+            health: RuntimeHealthSnapshot::new(RuntimeReadiness::Starting, None),
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -317,6 +408,21 @@ impl SharedPreviewState {
             }
         }
     }
+
+    fn publish_health(&self, health: RuntimeHealthSnapshot) {
+        self.state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .health = health;
+    }
+
+    fn health(&self) -> RuntimeHealthSnapshot {
+        self.state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .health
+            .clone()
+    }
 }
 
 #[cfg(unix)]
@@ -324,7 +430,7 @@ fn send_request(
     path: &std::path::Path,
     request: &RuntimeControlRequest,
 ) -> Result<RuntimeControlResponse> {
-    use std::io::{BufRead, BufReader, Write};
+    use std::io::{BufReader, Write};
     use std::os::unix::net::UnixStream;
 
     let mut stream = UnixStream::connect(path).map_err(|error| {
@@ -338,6 +444,11 @@ fn send_request(
         .map_err(|error| {
             DogiError::Transport(format!("failed to configure preview control: {error}"))
         })?;
+    stream
+        .set_write_timeout(Some(CONTROL_IO_TIMEOUT))
+        .map_err(|error| {
+            DogiError::Transport(format!("failed to configure preview control: {error}"))
+        })?;
     serde_json::to_writer(&mut stream, request).map_err(|error| {
         DogiError::Protocol(format!("failed to encode preview request: {error}"))
     })?;
@@ -348,14 +459,31 @@ fn send_request(
         DogiError::Transport(format!("failed to flush preview request: {error}"))
     })?;
 
-    let mut response = String::new();
-    BufReader::new(stream)
-        .read_line(&mut response)
-        .map_err(|error| {
-            DogiError::Transport(format!("failed to read preview response: {error}"))
-        })?;
-    serde_json::from_str(&response)
+    let response = read_control_frame(&mut BufReader::new(stream)).map_err(|error| {
+        DogiError::Transport(format!("failed to read preview response: {error}"))
+    })?;
+    serde_json::from_slice(&response)
         .map_err(|error| DogiError::Protocol(format!("failed to decode preview response: {error}")))
+}
+
+#[cfg(unix)]
+fn read_control_frame(reader: &mut impl std::io::BufRead) -> std::result::Result<Vec<u8>, String> {
+    let mut frame = Vec::with_capacity(256);
+    let mut limited = std::io::Read::take(&mut *reader, (CONTROL_MAX_FRAME_BYTES + 1) as u64);
+    std::io::BufRead::read_until(&mut limited, b'\n', &mut frame)
+        .map_err(|error| format!("control frame read failed: {error}"))?;
+    if frame.len() > CONTROL_MAX_FRAME_BYTES {
+        return Err(format!(
+            "control frame exceeds the {CONTROL_MAX_FRAME_BYTES}-byte limit"
+        ));
+    }
+    if frame.is_empty() {
+        return Err("control connection closed before a frame was received".to_owned());
+    }
+    if frame.last() != Some(&b'\n') {
+        return Err("control frame is not newline-terminated".to_owned());
+    }
+    Ok(frame)
 }
 
 #[cfg(not(unix))]
@@ -378,10 +506,11 @@ fn monotonic_nonce() -> u128 {
 #[cfg(unix)]
 mod unix {
     use std::fs;
-    use std::io::{BufRead, BufReader, Write};
+    use std::io::{BufReader, Write};
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
 
@@ -435,12 +564,13 @@ mod unix {
 
         let shared = Arc::new(SharedPreviewState::default());
         let server_state = shared.clone();
+        let connections = ConnectionLimiter::new();
         std::thread::Builder::new()
             .name("dogi-runtime-control".to_owned())
             .spawn(move || {
                 for connection in listener.incoming() {
                     match connection {
-                        Ok(stream) => handle_connection(stream, &server_state),
+                        Ok(stream) => connections.dispatch(stream, server_state.clone()),
                         Err(error) => eprintln!("Dogi runtime control connection failed: {error}"),
                     }
                 }
@@ -454,7 +584,60 @@ mod unix {
         Ok(RuntimePreviewState { shared })
     }
 
+    pub(super) struct ConnectionLimiter {
+        active: Arc<AtomicUsize>,
+    }
+
+    impl ConnectionLimiter {
+        pub(super) fn new() -> Self {
+            Self {
+                active: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+
+        pub(super) fn dispatch(&self, stream: UnixStream, shared: Arc<SharedPreviewState>) {
+            let Some(permit) = ConnectionPermit::try_acquire(self.active.clone()) else {
+                reject_connection(stream, "runtime control is busy; try again shortly");
+                return;
+            };
+            if let Err(error) = std::thread::Builder::new()
+                .name("dogi-runtime-control-client".to_owned())
+                .spawn(move || {
+                    let _permit = permit;
+                    handle_connection(stream, &shared);
+                })
+            {
+                eprintln!("Dogi runtime control client could not be started: {error}");
+            }
+        }
+    }
+
+    struct ConnectionPermit {
+        active: Arc<AtomicUsize>,
+    }
+
+    impl ConnectionPermit {
+        fn try_acquire(active: Arc<AtomicUsize>) -> Option<Self> {
+            active
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                    (current < CONTROL_MAX_CONNECTIONS).then_some(current + 1)
+                })
+                .ok()
+                .map(|_| Self { active })
+        }
+    }
+
+    impl Drop for ConnectionPermit {
+        fn drop(&mut self) {
+            self.active.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+
     fn handle_connection(mut stream: UnixStream, shared: &SharedPreviewState) {
+        if let Err(error) = configure_connection(&stream) {
+            eprintln!("Dogi runtime control connection could not be configured: {error}");
+            return;
+        }
         let response = read_request(&stream)
             .map(|request| apply_request(shared, request))
             .unwrap_or_else(RuntimeControlResponse::failure);
@@ -465,20 +648,32 @@ mod unix {
         }
     }
 
+    fn reject_connection(mut stream: UnixStream, detail: &str) {
+        if configure_connection(&stream).is_err() {
+            return;
+        }
+        let response = RuntimeControlResponse::failure(detail);
+        let _ = serde_json::to_writer(&mut stream, &response)
+            .and_then(|_| stream.write_all(b"\n").map_err(serde_json::Error::io));
+    }
+
+    fn configure_connection(stream: &UnixStream) -> std::io::Result<()> {
+        stream.set_read_timeout(Some(CONTROL_IO_TIMEOUT))?;
+        stream.set_write_timeout(Some(CONTROL_IO_TIMEOUT))
+    }
+
     fn read_request(stream: &UnixStream) -> std::result::Result<RuntimeControlRequest, String> {
-        let mut line = String::new();
-        BufReader::new(stream)
-            .read_line(&mut line)
-            .map_err(|error| format!("failed to read runtime control request: {error}"))?;
-        serde_json::from_str(&line)
+        let frame = read_control_frame(&mut BufReader::new(stream))?;
+        serde_json::from_slice(&frame)
             .map_err(|error| format!("invalid runtime control request: {error}"))
     }
 
-    fn apply_request(
+    pub(super) fn apply_request(
         shared: &SharedPreviewState,
         request: RuntimeControlRequest,
     ) -> RuntimeControlResponse {
         match request {
+            RuntimeControlRequest::Status => RuntimeControlResponse::status(shared.health()),
             RuntimeControlRequest::SetHorizontalScrollPreview {
                 lease_id,
                 device_id,
@@ -572,6 +767,24 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn health_status_reports_version_readiness_and_last_error() {
+        let shared = SharedPreviewState::default();
+        shared.publish_health(RuntimeHealthSnapshot::new(
+            RuntimeReadiness::Degraded,
+            Some("device unavailable".to_owned()),
+        ));
+
+        let response = unix::apply_request(&shared, RuntimeControlRequest::Status);
+        let status = response.into_status().unwrap();
+
+        assert_eq!(status.version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(status.readiness, RuntimeReadiness::Degraded);
+        assert!(status.degraded);
+        assert_eq!(status.last_error.as_deref(), Some("device unavailable"));
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn active_preview_lease_cannot_be_stolen_by_another_gui() {
         let shared = SharedPreviewState::default();
         shared
@@ -584,5 +797,85 @@ mod tests {
 
         assert!(error.contains("another Dogi window"));
         assert_eq!(shared.snapshot().preview.unwrap().lease_id, "first");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn idle_control_client_does_not_block_a_status_query() {
+        use std::io::{BufReader, Write};
+        use std::os::unix::net::UnixStream;
+        use std::sync::Arc;
+
+        let shared = Arc::new(SharedPreviewState::default());
+        let connections = unix::ConnectionLimiter::new();
+        let (idle_client, idle_server) = UnixStream::pair().unwrap();
+        connections.dispatch(idle_server, shared.clone());
+
+        let (mut status_client, status_server) = UnixStream::pair().unwrap();
+        status_client
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        connections.dispatch(status_server, shared);
+        serde_json::to_writer(&mut status_client, &RuntimeControlRequest::Status).unwrap();
+        status_client.write_all(b"\n").unwrap();
+        let frame = read_control_frame(&mut BufReader::new(status_client)).unwrap();
+        let response = serde_json::from_slice::<RuntimeControlResponse>(&frame).unwrap();
+
+        assert!(response.into_status().is_ok());
+        drop(idle_client);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn oversized_control_frame_is_rejected() {
+        use std::io::{BufReader, Write};
+        use std::os::unix::net::UnixStream;
+        use std::sync::Arc;
+
+        let shared = Arc::new(SharedPreviewState::default());
+        let connections = unix::ConnectionLimiter::new();
+        let (mut client, server) = UnixStream::pair().unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        connections.dispatch(server, shared);
+        client
+            .write_all(&vec![b'x'; CONTROL_MAX_FRAME_BYTES + 1])
+            .unwrap();
+        client.write_all(b"\n").unwrap();
+        let frame = read_control_frame(&mut BufReader::new(client)).unwrap();
+        let response = serde_json::from_slice::<RuntimeControlResponse>(&frame).unwrap();
+
+        assert!(!response.ok);
+        assert!(response.detail.contains("exceeds"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn control_connection_limit_rejects_excess_clients() {
+        use std::io::BufReader;
+        use std::os::unix::net::UnixStream;
+        use std::sync::Arc;
+
+        let shared = Arc::new(SharedPreviewState::default());
+        let connections = unix::ConnectionLimiter::new();
+        let mut idle_clients = Vec::new();
+        for _ in 0..CONTROL_MAX_CONNECTIONS {
+            let (client, server) = UnixStream::pair().unwrap();
+            connections.dispatch(server, shared.clone());
+            idle_clients.push(client);
+        }
+
+        let (excess_client, excess_server) = UnixStream::pair().unwrap();
+        excess_client
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        connections.dispatch(excess_server, shared);
+        let frame = read_control_frame(&mut BufReader::new(excess_client)).unwrap();
+        let response = serde_json::from_slice::<RuntimeControlResponse>(&frame).unwrap();
+
+        assert!(!response.ok);
+        assert!(response.detail.contains("busy"));
+        drop(idle_clients);
     }
 }

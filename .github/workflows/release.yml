@@ -17,7 +17,7 @@ concurrency:
 jobs:
   promote:
     name: Promote verified CI assets
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
       name: release
@@ -32,6 +32,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Verify release tag
         id: tag
@@ -48,6 +49,7 @@ jobs:
           tag_commit=$(git rev-list -n 1 "$RELEASE_TAG")
           printf 'tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           printf 'commit=%s\n' "$tag_commit" >> "$GITHUB_OUTPUT"
+          git -c advice.detachedHead=false checkout --detach "$tag_commit"
 
       - name: Resolve successful main CI
         id: ci
@@ -137,6 +139,26 @@ jobs:
               echo "refusing to replace assets on published release $RELEASE_TAG" >&2
               exit 1
             fi
+            expected_assets=(
+              SHA256SUMS
+              "dogi-$RELEASE_TAG-x86_64-unknown-linux-gnu.tar.zst"
+              "dogi_${RELEASE_TAG}_amd64.deb"
+            )
+            mapfile -t existing_assets < <(
+              gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name'
+            )
+            for asset in "${existing_assets[@]}"; do
+              expected_asset=false
+              for expected in "${expected_assets[@]}"; do
+                if [[ "$asset" == "$expected" ]]; then
+                  expected_asset=true
+                  break
+                fi
+              done
+              if [[ "$expected_asset" != true ]]; then
+                gh release delete-asset "$RELEASE_TAG" "$asset" --yes
+              fi
+            done
             gh release upload "$RELEASE_TAG" dist/* --clobber
           else
             gh release create "$RELEASE_TAG" dist/* \
@@ -144,4 +166,19 @@ jobs:
               --generate-notes \
               --title "Dogi $RELEASE_TAG" \
               --verify-tag
+          fi
+          mapfile -t actual_assets < <(
+            gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | LC_ALL=C sort
+          )
+          expected_assets=(
+            SHA256SUMS
+            "dogi-$RELEASE_TAG-x86_64-unknown-linux-gnu.tar.zst"
+            "dogi_${RELEASE_TAG}_amd64.deb"
+          )
+          mapfile -t expected_assets < <(printf '%s\n' "${expected_assets[@]}" | LC_ALL=C sort)
+          if [[ "${actual_assets[*]}" != "${expected_assets[*]}" ]]; then
+            echo "draft release does not contain the exact verified asset set" >&2
+            printf 'expected: %s\n' "${expected_assets[*]}" >&2
+            printf 'actual:   %s\n' "${actual_assets[*]}" >&2
+            exit 1
           fi

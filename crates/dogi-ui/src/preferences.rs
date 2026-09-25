@@ -1,4 +1,5 @@
 use std::env;
+use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -152,7 +153,11 @@ impl ApplicationPreferencesIntegration {
 
 impl Default for ApplicationPreferencesIntegration {
     fn default() -> Self {
-        Self::new(ApplicationPreferences::default(), |_| Ok(()))
+        Self::new(ApplicationPreferences::default(), |_| {
+            Err(dogi_core::DogiError::BackendUnavailable(
+                "application preference storage is unavailable".to_owned(),
+            ))
+        })
     }
 }
 
@@ -233,10 +238,25 @@ impl Default for NetworkProxyPreferences {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct NetworkProxyDraft {
     pub preferences: NetworkProxyPreferences,
     pub password: String,
+}
+
+impl fmt::Debug for NetworkProxyDraft {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let password = if self.password.is_empty() {
+            "<empty>"
+        } else {
+            "<redacted>"
+        };
+        formatter
+            .debug_struct("NetworkProxyDraft")
+            .field("preferences", &self.preferences)
+            .field("password", &password)
+            .finish()
+    }
 }
 
 impl NetworkProxyDraft {
@@ -290,7 +310,11 @@ impl Default for NetworkPreferencesIntegration {
     fn default() -> Self {
         Self::new(
             NetworkProxyPreferences::default(),
-            |draft| Ok(draft.preferences),
+            |_| {
+                Err(dogi_core::DogiError::BackendUnavailable(
+                    "network preference storage is unavailable".to_owned(),
+                ))
+            },
             |_| {
                 Err(dogi_core::DogiError::BackendUnavailable(
                     "network connection testing is unavailable".to_owned(),
@@ -331,5 +355,31 @@ mod tests {
         assert_eq!(normalized_supported_locale("en_US.UTF-8"), Some("en"));
         assert_eq!(normalized_supported_locale("zh_TW.UTF-8"), None);
         assert_eq!(normalized_supported_locale("de_DE.UTF-8"), None);
+    }
+
+    #[test]
+    fn default_integrations_never_report_unsaved_preferences_as_saved() {
+        let application = ApplicationPreferencesIntegration::default();
+        assert!(
+            (application.save)(ApplicationPreferenceChange::Theme(ApplicationTheme::Dark)).is_err()
+        );
+
+        let network = NetworkPreferencesIntegration::default();
+        assert!(
+            (network.save)(NetworkProxyDraft::from_preferences(
+                NetworkProxyPreferences::default()
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn proxy_debug_output_redacts_the_password() {
+        let mut draft = NetworkProxyDraft::from_preferences(NetworkProxyPreferences::default());
+        draft.password = "do-not-log-this".to_owned();
+
+        let output = format!("{draft:?}");
+        assert!(!output.contains("do-not-log-this"));
+        assert!(output.contains("<redacted>"));
     }
 }

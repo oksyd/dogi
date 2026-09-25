@@ -89,12 +89,12 @@ pub fn execute_runtime_actions(
                 if executor.is_none() {
                     executor = Some(SystemRuntimeActionExecutor::open()?);
                 }
-                execute_runtime_action_with(
-                    action,
-                    executor
-                        .as_mut()
-                        .expect("executor exists after successful open"),
-                )
+                let active_executor = executor.as_mut().ok_or_else(|| {
+                    DogiError::BackendUnavailable(
+                        "local runtime action executor did not initialize".to_owned(),
+                    )
+                })?;
+                execute_runtime_action_with(action, active_executor)
             }
         };
         executions.push(execution);
@@ -272,26 +272,71 @@ mod platform {
     }
 
     pub struct SystemRuntimeActionExecutor {
-        device: UInputDevice,
+        device: Option<UInputDevice>,
     }
 
     impl SystemRuntimeActionExecutor {
         pub fn open() -> Result<Self> {
             Ok(Self {
-                device: UInputDevice::create()?,
+                device: Some(UInputDevice::create()?),
             })
+        }
+
+        fn execute_with_recovery(&mut self, command: &RuntimeCommand) -> Result<()> {
+            if self.device.is_none() {
+                self.device = Some(UInputDevice::create()?);
+            }
+            let result = self
+                .device
+                .as_mut()
+                .ok_or_else(|| {
+                    DogiError::BackendUnavailable(
+                        "the virtual input device is unavailable".to_owned(),
+                    )
+                })?
+                .execute_command(command);
+            let Err(error) = result else {
+                return Ok(());
+            };
+
+            let primary = error.to_string();
+            let release = self
+                .device
+                .as_mut()
+                .and_then(|device| device.release_pressed_best_effort().err())
+                .map(|error| error.to_string());
+            // Dropping an uncertain uinput device is the final kernel-level release guarantee.
+            // A fresh device is created before the next action instead of reusing unknown state.
+            self.device.take();
+            let rebuild = UInputDevice::create();
+            match rebuild {
+                Ok(device) => self.device = Some(device),
+                Err(rebuild_error) => {
+                    return Err(DogiError::Transport(format!(
+                        "{primary}; virtual input reset failed: {rebuild_error}"
+                    )));
+                }
+            }
+
+            Err(DogiError::Transport(match release {
+                Some(release) => {
+                    format!("{primary}; best-effort input release also failed: {release}")
+                }
+                None => primary,
+            }))
         }
     }
 
     impl RuntimeActionExecutor for SystemRuntimeActionExecutor {
         fn execute_command(&mut self, command: &RuntimeCommand) -> Result<()> {
-            self.device.execute_command(command)
+            self.execute_with_recovery(command)
         }
     }
 
     struct UInputDevice {
         file: File,
         horizontal_scroll: HorizontalScrollAccumulator,
+        pressed_keys: Vec<u16>,
     }
 
     impl UInputDevice {
@@ -315,15 +360,17 @@ mod platform {
             ioctl_int(&file, UI_SET_RELBIT, REL_HWHEEL_HI_RES as libc::c_int)?;
 
             let user_dev = dogi_user_dev();
-            file.write_all(as_bytes(&user_dev)).map_err(|error| {
-                DogiError::Transport(format!("failed to register uinput device: {error}"))
-            })?;
+            file.write_all(uinput_user_dev_bytes(&user_dev))
+                .map_err(|error| {
+                    DogiError::Transport(format!("failed to register uinput device: {error}"))
+                })?;
             ioctl_none(&file, UI_DEV_CREATE)?;
             thread::sleep(Duration::from_millis(100));
 
             Ok(Self {
                 file,
                 horizontal_scroll: HorizontalScrollAccumulator::default(),
+                pressed_keys: Vec::new(),
             })
         }
 
@@ -365,21 +412,51 @@ mod platform {
 
         fn key_chord(&mut self, keys: &[RuntimeKey]) -> Result<()> {
             for key in keys {
-                self.emit(EV_KEY, linux_key_code(*key), 1)?;
+                self.emit_key(linux_key_code(*key), true)?;
             }
             self.sync()?;
 
             for key in keys.iter().rev() {
-                self.emit(EV_KEY, linux_key_code(*key), 0)?;
+                self.emit_key(linux_key_code(*key), false)?;
             }
             self.sync()
         }
 
         fn click(&mut self, button_code: u16) -> Result<()> {
-            self.emit(EV_KEY, button_code, 1)?;
+            self.emit_key(button_code, true)?;
             self.sync()?;
-            self.emit(EV_KEY, button_code, 0)?;
+            self.emit_key(button_code, false)?;
             self.sync()
+        }
+
+        fn emit_key(&mut self, code: u16, pressed: bool) -> Result<()> {
+            self.emit(EV_KEY, code, i32::from(pressed))?;
+            if pressed {
+                if !self.pressed_keys.contains(&code) {
+                    self.pressed_keys.push(code);
+                }
+            } else {
+                self.pressed_keys
+                    .retain(|pressed_code| *pressed_code != code);
+            }
+            Ok(())
+        }
+
+        fn release_pressed_best_effort(&mut self) -> Result<()> {
+            let mut first_error = None;
+            for code in self.pressed_keys.clone().into_iter().rev() {
+                if let Err(error) = self.emit_key(code, false)
+                    && first_error.is_none()
+                {
+                    first_error = Some(error);
+                }
+            }
+            if let Err(error) = self.sync()
+                && first_error.is_none()
+            {
+                first_error = Some(error);
+            }
+            first_error.map_or(Ok(()), Err)
         }
 
         fn sync(&mut self) -> Result<()> {
@@ -396,9 +473,11 @@ mod platform {
                 code,
                 value,
             };
-            self.file.write_all(as_bytes(&event)).map_err(|error| {
-                DogiError::Transport(format!("failed to write uinput event: {error}"))
-            })
+            self.file
+                .write_all(input_event_bytes(&event))
+                .map_err(|error| {
+                    DogiError::Transport(format!("failed to write uinput event: {error}"))
+                })
         }
     }
 
@@ -461,6 +540,9 @@ mod platform {
 
     impl Drop for UInputDevice {
         fn drop(&mut self) {
+            let _ = self.release_pressed_best_effort();
+            // SAFETY: the file descriptor is owned by this value and UI_DEV_DESTROY accepts a
+            // uinput descriptor without additional pointer arguments.
             let _ = unsafe { libc::ioctl(self.file.as_raw_fd(), UI_DEV_DESTROY) };
         }
     }
@@ -518,6 +600,7 @@ mod platform {
     }
 
     fn ioctl_int(file: &File, request: libc::c_ulong, value: libc::c_int) -> Result<()> {
+        // SAFETY: `file` is a live uinput descriptor and this request takes an integer value.
         let rc = unsafe { libc::ioctl(file.as_raw_fd(), request, value) };
         if rc < 0 {
             Err(ioctl_error(request))
@@ -527,6 +610,7 @@ mod platform {
     }
 
     fn ioctl_none(file: &File, request: libc::c_ulong) -> Result<()> {
+        // SAFETY: `file` is a live uinput descriptor and this request has no pointer argument.
         let rc = unsafe { libc::ioctl(file.as_raw_fd(), request) };
         if rc < 0 {
             Err(ioctl_error(request))
@@ -542,8 +626,26 @@ mod platform {
         ))
     }
 
-    fn as_bytes<T>(value: &T) -> &[u8] {
-        unsafe { slice::from_raw_parts((value as *const T).cast::<u8>(), mem::size_of::<T>()) }
+    fn uinput_user_dev_bytes(value: &UInputUserDev) -> &[u8] {
+        // SAFETY: UInputUserDev is a fully initialized repr(C) kernel ABI record. The returned
+        // slice borrows that record and uses exactly its size.
+        unsafe {
+            slice::from_raw_parts(
+                (value as *const UInputUserDev).cast::<u8>(),
+                mem::size_of::<UInputUserDev>(),
+            )
+        }
+    }
+
+    fn input_event_bytes(value: &InputEvent) -> &[u8] {
+        // SAFETY: InputEvent is a fully initialized repr(C) kernel ABI record. The returned slice
+        // borrows that record and uses exactly its size.
+        unsafe {
+            slice::from_raw_parts(
+                (value as *const InputEvent).cast::<u8>(),
+                mem::size_of::<InputEvent>(),
+            )
+        }
     }
 
     #[cfg(test)]

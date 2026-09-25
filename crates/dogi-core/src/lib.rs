@@ -1,3 +1,8 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::expect_used, clippy::panic, clippy::unwrap_used)
+)]
+
 mod device;
 mod error;
 mod settings;
@@ -6,10 +11,11 @@ pub use device::{
     BatteryInfo, BatterySource, BatteryStatus, BusKind, CapabilityState, ConnectionKind,
     DeviceAccess, DeviceCapabilities, DeviceConfig, DeviceInfo, HidUsage, HidppFeatureInfo,
     HidppProtocolVersion, LOGITECH_VENDOR_ID, PairedDeviceInfo, ReceiverKind, ReportDescriptorInfo,
-    WritePolicy, bus_kind_from_linux_bus_id, device_settings_id, infer_connection,
-    infer_receiver_kind, is_hidpp_usage, is_logitech_vendor, known_logitech_model_name,
-    known_logitech_product_name, known_logitech_wpid_name, resolved_logitech_device_name,
-    resolved_logitech_paired_device_name, stable_device_id,
+    WritePolicy, bus_kind_from_linux_bus_id, device_settings_id, hidpp_endpoint_id,
+    infer_connection, infer_receiver_kind, is_hidpp_usage, is_logitech_vendor,
+    known_logitech_model_name, known_logitech_product_name, known_logitech_wpid_name,
+    logical_hidpp_device_id, resolved_logitech_device_name, resolved_logitech_paired_device_name,
+    stable_device_id,
 };
 pub use error::{DogiError, Result};
 pub use settings::{

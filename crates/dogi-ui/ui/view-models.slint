@@ -50,6 +50,7 @@ export enum UpdateState {
     current,
     ready,
     installing,
+    restart-required,
     failed,
 }
 
@@ -90,6 +91,8 @@ export enum UiMessage {
     app-config-load-failed,
     language-unavailable,
     tray-unavailable,
+    preview-cleanup-failed,
+    preview-cleanup-timed-out,
 }
 
 export struct UiStatus {

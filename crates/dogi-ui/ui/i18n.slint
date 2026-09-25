@@ -249,6 +249,12 @@ export global StatusTranslations {
             ? @tr("System tray is unavailable: {}", status.detail)
             : status.message == UiMessage.tray-unavailable
             ? @tr("System tray is unavailable")
+            : status.message == UiMessage.preview-cleanup-failed && status.detail != ""
+            ? @tr("Could not stop the horizontal scroll test, so Dogi will stay open: {}", status.detail)
+            : status.message == UiMessage.preview-cleanup-failed
+            ? @tr("Could not stop the horizontal scroll test, so Dogi will stay open")
+            : status.message == UiMessage.preview-cleanup-timed-out
+            ? @tr("Dogi could not confirm that the horizontal scroll test stopped, so it will stay open")
             : "";
     }
 }

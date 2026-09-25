@@ -1,4 +1,4 @@
-name: UI snapshots
+name: UI rendering
 
 on:
   pull_request:
@@ -7,14 +7,14 @@ on:
       - crates/dogi-core/**
       - Cargo.toml
       - Cargo.lock
-      - .github/workflows/ui-snapshots.yml
+      - .github/workflows/ui-render.yml
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ui-snapshots-${{ github.ref }}
+  group: ui-render-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -24,7 +24,7 @@ env:
 jobs:
   render:
     name: Render
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - name: Check out repository
@@ -36,6 +36,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
+            fonts-dejavu-core \
+            fonts-dejavu-extra \
+            fonts-dejavu-mono \
+            fonts-droid-fallback \
             libfontconfig1-dev \
             libglib2.0-dev
 
@@ -57,22 +61,27 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/debug/
-          key: cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
+          key: cargo-build-v2-ubuntu-26.04-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
           restore-keys: |
-            cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-
+            cargo-build-v2-ubuntu-26.04-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-
 
       - name: Render representative states
+        env:
+          FONTCONFIG_FILE: ${{ github.workspace }}/crates/dogi-ui/tests/preview-fontconfig.conf
+          LC_ALL: C.UTF-8
         run: |
-          mkdir -p target/ui-snapshots
+          status=0
 
           render() {
             local name=$1
             shift
-            env \
-              DOGI_UI_SNAPSHOT="$GITHUB_WORKSPACE/target/ui-snapshots/$name.png" \
+            printf 'Rendering %s\n' "$name"
+            if ! env \
               "$@" \
               cargo test --locked --package dogi-ui --lib \
-                tests::render_preview_snapshot_when_requested -- --exact
+                tests::renders_preview -- --exact; then
+              status=1
+            fi
           }
 
           render default
@@ -89,11 +98,4 @@ jobs:
           render proxy-settings-zh-cn DOGI_UI_SNAPSHOT_PROXY=authenticated DOGI_UI_SNAPSHOT_LOCALE=zh_CN
           render language-menu DOGI_UI_SNAPSHOT_LANGUAGE_MENU=1
 
-      - name: Upload rendered snapshots
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: dogi-ui-snapshots-${{ github.run_id }}-${{ github.run_attempt }}
-          path: target/ui-snapshots/
-          if-no-files-found: error
-          retention-days: 14
+          exit "$status"

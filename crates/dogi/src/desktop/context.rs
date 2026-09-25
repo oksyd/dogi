@@ -64,7 +64,7 @@ pub(crate) fn env_path(key: &str) -> Option<PathBuf> {
 
 #[cfg(unix)]
 pub(crate) fn elevated_user() -> Option<UserContext> {
-    if unsafe { libc::geteuid() } != 0 {
+    if !running_as_root() {
         return None;
     }
 
@@ -95,7 +95,18 @@ pub(crate) fn elevated_user() -> Option<UserContext> {
     })
 }
 
+#[cfg(unix)]
+pub(crate) fn running_as_root() -> bool {
+    // SAFETY: geteuid has no preconditions and does not dereference pointers.
+    unsafe { libc::geteuid() == 0 }
+}
+
 #[cfg(not(unix))]
 pub(crate) fn elevated_user() -> Option<UserContext> {
     None
+}
+
+#[cfg(not(unix))]
+pub(crate) fn running_as_root() -> bool {
+    false
 }

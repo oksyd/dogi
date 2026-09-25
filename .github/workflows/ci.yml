@@ -21,7 +21,7 @@ env:
 jobs:
   quality:
     name: Quality
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - name: Check out repository
@@ -35,6 +35,7 @@ jobs:
           sudo apt-get install --no-install-recommends -y \
             appstream \
             desktop-file-utils \
+            gettext \
             libfontconfig1-dev \
             libglib2.0-dev \
             libxml2-utils \
@@ -60,9 +61,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/debug/
-          key: cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
+          key: cargo-build-v2-ubuntu-26.04-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
           restore-keys: |
-            cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-
+            cargo-build-v2-ubuntu-26.04-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-debug-
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -72,6 +73,21 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --all-targets --all-features --locked
+
+      - name: Validate translations
+        run: |
+          catalog=crates/dogi-ui/i18n/zh_CN/LC_MESSAGES/dogi-ui.po
+          msgfmt --check --check-format --output-file=/dev/null "$catalog"
+          if msgattrib --untranslated --no-obsolete "$catalog" | grep -Eq '^msgid ".+"$'; then
+            echo "translation catalog contains untranslated messages" >&2
+            msgattrib --untranslated --no-obsolete "$catalog" >&2
+            exit 1
+          fi
+          if msgattrib --only-fuzzy --no-obsolete "$catalog" | grep -Eq '^msgid ".+"$'; then
+            echo "translation catalog contains fuzzy messages" >&2
+            msgattrib --only-fuzzy --no-obsolete "$catalog" >&2
+            exit 1
+          fi
 
       - name: Validate Linux integration metadata
         run: |
@@ -109,7 +125,7 @@ jobs:
     name: Package
     needs: quality
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       attestations: write
@@ -153,9 +169,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/release/
-          key: cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-release-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
+          key: cargo-build-v2-ubuntu-26.04-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-release-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
           restore-keys: |
-            cargo-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-release-
+            cargo-build-v2-ubuntu-26.04-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-release-
 
       - name: Resolve signed release tag
         id: release-tag
@@ -227,7 +243,10 @@ jobs:
     name: Promote verified CI assets
     needs: package
     if: needs.package.outputs.release-tag != ''
-    runs-on: ubuntu-24.04
+    concurrency:
+      group: release-${{ needs.package.outputs.release-tag }}
+      cancel-in-progress: false
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
       name: release
@@ -324,6 +343,26 @@ jobs:
               echo "refusing to replace assets on published release $RELEASE_TAG" >&2
               exit 1
             fi
+            expected_assets=(
+              SHA256SUMS
+              "dogi-$RELEASE_TAG-x86_64-unknown-linux-gnu.tar.zst"
+              "dogi_${RELEASE_TAG}_amd64.deb"
+            )
+            mapfile -t existing_assets < <(
+              gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name'
+            )
+            for asset in "${existing_assets[@]}"; do
+              expected_asset=false
+              for expected in "${expected_assets[@]}"; do
+                if [[ "$asset" == "$expected" ]]; then
+                  expected_asset=true
+                  break
+                fi
+              done
+              if [[ "$expected_asset" != true ]]; then
+                gh release delete-asset "$RELEASE_TAG" "$asset" --yes
+              fi
+            done
             gh release upload "$RELEASE_TAG" dist/* --clobber
           else
             gh release create "$RELEASE_TAG" dist/* \
@@ -331,4 +370,19 @@ jobs:
               --generate-notes \
               --title "Dogi $RELEASE_TAG" \
               --verify-tag
+          fi
+          mapfile -t actual_assets < <(
+            gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | LC_ALL=C sort
+          )
+          expected_assets=(
+            SHA256SUMS
+            "dogi-$RELEASE_TAG-x86_64-unknown-linux-gnu.tar.zst"
+            "dogi_${RELEASE_TAG}_amd64.deb"
+          )
+          mapfile -t expected_assets < <(printf '%s\n' "${expected_assets[@]}" | LC_ALL=C sort)
+          if [[ "${actual_assets[*]}" != "${expected_assets[*]}" ]]; then
+            echo "draft release does not contain the exact verified asset set" >&2
+            printf 'expected: %s\n' "${expected_assets[*]}" >&2
+            printf 'actual:   %s\n' "${actual_assets[*]}" >&2
+            exit 1
           fi

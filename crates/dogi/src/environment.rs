@@ -88,6 +88,8 @@ pub(crate) struct UpdatePolicy {
 pub(crate) struct AppPaths {
     pub(crate) config: PathBuf,
     pub(crate) cache: PathBuf,
+    pub(crate) state: PathBuf,
+    pub(crate) hardware_state: PathBuf,
     pub(crate) session_runtime: PathBuf,
     pub(crate) runtime: PathBuf,
     pub(crate) global_runtime_lock: PathBuf,
@@ -103,11 +105,11 @@ impl AppPaths {
     }
 
     pub(crate) fn device_transaction(&self) -> PathBuf {
-        self.config.join("device-transaction.json")
+        self.state.join("device-transaction.json")
     }
 
-    pub(crate) fn device_transaction_lock(&self) -> PathBuf {
-        self.runtime.join("device-transaction.lock")
+    pub(crate) fn device_transactions_dir(&self) -> PathBuf {
+        self.hardware_state.join("device-transactions")
     }
 
     pub(crate) fn update_cache(&self) -> PathBuf {
@@ -116,6 +118,10 @@ impl AppPaths {
 
     pub(crate) fn battery_notification_state(&self) -> PathBuf {
         self.cache.join("battery-notifications.json")
+    }
+
+    pub(crate) fn runtime_active_device(&self) -> PathBuf {
+        self.state.join("runtime-active-device.json")
     }
 
     pub(crate) fn runtime_control_socket(&self) -> PathBuf {
@@ -204,11 +210,14 @@ fn resolve_paths(channel: BuildChannel, user: &UserContext) -> Result<AppPaths> 
     };
     let config_home = user_scoped_path(user, "XDG_CONFIG_HOME", ".config");
     let cache_home = user_scoped_path(user, "XDG_CACHE_HOME", ".cache");
+    let state_home = user_scoped_path(user, "XDG_STATE_HOME", ".local/state");
     let runtime_home = runtime_home(user)?;
 
     Ok(AppPaths {
         config: config_home.join(namespace),
         cache: cache_home.join(namespace),
+        state: state_home.join(namespace),
+        hardware_state: state_home.join("dogi/hardware"),
         session_runtime: runtime_home.clone(),
         runtime: runtime_home.join(namespace),
         global_runtime_lock: runtime_home.join("dogi-runtime.lock"),
@@ -233,9 +242,9 @@ fn runtime_home(user: &UserContext) -> Result<PathBuf> {
     }
     #[cfg(unix)]
     {
-        Ok(PathBuf::from(format!("/run/user/{}", unsafe {
-            libc::geteuid()
-        })))
+        // SAFETY: geteuid has no preconditions and does not dereference pointers.
+        let uid = unsafe { libc::geteuid() };
+        Ok(PathBuf::from(format!("/run/user/{uid}")))
     }
     #[cfg(not(unix))]
     {
@@ -310,6 +319,14 @@ mod tests {
         assert_eq!(
             paths.cache,
             Path::new("/home/tester/.cache/dogi-development")
+        );
+        assert_eq!(
+            paths.state,
+            Path::new("/home/tester/.local/state/dogi-development")
+        );
+        assert_eq!(
+            paths.device_transactions_dir(),
+            Path::new("/home/tester/.local/state/dogi/hardware/device-transactions")
         );
         assert_eq!(paths.runtime, Path::new("/run/user/1000/dogi-development"));
         assert_eq!(
