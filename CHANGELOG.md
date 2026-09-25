@@ -1,8 +1,14 @@
+## [0.1.18] - 2026-09-25
+
+### 🚜 Refactor
+
+- Consolidate workspace into a single dogi package
 ## [0.1.17] - 2026-09-25
 
 ### ⚙️ Miscellaneous Tasks
 
 - *(ci)* Update
+- Release 0.1.17
 ## [0.1.16] - 2026-09-25
 
 ### ⚙️ Miscellaneous Tasks

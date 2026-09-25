@@ -35,7 +35,7 @@
     <category>Settings</category>
   </categories>
   <releases>
-    <release version="0.1.17" date="2026-09-25" type="development">
+    <release version="0.1.18" date="2026-09-25" type="development">
       <description>
         <p>
           Improves device discovery, desktop integration, and the configuration
