@@ -437,18 +437,6 @@ impl ActiveApplication {
         }
     }
 
-    pub fn summary(&self) -> String {
-        [
-            self.title.as_deref(),
-            self.class.as_deref(),
-            self.executable.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(" / ")
-    }
-
     fn match_fields(&self) -> impl Iterator<Item = &str> {
         [
             self.title.as_deref(),
@@ -969,7 +957,7 @@ pub fn build_master3s_apply_plan(
                 speed_percent: settings.thumb_wheel_speed_percent,
             },
             feature: HidppFeature::ThumbWheel,
-            requires_device_write: true,
+            requires_device_write: false,
         },
     ];
 
@@ -980,7 +968,7 @@ pub fn build_master3s_apply_plan(
                 action: binding.action,
             },
             feature: HidppFeature::ReprogrammableControls,
-            requires_device_write: true,
+            requires_device_write: false,
         });
     }
 
@@ -1011,6 +999,48 @@ pub fn build_master3s_apply_plan(
         profile_name: settings.profile_name.clone(),
         steps,
     }
+}
+
+/// Hardware touched while a runtime session owns software input routing or an
+/// explicitly selected application override. Base UI defaults are not intent.
+pub fn build_master3s_runtime_device_plan(
+    device_id: impl Into<String>,
+    target: &Master3sSettings,
+    overrides: Option<&AppProfileOverrides>,
+) -> SettingsApplyPlan {
+    let mut plan = build_master3s_apply_plan(device_id, target);
+    plan.steps.retain_mut(|step| {
+        let keep = match &mut step.operation {
+            SettingsApplyOperation::PointerSpeed { .. } => {
+                overrides.is_some_and(|o| o.pointer_speed_percent.is_some())
+            }
+            SettingsApplyOperation::WheelBehavior { .. } => overrides
+                .is_some_and(|o| o.ratchet_mode.is_some() || o.smart_shift_threshold.is_some()),
+            SettingsApplyOperation::ScrollBehavior {
+                high_resolution,
+                natural,
+            } => {
+                *high_resolution = overrides.and_then(|o| o.high_resolution_scroll);
+                *natural = overrides.and_then(|o| o.natural_scroll);
+                high_resolution.is_some() || natural.is_some()
+            }
+            SettingsApplyOperation::ThumbWheel {
+                mode,
+                speed_percent,
+            } => {
+                *mode != ThumbWheelMode::HorizontalScroll
+                    || *speed_percent != DEFAULT_THUMB_WHEEL_SPEED_PERCENT
+            }
+            SettingsApplyOperation::ButtonMapping { button, action } => {
+                button_action_requires_runtime(*button, *action)
+            }
+            SettingsApplyOperation::LocalRuntime { .. }
+            | SettingsApplyOperation::AppProfile { .. } => false,
+        };
+        step.requires_device_write = keep;
+        keep
+    });
+    plan
 }
 
 pub fn build_master3s_device_diff_plan(
@@ -1482,6 +1512,65 @@ fn app_match_key(value: &str) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn runtime_start_and_reconnect_never_apply_base_hardware_defaults() {
+        for high_resolution_scroll in [false, true] {
+            let settings = Master3sSettings {
+                high_resolution_scroll,
+                ..Master3sSettings::default()
+            };
+            assert!(
+                build_master3s_runtime_device_plan("device", &settings, None)
+                    .steps
+                    .is_empty()
+            );
+            let settings = Master3sSettings {
+                thumb_wheel_speed_percent: 400,
+                ..settings
+            };
+            let plan = build_master3s_runtime_device_plan("device", &settings, None);
+            assert_eq!(plan.steps.len(), 1);
+            assert_eq!(plan.steps[0].feature, HidppFeature::ThumbWheel);
+        }
+    }
+
+    #[test]
+    fn runtime_respects_explicit_profile_fields_even_when_equal_to_ui_defaults() {
+        let target = Master3sSettings::default();
+        let overrides = AppProfileOverrides {
+            natural_scroll: Some(false),
+            ..AppProfileOverrides::default()
+        };
+        let plan = build_master3s_runtime_device_plan("device", &target, Some(&overrides));
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(
+            plan.steps[0].operation,
+            SettingsApplyOperation::ScrollBehavior {
+                high_resolution: None,
+                natural: Some(false)
+            }
+        );
+    }
+
+    #[test]
+    fn saving_horizontal_speed_and_buttons_does_not_write_input_routes() {
+        let base = Master3sSettings::default();
+        let mut target = Master3sSettings {
+            thumb_wheel_speed_percent: 400,
+            ..base.clone()
+        };
+        target.set_button_action(Master3sButton::Middle, ButtonAction::Action(Action::Copy));
+        let plan = build_master3s_device_diff_plan("device", &base, &target);
+        assert_eq!(plan.steps.len(), 2);
+        assert!(!plan.requires_device_write());
+        assert_eq!(
+            build_master3s_runtime_device_plan("device", &target, None)
+                .steps
+                .len(),
+            2
+        );
+    }
+
     fn app_profile(name: &str, pointer_speed: u8, thumb_wheel: ThumbWheelMode) -> AppProfile {
         AppProfile {
             name: name.to_owned(),
@@ -1498,7 +1587,7 @@ mod tests {
     }
 
     #[test]
-    fn default_master3s_plan_is_device_only() {
+    fn explicit_apply_keeps_input_routing_local() {
         let settings = Master3sSettings::default();
         let plan = build_master3s_apply_plan("device-1", &settings);
 
@@ -1508,7 +1597,22 @@ mod tests {
                 .iter()
                 .any(|step| step.feature == HidppFeature::PointerSpeed)
         );
-        assert!(!plan.steps.iter().any(|step| !step.requires_device_write));
+        assert_eq!(
+            plan.steps
+                .iter()
+                .filter(|step| step.requires_device_write)
+                .count(),
+            3
+        );
+        assert!(
+            plan.steps
+                .iter()
+                .filter(|step| matches!(
+                    step.feature,
+                    HidppFeature::ThumbWheel | HidppFeature::ReprogrammableControls
+                ))
+                .all(|step| !step.requires_device_write)
+        );
     }
 
     #[test]

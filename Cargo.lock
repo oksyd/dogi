@@ -1431,6 +1431,7 @@ dependencies = [
  "gio",
  "keyring",
  "libc",
+ "log",
  "semver",
  "serde",
  "serde_json",

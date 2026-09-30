@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::domain::{
-    ActiveApplication, ButtonAction, DeviceInfo, DogiError, HidppFeature, Master3sButton,
-    Master3sRuntimeEvent, Master3sSettings, ResolvedRuntimeAction, Result, RuntimeActionResolver,
-    SettingsApplyPlan, SettingsApplyReport, SettingsApplyStatus, SettingsApplyStep, ThumbWheelMode,
-    ThumbWheelRuntimeAction, build_master3s_apply_plan, build_master3s_device_diff_plan,
-    device_settings_id, effective_master3s_settings_for_app, resolved_logitech_device_name,
+    ActiveApplication, DeviceInfo, DogiError, Master3sRuntimeEvent, Master3sSettings,
+    ResolvedRuntimeAction, Result, RuntimeActionResolver, SettingsApplyPlan, SettingsApplyReport,
+    SettingsApplyStatus, ThumbWheelMode, ThumbWheelRuntimeAction,
+    build_master3s_runtime_device_plan, device_settings_id, effective_master3s_settings_for_app,
+    resolved_logitech_device_name,
 };
 use serde::{Deserialize, Serialize};
 
@@ -51,6 +51,7 @@ pub(crate) fn run(
     daemon: &DeviceService,
     environment: &AppEnvironment,
 ) -> Result<()> {
+    log::info!("Background starting · {}", env!("CARGO_PKG_VERSION"));
     let _shutdown_signals = ShutdownSignalGuard::install()?;
     let _runtime_lock =
         ProcessLock::acquire(&environment.paths.global_runtime_lock, "action runtime")?;
@@ -60,10 +61,9 @@ pub(crate) fn run(
     let battery_state_path = environment.paths.battery_notification_state();
     let battery_monitor = BatteryNotificationMonitor::load(battery_state_path.clone())
         .unwrap_or_else(|error| {
-            eprintln!("battery notification state was reset: {error}");
+            log::warn!("battery notification state was reset: {error}");
             BatteryNotificationMonitor::empty(battery_state_path)
         });
-    let mut recovery_complete = false;
     let mut state = RuntimeSessionState {
         battery_monitor,
         active_device: ActiveDeviceSelector::for_environment(environment),
@@ -71,8 +71,8 @@ pub(crate) fn run(
     };
 
     if options.max_events.is_some() {
-        recover_runtime_transaction(daemon, &control, &mut recovery_complete)?;
         loop {
+            recover_runtime_transaction(daemon, &control)?;
             match run_session(
                 &options,
                 &control,
@@ -91,17 +91,16 @@ pub(crate) fn run(
         if shutdown_requested() {
             return Ok(());
         }
-        let result = recover_runtime_transaction(daemon, &control, &mut recovery_complete)
-            .and_then(|()| {
-                run_session(
-                    &options,
-                    &control,
-                    &session_observer,
-                    &application_store,
-                    &mut state,
-                    daemon,
-                )
-            });
+        let result = recover_runtime_transaction(daemon, &control).and_then(|()| {
+            run_session(
+                &options,
+                &control,
+                &session_observer,
+                &application_store,
+                &mut state,
+                daemon,
+            )
+        });
         match result {
             Ok(RuntimeSessionOutcome::Completed) => return Ok(()),
             Ok(RuntimeSessionOutcome::SwitchDevice) => state.failures.reset(),
@@ -118,19 +117,13 @@ pub(crate) fn run(
 fn recover_runtime_transaction(
     daemon: &DeviceService,
     control: &RuntimePreviewState,
-    complete: &mut bool,
 ) -> Result<()> {
-    if *complete {
-        return Ok(());
-    }
+    // Retry preserved snapshots before every session, including reconnects whose
+    // new configuration no longer needs any runtime-owned hardware settings.
     control.publish_health(RuntimeReadiness::Starting, None);
-    if let Some(report) = daemon.recover_interrupted_runtime_transaction()? {
-        println!(
-            "Recovered interrupted device transaction: {:?}",
-            report.transaction
-        );
+    if daemon.recover_interrupted_runtime_transaction()?.is_some() {
+        log::info!("Recovered interrupted device transaction");
     }
-    *complete = true;
     Ok(())
 }
 
@@ -170,7 +163,6 @@ fn run_session(
         daemon,
         &device_id,
         options.allow_device_write,
-        &base_settings,
         control.clone(),
     );
     let mut processed_events = 0_usize;
@@ -185,8 +177,8 @@ fn run_session(
     let mut session_generation = 0_u64;
 
     let outcome = (|| -> Result<RuntimeSessionOutcome> {
-        println!("Runtime service for {device_id}");
-        println!(
+        log::info!("Background connected to mouse");
+        log::info!(
             "  mode: actions {}, device writes {}",
             enabled(options.execute_actions),
             enabled(options.allow_device_write)
@@ -201,8 +193,7 @@ fn run_session(
                 return Ok(RuntimeSessionOutcome::Completed);
             }
             if reload_base_settings(daemon, &settings_id, &mut base_settings)? {
-                device_lease.update_base_settings(&base_settings);
-                println!("  settings reloaded");
+                log::info!("  settings reloaded");
             }
 
             let session_snapshot = session_observer.snapshot();
@@ -214,7 +205,7 @@ fn run_session(
             );
             let policy = session_snapshot.policy();
             if !policy.apply_automatic_device_changes {
-                device_lease.release_base()?;
+                device_lease.release()?;
                 control.publish_health(RuntimeReadiness::Paused, None);
             }
 
@@ -270,26 +261,32 @@ fn run_session(
             }
 
             let device_settings = runtime_device_settings(&effective.settings, active_preview);
+            let device_plan = build_master3s_runtime_device_plan(
+                &device_id,
+                &device_settings,
+                effective
+                    .matched_profile
+                    .as_ref()
+                    .map(|profile| &profile.overrides),
+            );
             let profile_changed = policy.apply_automatic_device_changes
                 && active_effective_state.profile_name.as_deref()
                     != matched_profile_name.as_deref();
             if profile_changed {
                 action_resolver.reset();
-                print_profile_change(active_application.as_ref(), matched_profile_name.as_deref());
+                log_profile_change(matched_profile_name.is_some());
             }
             let preview_transition = policy.preview_local_actions
                 && active_effective_state.preview_active != active_preview.is_some();
-            let target_changed = policy.apply_automatic_device_changes
-                && active_effective_state.settings.as_ref() != Some(&device_settings);
-            let device_reacquire = policy.apply_automatic_device_changes
-                && !device_lease.owns_target(&device_settings);
+            let device_reacquire =
+                policy.apply_automatic_device_changes && !device_lease.owns_plan(&device_plan);
             let mut preview_apply_failed = false;
-            if target_changed || preview_transition || device_reacquire {
+            if preview_transition || device_reacquire {
                 if !session_observer.permits_automatic_device_changes(session_snapshot.generation) {
                     continue;
                 }
                 if options.allow_device_write {
-                    match device_lease.apply_target(&device_settings, preview_transition) {
+                    match device_lease.apply_target(&device_settings, &device_plan) {
                         Ok(()) => {}
                         Err(error) => {
                             let detail = error.to_string();
@@ -384,13 +381,13 @@ fn run_session(
                     &actions,
                     &mut action_executor,
                 )?;
-                print_event(&event, &actions, &executions, options.execute_actions);
+                log_event(&event, &actions, &executions, options.execute_actions);
                 processed_events += 1;
                 if options
                     .max_events
                     .is_some_and(|max_events| processed_events >= max_events)
                 {
-                    println!("Runtime service stopped after {processed_events} event(s)");
+                    log::info!("Runtime service stopped after {processed_events} event(s)");
                     return Ok(RuntimeSessionOutcome::Completed);
                 }
             }
@@ -399,13 +396,13 @@ fn run_session(
             failures.reset();
         }
     })();
-    let restoration = device_lease.release_base();
+    let restoration = device_lease.release();
     match (outcome, restoration) {
         (Ok(outcome), Ok(())) => Ok(outcome),
         (Err(error), Ok(())) => Err(error),
         (Ok(_), Err(restoration)) => Err(restoration),
         (Err(error), Err(restoration)) => {
-            eprintln!("base device settings restoration also failed: {restoration}");
+            log::warn!("temporary device settings restoration also failed: {restoration}");
             Err(error)
         }
     }
@@ -657,7 +654,7 @@ impl BatteryRuntimeState {
 
 fn publish_once(previous: &mut String, detail: String, context: &str) {
     if detail != *previous {
-        eprintln!("{context}: {detail}");
+        log::warn!("{context}: {detail}");
         *previous = detail;
     }
 }
@@ -666,7 +663,8 @@ struct RuntimeDeviceLease<'a> {
     daemon: &'a DeviceService,
     device_id: &'a str,
     writes_enabled: bool,
-    state: RuntimeDeviceLeaseState,
+    owned_plan: Option<SettingsApplyPlan>,
+    lease: Option<crate::device::RuntimeSettingsLease>,
     control: RuntimePreviewState,
     restoration_attempted: bool,
 }
@@ -676,175 +674,93 @@ impl<'a> RuntimeDeviceLease<'a> {
         daemon: &'a DeviceService,
         device_id: &'a str,
         writes_enabled: bool,
-        base_settings: &Master3sSettings,
         control: RuntimePreviewState,
     ) -> Self {
         Self {
             daemon,
             device_id,
             writes_enabled,
-            state: RuntimeDeviceLeaseState::new(base_settings),
+            owned_plan: None,
+            lease: None,
             control,
             restoration_attempted: false,
         }
     }
 
-    fn update_base_settings(&mut self, settings: &Master3sSettings) {
-        self.state.update_base_settings(settings);
+    fn owns_plan(&self, plan: &SettingsApplyPlan) -> bool {
+        !self.writes_enabled
+            || self
+                .owned_plan
+                .as_ref()
+                .is_some_and(|owned| same_runtime_hardware(owned, plan))
     }
 
-    fn owns_target(&self, target: &Master3sSettings) -> bool {
-        !self.writes_enabled || self.state.owns_target(target)
-    }
-
-    fn apply_target(&mut self, target: &Master3sSettings, force_thumb_wheel: bool) -> Result<()> {
+    fn apply_target(&mut self, target: &Master3sSettings, plan: &SettingsApplyPlan) -> Result<()> {
         if !self.writes_enabled {
             return Ok(());
         }
-        let (target, plan) = self
-            .state
-            .target_plan(self.device_id, target, force_thumb_wheel);
-        if !plan.steps.is_empty() {
-            let report =
-                self.daemon
-                    .apply_master3s_settings_plan(self.device_id, &target, &plan)?;
-            ensure_device_apply_succeeded(&report)?;
-        }
-        self.state.commit(target);
         self.restoration_attempted = false;
-        Ok(())
-    }
-
-    fn release_base(&mut self) -> Result<()> {
-        if !self.writes_enabled || self.restoration_attempted {
-            return Ok(());
-        }
-        let Some((target, plan)) = self.state.release_plan(self.device_id) else {
-            return Ok(());
-        };
-        // Do not repeat a failed cleanup from the session epilogue or Drop.
-        self.restoration_attempted = true;
-        if !plan.steps.is_empty() {
-            let report =
-                self.daemon
-                    .apply_master3s_settings_plan(self.device_id, &target, &plan)?;
+        if plan.steps.is_empty() {
+            self.daemon
+                .release_runtime_settings_lease(&mut self.lease)?;
+        } else {
+            let report = self.daemon.replace_runtime_settings_lease(
+                &mut self.lease,
+                self.device_id,
+                target,
+                plan,
+            )?;
             ensure_device_apply_succeeded(&report)?;
         }
-        self.state.commit(target);
+        self.owned_plan = Some(plan.clone());
         Ok(())
     }
-}
 
-#[derive(Debug)]
-struct RuntimeDeviceLeaseState {
-    base_settings: Master3sSettings,
-    owned_target: Option<Master3sSettings>,
-}
-
-impl RuntimeDeviceLeaseState {
-    fn new(base_settings: &Master3sSettings) -> Self {
-        Self {
-            base_settings: base_settings.normalized(),
-            owned_target: None,
+    fn release(&mut self) -> Result<()> {
+        if self.restoration_attempted {
+            return Ok(());
         }
-    }
-
-    fn update_base_settings(&mut self, settings: &Master3sSettings) {
-        self.base_settings = settings.normalized();
-    }
-
-    fn owns_target(&self, target: &Master3sSettings) -> bool {
-        self.owned_target.as_ref() == Some(&target.normalized())
-    }
-
-    fn target_plan(
-        &self,
-        device_id: &str,
-        target: &Master3sSettings,
-        force_thumb_wheel: bool,
-    ) -> (Master3sSettings, SettingsApplyPlan) {
-        let target = target.normalized();
-        let plan = runtime_device_apply_plan(
-            device_id,
-            self.owned_target.as_ref(),
-            &target,
-            force_thumb_wheel,
-        );
-        (target, plan)
-    }
-
-    fn release_plan(&self, device_id: &str) -> Option<(Master3sSettings, SettingsApplyPlan)> {
-        self.owned_target.as_ref()?;
-        let target = released_device_settings(&self.base_settings);
-        if self.owned_target.as_ref() == Some(&target) {
-            return None;
-        }
-        let plan = runtime_device_apply_plan(device_id, self.owned_target.as_ref(), &target, false);
-        Some((target, plan))
-    }
-
-    fn commit(&mut self, target: Master3sSettings) {
-        self.owned_target = Some(target);
+        self.restoration_attempted = true;
+        self.daemon
+            .release_runtime_settings_lease(&mut self.lease)?;
+        self.owned_plan = None;
+        Ok(())
     }
 }
 
 impl Drop for RuntimeDeviceLease<'_> {
     fn drop(&mut self) {
-        if let Err(error) = self.release_base() {
-            let detail = format!("failed to restore base device settings: {error}");
+        if let Err(error) = self.release() {
+            let detail = format!("failed to restore temporary device settings: {error}");
             self.control
                 .publish_health(RuntimeReadiness::Degraded, Some(detail.clone()));
-            eprintln!("{detail}");
+            log::warn!("{detail}");
         }
     }
 }
 
-fn runtime_device_apply_plan(
-    device_id: &str,
-    baseline: Option<&Master3sSettings>,
-    target: &Master3sSettings,
-    force_thumb_wheel: bool,
-) -> SettingsApplyPlan {
-    let mut plan = baseline.map_or_else(
-        || {
-            let mut plan = build_master3s_apply_plan(device_id, target);
-            plan.steps.retain(|step| step.requires_device_write);
-            plan
-        },
-        |baseline| build_master3s_device_diff_plan(device_id, baseline, target),
-    );
-    if force_thumb_wheel {
-        let forced = build_master3s_apply_plan(device_id, target);
-        merge_missing_steps(
-            &mut plan,
-            forced
-                .steps
-                .into_iter()
-                .filter(|step| step.feature == HidppFeature::ThumbWheel),
-        );
-    }
-    plan
-}
-
-fn merge_missing_steps(
-    plan: &mut SettingsApplyPlan,
-    steps: impl IntoIterator<Item = SettingsApplyStep>,
-) {
-    for step in steps {
-        let exists = plan
-            .steps
-            .iter()
-            .any(|current| match (&current.operation, &step.operation) {
+fn same_runtime_hardware(left: &SettingsApplyPlan, right: &SettingsApplyPlan) -> bool {
+    use crate::domain::{ButtonAction, SettingsApplyOperation};
+    left.steps.len() == right.steps.len()
+        && left.steps.iter().zip(&right.steps).all(|(left, right)| {
+            match (&left.operation, &right.operation) {
                 (
-                    crate::domain::SettingsApplyOperation::ButtonMapping { button: left, .. },
-                    crate::domain::SettingsApplyOperation::ButtonMapping { button: right, .. },
-                ) => left == right,
-                _ => current.feature == step.feature,
-            });
-        if !exists {
-            plan.steps.push(step);
-        }
-    }
+                    SettingsApplyOperation::ThumbWheel { .. },
+                    SettingsApplyOperation::ThumbWheel { .. },
+                ) => true,
+                (
+                    SettingsApplyOperation::ButtonMapping {
+                        button: a,
+                        action: x,
+                    },
+                    SettingsApplyOperation::ButtonMapping {
+                        button: b,
+                        action: y,
+                    },
+                ) => a == b && (*x == ButtonAction::Gestures) == (*y == ButtonAction::Gestures),
+                _ => left == right,
+            }
+        })
 }
 
 fn ensure_device_apply_succeeded(report: &SettingsApplyReport) -> Result<()> {
@@ -879,16 +795,6 @@ fn ensure_device_apply_succeeded(report: &SettingsApplyReport) -> Result<()> {
             "device settings could not be committed and verified: {detail}"
         )))
     }
-}
-
-fn released_device_settings(base: &Master3sSettings) -> Master3sSettings {
-    let mut settings = base.normalized();
-    settings.thumb_wheel = ThumbWheelMode::HorizontalScroll;
-    settings.thumb_wheel_speed_percent = crate::domain::DEFAULT_THUMB_WHEEL_SPEED_PERCENT;
-    for button in Master3sButton::ALL {
-        settings.set_button_action(button, ButtonAction::Native);
-    }
-    settings.normalized()
 }
 
 fn runtime_device_settings(
@@ -947,9 +853,9 @@ fn synchronize_session(
     resolver.reset();
     *executor = None;
     if snapshot.detail.is_empty() {
-        println!("  session: local input enhancements enabled");
+        log::info!("  session: local input enhancements enabled");
     } else {
-        println!("  session: {}", snapshot.detail);
+        log::info!("  session: {}", snapshot.detail);
     }
 }
 
@@ -975,7 +881,7 @@ fn active_application(
         Ok(application) => application,
         Err(error) => {
             if !*warning_printed {
-                eprintln!("active app profile detection unavailable: {error}");
+                log::warn!("active app profile detection unavailable: {error}");
                 *warning_printed = true;
             }
             None
@@ -1023,7 +929,7 @@ impl ActiveDeviceSelector {
             },
             Err(error) if error.kind() == io::ErrorKind::NotFound => None,
             Err(error) => {
-                eprintln!(
+                log::warn!(
                     "runtime active-device preference could not be read from {}: {error}",
                     path.display()
                 );
@@ -1071,7 +977,7 @@ impl ActiveDeviceSelector {
         if self.preference_key.as_deref() != Some(&key) {
             self.preference_key = Some(key);
             if let Err(error) = self.persist() {
-                eprintln!("runtime active-device preference could not be saved: {error}");
+                log::warn!("runtime active-device preference could not be saved: {error}");
             }
         }
         Some(id)
@@ -1096,12 +1002,12 @@ impl ActiveDeviceSelector {
 
 fn preserve_invalid_active_device_state(path: &Path) {
     match quarantine(path, "invalid-active-device") {
-        Ok(Some(backup)) => eprintln!(
+        Ok(Some(backup)) => log::warn!(
             "invalid runtime active-device preference was preserved at {}",
             backup.display()
         ),
         Ok(None) => {}
-        Err(error) => eprintln!(
+        Err(error) => log::warn!(
             "invalid runtime active-device preference at {} could not be preserved: {error}",
             path.display()
         ),
@@ -1168,28 +1074,31 @@ fn action_is_executable(action: &ResolvedRuntimeAction) -> bool {
     )
 }
 
-fn print_profile_change(application: Option<&ActiveApplication>, profile: Option<&str>) {
-    let application = application
-        .map(ActiveApplication::summary)
-        .filter(|summary| !summary.is_empty())
-        .unwrap_or_else(|| "unknown application".to_owned());
-    println!("  active app: {application}");
-    println!("  active profile: {}", profile.unwrap_or("default profile"));
+fn log_profile_change(application_profile: bool) {
+    // Neither window titles nor user-defined profile names belong in logs.
+    log::info!(
+        "Active profile changed: {}",
+        if application_profile {
+            "application profile"
+        } else {
+            "default profile"
+        }
+    );
 }
 
-fn print_event(
+fn log_event(
     event: &Master3sRuntimeEvent,
     actions: &[ResolvedRuntimeAction],
     executions: &[RuntimeActionExecution],
     execute_actions: bool,
 ) {
-    println!("  event: {event:?}");
+    log::debug!("Input event: {event:?}");
     for action in actions {
-        println!("    action: {}", action.command.label());
+        log::debug!("Resolved action: {}", action.command.label());
     }
     if execute_actions {
         for execution in executions {
-            println!("    execution: {}", execution.status.label());
+            log::debug!("Action execution: {}", execution.status.label());
         }
     }
 }
@@ -1281,7 +1190,7 @@ impl FailureTracker {
         if self.previous == failure.detail {
             self.repetitions = self.repetitions.saturating_add(1);
             if self.repetitions.is_multiple_of(20) {
-                eprintln!(
+                log::warn!(
                     "Dogi runtime is still {} ({} attempts): {}",
                     failure.label(),
                     self.repetitions,
@@ -1289,7 +1198,7 @@ impl FailureTracker {
                 );
             }
         } else {
-            eprintln!("Dogi runtime is {}: {}", failure.label(), failure.detail);
+            log::warn!("Dogi runtime is {}: {}", failure.label(), failure.detail);
             self.previous.clone_from(&failure.detail);
             self.repetitions = 1;
         }
@@ -1300,28 +1209,67 @@ impl FailureTracker {
 mod tests {
     use super::super::control::RuntimeHealthSnapshot;
     use super::*;
+    use crate::domain::HidppFeature;
 
     #[test]
-    fn restart_without_a_matching_profile_reconciles_all_base_hardware() {
-        let base = base_settings();
-        let state = RuntimeDeviceLeaseState::new(&base);
-
-        let (target, plan) = state.target_plan("device", &base, false);
-
-        assert_eq!(target, base.normalized());
-        assert_complete_hardware_plan(&plan);
+    fn horizontal_speed_changes_reuse_routing_without_touching_vertical_settings() {
+        let mut settings = Master3sSettings {
+            thumb_wheel_speed_percent: 400,
+            ..Master3sSettings::default()
+        };
+        let first = build_master3s_runtime_device_plan("device", &settings, None);
+        settings.thumb_wheel_speed_percent = 300;
+        let next = build_master3s_runtime_device_plan("device", &settings, None);
+        assert_eq!(next.steps.len(), 1);
+        assert_eq!(next.steps[0].feature, HidppFeature::ThumbWheel);
+        assert!(same_runtime_hardware(&first, &next));
+        settings.thumb_wheel_speed_percent = 100;
+        let native = build_master3s_runtime_device_plan("device", &settings, None);
+        assert!(native.steps.is_empty());
+        assert!(!same_runtime_hardware(&next, &native));
     }
 
     #[test]
-    fn an_uncommitted_target_does_not_require_device_restoration() {
-        let base = base_settings();
-        let state = RuntimeDeviceLeaseState::new(&base);
-        assert!(state.release_plan("device").is_none());
+    fn horizontal_preview_only_acquires_thumb_wheel_routing() {
+        let settings = Master3sSettings::default();
+        let preview = HorizontalScrollPreview {
+            lease_id: "test-preview".to_owned(),
+            device_id: "device".to_owned(),
+            speed_percent: 100,
+        };
+        let target = runtime_device_settings(&settings, Some(&preview));
+        let plan = build_master3s_runtime_device_plan("device", &target, None);
+        assert_eq!(plan.steps.len(), 1);
+        assert_eq!(plan.steps[0].feature, HidppFeature::ThumbWheel);
+        let after = build_master3s_runtime_device_plan(
+            "device",
+            &runtime_device_settings(&settings, None),
+            None,
+        );
+        assert!(after.steps.is_empty());
+    }
 
-        let (_, plan) = state.target_plan("device", &profile_settings(&base), false);
-        assert!(!plan.steps.is_empty());
-        // Preparation or application can fail before commit; neither grants ownership.
-        assert!(state.release_plan("device").is_none());
+    #[test]
+    fn changing_profile_pointer_override_requires_a_new_hardware_plan() {
+        let settings = Master3sSettings {
+            pointer_speed_percent: 150,
+            ..Master3sSettings::default()
+        };
+        let overrides = crate::domain::AppProfileOverrides {
+            pointer_speed_percent: Some(150),
+            ..Default::default()
+        };
+        let first = build_master3s_runtime_device_plan("device", &settings, Some(&overrides));
+        let settings = Master3sSettings {
+            pointer_speed_percent: 125,
+            ..settings
+        };
+        let overrides = crate::domain::AppProfileOverrides {
+            pointer_speed_percent: Some(125),
+            ..overrides
+        };
+        let next = build_master3s_runtime_device_plan("device", &settings, Some(&overrides));
+        assert!(!same_runtime_hardware(&first, &next));
     }
 
     #[test]
@@ -1332,54 +1280,6 @@ mod tests {
         assert_eq!(failure.kind, RuntimeFailureKind::Terminal);
         assert_eq!(failure.readiness(), RuntimeReadiness::Terminal);
         assert_eq!(failure.retry_delay(), None);
-    }
-
-    #[test]
-    fn profile_to_session_pause_restores_base_hardware_and_native_routes() {
-        let base = base_settings();
-        let mut state = RuntimeDeviceLeaseState::new(&base);
-        let (profile, _) = state.target_plan("device", &profile_settings(&base), false);
-        state.commit(profile);
-
-        let (target, plan) = state
-            .release_plan("device")
-            .expect("profile target requires restoration");
-
-        assert_released_target(&target, &base);
-        assert_complete_hardware_plan(&plan);
-    }
-
-    #[test]
-    fn profile_to_service_stop_restores_the_latest_saved_base() {
-        let base = base_settings();
-        let mut state = RuntimeDeviceLeaseState::new(&base);
-        let (profile, _) = state.target_plan("device", &profile_settings(&base), false);
-        state.commit(profile);
-        let updated_base = Master3sSettings {
-            pointer_speed_percent: 115,
-            smart_shift_threshold: 31,
-            natural_scroll: true,
-            ..base
-        };
-        state.update_base_settings(&updated_base);
-
-        let (target, plan) = state
-            .release_plan("device")
-            .expect("service stop requires restoration");
-
-        assert_released_target(&target, &updated_base);
-        assert!(plan.steps.iter().any(|step| {
-            matches!(
-                step.operation,
-                crate::domain::SettingsApplyOperation::PointerSpeed { percent: 115 }
-            )
-        }));
-        assert!(plan.steps.iter().any(|step| {
-            matches!(
-                step.operation,
-                crate::domain::SettingsApplyOperation::WheelBehavior { threshold: 31, .. }
-            )
-        }));
     }
 
     #[test]
@@ -1549,82 +1449,6 @@ mod tests {
         assert_eq!(
             selector.select(&[preferred, fallback.clone()]),
             Some(fallback.id)
-        );
-    }
-
-    fn base_settings() -> Master3sSettings {
-        Master3sSettings {
-            pointer_speed_percent: 85,
-            smart_shift_threshold: 37,
-            high_resolution_scroll: true,
-            natural_scroll: false,
-            ..Master3sSettings::default()
-        }
-        .normalized()
-    }
-
-    fn profile_settings(base: &Master3sSettings) -> Master3sSettings {
-        let mut profile = Master3sSettings {
-            profile_name: "Default / Editing".to_owned(),
-            pointer_speed_percent: 165,
-            smart_shift_enabled: false,
-            smart_shift_threshold: 7,
-            ratchet_mode: crate::domain::WheelRatchetMode::FreeSpin,
-            high_resolution_scroll: false,
-            natural_scroll: true,
-            thumb_wheel: ThumbWheelMode::Zoom,
-            thumb_wheel_speed_percent: 225,
-            ..base.clone()
-        };
-        for button in Master3sButton::ALL {
-            profile.set_button_action(button, ButtonAction::Action(crate::domain::Action::Copy));
-        }
-        profile.normalized()
-    }
-
-    fn assert_complete_hardware_plan(plan: &SettingsApplyPlan) {
-        for feature in [
-            HidppFeature::PointerSpeed,
-            HidppFeature::SmartShift,
-            HidppFeature::HiresWheel,
-            HidppFeature::ThumbWheel,
-        ] {
-            assert_eq!(
-                plan.steps
-                    .iter()
-                    .filter(|step| step.feature == feature)
-                    .count(),
-                1,
-                "missing or duplicated {feature:?} step"
-            );
-        }
-        assert_eq!(
-            plan.steps
-                .iter()
-                .filter(|step| step.feature == HidppFeature::ReprogrammableControls)
-                .count(),
-            Master3sButton::ALL.len()
-        );
-        assert!(plan.steps.iter().all(|step| step.requires_device_write));
-    }
-
-    fn assert_released_target(target: &Master3sSettings, base: &Master3sSettings) {
-        let base = base.normalized();
-        assert_eq!(target.pointer_speed_percent, base.pointer_speed_percent);
-        assert_eq!(target.smart_shift_enabled, base.smart_shift_enabled);
-        assert_eq!(target.smart_shift_threshold, base.smart_shift_threshold);
-        assert_eq!(target.ratchet_mode, base.ratchet_mode);
-        assert_eq!(target.high_resolution_scroll, base.high_resolution_scroll);
-        assert_eq!(target.natural_scroll, base.natural_scroll);
-        assert_eq!(target.thumb_wheel, ThumbWheelMode::HorizontalScroll);
-        assert_eq!(
-            target.thumb_wheel_speed_percent,
-            crate::domain::DEFAULT_THUMB_WHEEL_SPEED_PERCENT
-        );
-        assert!(
-            Master3sButton::ALL
-                .into_iter()
-                .all(|button| target.button_action(button) == ButtonAction::Native)
         );
     }
 

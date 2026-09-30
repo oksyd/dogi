@@ -22,7 +22,8 @@ pub use settings::{
     SettingsApplyOutcome, SettingsApplyPlan, SettingsApplyPreview, SettingsApplyPreviewStep,
     SettingsApplyReport, SettingsApplyScope, SettingsApplyStatus, SettingsApplyStep,
     SettingsTransactionState, ThumbWheelMode, ThumbWheelRuntimeAction, WheelRatchetMode,
-    build_master3s_apply_plan, build_master3s_device_diff_plan, build_master3s_runtime_plan,
-    button_action_requires_runtime, effective_master3s_settings_for_app,
-    master3s_button_control_id, master3s_button_from_control_id, settings_apply_step_scope,
+    build_master3s_apply_plan, build_master3s_device_diff_plan, build_master3s_runtime_device_plan,
+    build_master3s_runtime_plan, button_action_requires_runtime,
+    effective_master3s_settings_for_app, master3s_button_control_id,
+    master3s_button_from_control_id, settings_apply_step_scope,
 };

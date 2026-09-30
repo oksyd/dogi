@@ -11,6 +11,8 @@ import {
     DeviceAccessState,
     DeviceDiscoveryState,
     DeviceRow,
+    DiagnosticError,
+    DiagnosticRow,
     NetworkTestState,
     PlanRow,
     PlanScope,
@@ -29,7 +31,8 @@ import {
 
 import { Theme } from "theme.slint";
 import { BrandWordmark } from "brand.slint";
-import { FormComboBox, FormLineEdit } from "controls.slint";
+import { ActionButton, FocusableArea, FormComboBox, FormLineEdit } from "controls.slint";
+import { DiagnosticsOverlay } from "diagnostics.slint";
 import { DeviceConfigSkeleton, DiscoveryPageSkeleton } from "loading.slint";
 import { Master3sDrawing } from "mouse.slint";
 import { BoltReceiverDrawing } from "receiver.slint";
@@ -64,77 +67,6 @@ component Divider inherits Rectangle {
     vertical-stretch: 0;
 }
 
-component FocusableArea {
-    in property <bool> enabled: true;
-    out property <bool> pressed <=> pointer-area.pressed;
-    out property <bool> has-hover <=> pointer-area.has-hover;
-    out property <bool> has-focus <=> focus-scope.has-focus;
-    callback clicked();
-
-    forward-focus: focus-scope;
-
-    pointer-area := TouchArea {
-        width: parent.width;
-        height: parent.height;
-        enabled: root.enabled;
-        mouse-cursor: root.enabled ? pointer : default;
-        clicked => {
-            focus-scope.focus();
-            root.clicked();
-        }
-    }
-
-    focus-scope := FocusScope {
-        width: 0px;
-        height: 0px;
-        enabled: root.enabled;
-
-        key-pressed(event) => {
-            if (event.text == " " || event.text == "\n") {
-                root.clicked();
-                return accept;
-            }
-            return reject;
-        }
-    }
-}
-
-component ActionButton inherits Rectangle {
-    in property <string> title;
-    in property <bool> primary: false;
-    in property <bool> destructive: false;
-    in property <bool> warning: false;
-    in property <bool> enabled: true;
-    callback clicked();
-
-    height: 36px;
-    border-radius: 5px;
-    border-width: button-area.has-focus ? 2px : root.primary ? 0px : 1px;
-    border-color: button-area.has-focus ? (root.warning ? Theme.warning : Theme.accent) : root.destructive ? Theme.danger : root.warning ? Theme.warning-border : Theme.control-border;
-    background: !root.enabled ? Theme.surface : root.primary ? (button-area.pressed ? Theme.accent-bg-active : button-area.has-hover ? Theme.accent-bg-hover : Theme.accent-bg) : root.warning ? (button-area.pressed ? Theme.warning-border : button-area.has-hover ? Theme.warning-bg : Theme.panel) : button-area.pressed ? Theme.selected : button-area.has-hover ? Theme.hover : Theme.panel;
-    opacity: root.enabled ? 1 : 0.55;
-    accessible-role: button;
-    accessible-label: root.title;
-    accessible-action-default => { if (root.enabled) { root.clicked(); } }
-
-    Text {
-        width: parent.width;
-        height: parent.height;
-        text: root.title;
-        color: !root.enabled ? Theme.text-faint : root.primary ? Theme.accent-text : root.destructive ? Theme.danger : root.warning ? Theme.warning : Theme.text;
-        font-size: 11px;
-        font-weight: root.primary ? 600 : 500;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-
-    button-area := FocusableArea {
-        width: parent.width;
-        height: parent.height;
-        enabled: root.enabled;
-        clicked => { root.clicked(); }
-    }
-}
 
 component MetaBadge inherits Rectangle {
     in property <string> title;
@@ -1749,10 +1681,12 @@ component SettingsRuntimeRow inherits Rectangle {
     in property <string> detail;
     callback enabled-changed(bool);
     callback restart();
+    callback view-logs();
 
     property <string> state-label:
         !root.supported ? @tr("Unavailable")
         : root.busy || root.state == DesktopRuntimeState.starting ? @tr("Starting…")
+        : root.state == DesktopRuntimeState.reconnecting ? @tr("Reconnecting…")
         : root.state == DesktopRuntimeState.running ? @tr("Running")
         : root.state == DesktopRuntimeState.paused ? @tr("Paused")
         : root.state == DesktopRuntimeState.stopped ? @tr("Off")
@@ -1811,6 +1745,18 @@ component SettingsRuntimeRow inherits Rectangle {
             MetaBadge {
                 title: root.state-label;
                 tone: root.state-tone;
+            }
+        }
+
+        if root.state == DesktopRuntimeState.degraded || root.state == DesktopRuntimeState.reconnecting : VerticalLayout {
+            width: 76px;
+            horizontal-stretch: 0;
+            alignment: center;
+            ActionButton {
+                width: 76px;
+                height: 32px;
+                title: @tr("View logs");
+                clicked => { root.view-logs(); }
             }
         }
 
@@ -2373,6 +2319,20 @@ component ConfirmationOverlay inherits Rectangle {
 }
 
 export component MainWindow inherits Window {
+    in-out property <bool> diagnostics-visible: false;
+    in-out property <bool> diagnostics-paused: false;
+    in-out property <int> diagnostics-source-index: 0;
+    in-out property <int> diagnostics-level-index: 0;
+    in property <bool> diagnostics-development: false;
+    in property <bool> diagnostics-busy: false;
+    in property <DiagnosticError> diagnostics-error;
+    in property <[DiagnosticRow]> diagnostic-rows;
+    in property <string> diagnostics-copy-text;
+    callback open-diagnostics(int);
+    callback close-diagnostics();
+    callback refresh-diagnostics();
+    callback diagnostics-source-changed();
+    callback diagnostics-filter-changed();
     in property <[DeviceRow]> devices;
     in property <[AppProfileRow]> app-profile-rows;
     in property <[PlanRow]> plan-rows;
@@ -2930,6 +2890,8 @@ export component MainWindow inherits Window {
                             && root.runtime-state != DesktopRuntimeState.running : WarningBar {
                             message: root.runtime-state == DesktopRuntimeState.starting
                                 ? @tr("Preparing custom actions…")
+                                : root.runtime-state == DesktopRuntimeState.reconnecting
+                                ? @tr("Reconnecting…")
                                 : root.runtime-state == DesktopRuntimeState.stopped
                                 ? @tr("Background operations are off")
                                 : root.runtime-state == DesktopRuntimeState.paused
@@ -3451,11 +3413,11 @@ export component MainWindow inherits Window {
 
                         if root.page-index == 3 : ScrollView {
                             viewport-width: self.width;
-                            viewport-height: 793px;
+                            viewport-height: settings-content.height;
 
-                            VerticalLayout {
+                            settings-content := VerticalLayout {
                             width: parent.width;
-                            height: 793px;
+                            height: self.min-height;
                             spacing: 10px;
 
                             PageHeading { title: @tr("Appearance"); }
@@ -3529,6 +3491,7 @@ export component MainWindow inherits Window {
                                     spacing: 0px;
 
                                     runtime-row := SettingsRuntimeRow {
+                                        view-logs => { root.open-diagnostics(1); }
                                         width: parent.width;
                                         state: root.runtime-state;
                                         availability: root.runtime-availability;
@@ -3610,7 +3573,34 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            Rectangle { vertical-stretch: 1; }
+                            PageHeading { title: @tr("Diagnostics"); }
+                            Rectangle {
+                                width: 720px;
+                                height: 72px;
+                                background: Theme.panel;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                border-radius: 8px;
+                                horizontal-stretch: 0;
+                                vertical-stretch: 0;
+                                HorizontalLayout {
+                                    padding-left: 18px;
+                                    padding-right: 18px;
+                                    spacing: 16px;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 3px;
+                                        Label { text: @tr("Diagnostic logs"); }
+                                        Hint { text: @tr("Review application and background activity"); }
+                                    }
+                                    VerticalLayout {
+                                        width: 100px;
+                                        alignment: center;
+                                        ActionButton { height: 34px; title: @tr("View logs"); clicked => { root.open-diagnostics(0); } }
+                                    }
+                                }
+                            }
+
                             }
                         }
                     }
@@ -3911,6 +3901,23 @@ export component MainWindow inherits Window {
         test => { root.test-network-proxy(); }
         save => { root.save-network-proxy(); }
         cancel => { root.cancel-network-proxy(); }
+    }
+
+    if root.diagnostics-visible : DiagnosticsOverlay {
+        width: parent.width;
+        height: parent.height;
+        entries: root.diagnostic-rows;
+        copy-text: root.diagnostics-copy-text;
+        development: root.diagnostics-development;
+        busy: root.diagnostics-busy;
+        error: root.diagnostics-error;
+        source-index <=> root.diagnostics-source-index;
+        level-index <=> root.diagnostics-level-index;
+        paused <=> root.diagnostics-paused;
+        source-changed => { root.diagnostics-source-changed(); }
+        filter-changed => { root.diagnostics-filter-changed(); }
+        refresh => { root.refresh-diagnostics(); }
+        close => { root.close-diagnostics(); }
     }
 
     if root.revert-confirm-visible : ConfirmationOverlay {

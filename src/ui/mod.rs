@@ -31,6 +31,7 @@ mod generated_ui {
 pub use generated_ui::*;
 
 mod desktop_preferences;
+mod diagnostics;
 mod preferences;
 mod settings_merge;
 
@@ -96,6 +97,7 @@ const HIDPP_RECOVERY_SCAN_DELAYS: [Duration; 3] = [
     Duration::from_secs(5),
 ];
 const DESKTOP_RUNTIME_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
+const DESKTOP_RUNTIME_TRANSITION_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DeviceScanIntent {
@@ -119,11 +121,21 @@ struct DeviceScanCompletion {
 pub struct DesktopRuntimeStatus {
     pub enabled: bool,
     pub active: bool,
-    pub ready: bool,
-    pub paused: bool,
+    pub phase: DesktopRuntimePhase,
     pub pause_reason: DesktopRuntimePauseReason,
     pub app_profiles_supported: bool,
     pub detail: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DesktopRuntimePhase {
+    #[default]
+    Stopped,
+    Starting,
+    Running,
+    Paused,
+    Reconnecting,
+    Degraded,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -283,6 +295,7 @@ impl Default for ApplicationUpdateManager {
 
 #[derive(Clone)]
 pub struct UiIntegrations {
+    pub(crate) diagnostics: crate::diagnostics::Reader,
     pub identity: ApplicationIdentity,
     pub discovery: DeviceDiscovery,
     pub settings: DeviceSettingsIntegration,
@@ -294,6 +307,7 @@ pub struct UiIntegrations {
 
 #[derive(Default)]
 struct LaunchIntegrations {
+    diagnostics: crate::diagnostics::Reader,
     identity: ApplicationIdentity,
     discovery: Option<DeviceDiscovery>,
     loader: Option<SettingsLoader>,
@@ -579,6 +593,13 @@ impl UiStatus {
 }
 
 fn set_window_status(window: &MainWindow, status: UiStatus) {
+    if window.get_status() != status {
+        match status.kind {
+            UiStatusKind::Error => log::error!("UI {:?}: {}", status.message, status.detail),
+            UiStatusKind::Warning => log::warn!("UI {:?}: {}", status.message, status.detail),
+            _ => {}
+        }
+    }
     window.set_status(status);
 }
 
@@ -683,6 +704,13 @@ fn relaunch_after_preview_cleanup(
 }
 
 fn set_desktop_runtime_status(window: &MainWindow, status: &DesktopRuntimeStatus) {
+    if window.get_runtime_state() != desktop_runtime_state(status) {
+        if status.phase == DesktopRuntimePhase::Degraded {
+            log::warn!("Background needs attention: {}", status.detail);
+        } else {
+            log::info!("Background state: {:?}", status.phase);
+        }
+    }
     window.set_runtime_state(desktop_runtime_state(status));
     window.set_runtime_pause_reason(runtime_pause_reason(status.pause_reason));
     window.set_runtime_detail(status.detail.clone().into());
@@ -690,14 +718,22 @@ fn set_desktop_runtime_status(window: &MainWindow, status: &DesktopRuntimeStatus
 }
 
 fn desktop_runtime_state(status: &DesktopRuntimeStatus) -> DesktopRuntimeState {
-    if !status.enabled && !status.active {
-        DesktopRuntimeState::Stopped
-    } else if status.paused {
-        DesktopRuntimeState::Paused
-    } else if status.ready {
-        DesktopRuntimeState::Running
-    } else {
-        DesktopRuntimeState::Degraded
+    match status.phase {
+        DesktopRuntimePhase::Stopped => DesktopRuntimeState::Stopped,
+        DesktopRuntimePhase::Starting => DesktopRuntimeState::Starting,
+        DesktopRuntimePhase::Running => DesktopRuntimeState::Running,
+        DesktopRuntimePhase::Paused => DesktopRuntimeState::Paused,
+        DesktopRuntimePhase::Reconnecting => DesktopRuntimeState::Reconnecting,
+        DesktopRuntimePhase::Degraded => DesktopRuntimeState::Degraded,
+    }
+}
+
+fn desktop_runtime_refresh_interval(state: DesktopRuntimeState) -> Duration {
+    match state {
+        DesktopRuntimeState::Starting | DesktopRuntimeState::Reconnecting => {
+            DESKTOP_RUNTIME_TRANSITION_REFRESH_INTERVAL
+        }
+        _ => DESKTOP_RUNTIME_REFRESH_INTERVAL,
     }
 }
 
@@ -1011,6 +1047,20 @@ fn run_device_discovery(
                 "device enrichment scanner panicked".to_owned(),
             ))
         });
+    match &result {
+        Ok(devices) => {
+            log::info!("Device scan completed: {} HID interfaces", devices.len());
+            for device in devices {
+                if let Some(issue) = device.access.hidpp_issue {
+                    log::warn!(
+                        "Mouse configuration probe: {issue:?} · {}",
+                        device.connection
+                    );
+                }
+            }
+        }
+        Err(error) => log::warn!("Device scan failed: {error}"),
+    }
     let _ = sender.send(DeviceScanCompletion {
         intent,
         phase: DeviceScanPhase::Enriched,
@@ -1380,6 +1430,7 @@ impl DeviceUiSession {
 
 pub fn launch_with_integrations(state: UiState, integrations: UiIntegrations) -> Result<()> {
     let UiIntegrations {
+        diagnostics,
         identity,
         discovery,
         settings,
@@ -1391,6 +1442,7 @@ pub fn launch_with_integrations(state: UiState, integrations: UiIntegrations) ->
     launch_internal(
         state,
         LaunchIntegrations {
+            diagnostics,
             identity,
             discovery: Some(discovery),
             loader: Some(settings.load),
@@ -1408,6 +1460,7 @@ pub fn launch_with_integrations(state: UiState, integrations: UiIntegrations) ->
 
 fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<()> {
     let LaunchIntegrations {
+        diagnostics,
         identity,
         discovery,
         loader,
@@ -1421,6 +1474,11 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         updates,
     } = integrations;
     let window = MainWindow::new().map_err(|error| DogiError::Ui(error.to_string()))?;
+    let _diagnostics = diagnostics::attach(
+        &window,
+        diagnostics,
+        identity == ApplicationIdentity::Development,
+    );
     slint::set_xdg_app_id(identity.xdg_app_id())
         .map_err(|error| DogiError::Ui(error.to_string()))?;
     let app_preferences = preferences.initial;
@@ -1557,7 +1615,9 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                             SettingsTransactionWorkKind::Prepare => "preparation",
                             SettingsTransactionWorkKind::Commit => "commit",
                         };
-                        eprintln!("Dogi settings {stage} failed: {error}");
+                        log::error!("Mouse settings {stage} failed: {error}");
+                    } else if matches!(result, SettingsTransactionCompletionResult::Committed(_)) {
+                        log::info!("Mouse settings transaction completed");
                     }
                     let _ = settings_completion_sender
                         .send(SettingsTransactionCompletion { work, result });
@@ -1678,6 +1738,9 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
     let close_request_preview_heartbeat = preview_heartbeat_timer.clone();
     window.window().on_close_requested(move || {
         if close_request_behavior.get() == CloseBehavior::MinimizeToTray {
+            if let Some(window) = close_request_window.upgrade() {
+                window.invoke_close_diagnostics();
+            }
             if let Some(window) = close_request_window.upgrade()
                 && (window.get_horizontal_scroll_test_open()
                     || window.get_horizontal_scroll_test_active())
@@ -1750,6 +1813,9 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
             .name("dogi-runtime-manager".to_owned())
             .spawn(move || {
                 while let Ok(operation) = runtime_work_receiver.recv() {
+                    if operation != DesktopRuntimeOperation::Status {
+                        log::info!("Background operation: {operation:?}");
+                    }
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         handler(operation)
                     }))
@@ -1853,9 +1919,10 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         let runtime_refresh_poll_timer = runtime_timer.clone();
         let runtime_refresh_startup_pending = runtime_startup_pending.clone();
         let runtime_refresh_in_flight = runtime_status_in_flight.clone();
+        let last_status_request = Cell::new(std::time::Instant::now());
         runtime_refresh_timer.start(
             slint::TimerMode::Repeated,
-            DESKTOP_RUNTIME_REFRESH_INTERVAL,
+            DESKTOP_RUNTIME_TRANSITION_REFRESH_INTERVAL,
             move || {
                 let Some(window) = runtime_refresh_window.upgrade() else {
                     return;
@@ -1869,10 +1936,16 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                 ) {
                     return;
                 }
+                if last_status_request.get().elapsed()
+                    < desktop_runtime_refresh_interval(window.get_runtime_state())
+                {
+                    return;
+                }
                 let Some(sender) = runtime_refresh_sender.as_ref() else {
                     return;
                 };
 
+                last_status_request.set(std::time::Instant::now());
                 runtime_refresh_in_flight.set(true);
                 runtime_refresh_poll_timer.restart();
                 if sender.send(DesktopRuntimeOperation::Status).is_err() {
@@ -5167,8 +5240,7 @@ mod tests {
         let running = DesktopRuntimeStatus {
             enabled: true,
             active: true,
-            ready: true,
-            paused: false,
+            phase: DesktopRuntimePhase::Running,
             pause_reason: DesktopRuntimePauseReason::None,
             app_profiles_supported: true,
             detail: String::new(),
@@ -5176,14 +5248,13 @@ mod tests {
         let paused = DesktopRuntimeStatus {
             enabled: true,
             active: true,
-            ready: false,
-            paused: true,
+            phase: DesktopRuntimePhase::Paused,
             pause_reason: DesktopRuntimePauseReason::RemoteLogin,
             app_profiles_supported: false,
             detail: "remote session".to_owned(),
         };
         let degraded = DesktopRuntimeStatus {
-            paused: false,
+            phase: DesktopRuntimePhase::Degraded,
             pause_reason: DesktopRuntimePauseReason::None,
             detail: "control endpoint unavailable".to_owned(),
             ..paused.clone()
@@ -5202,6 +5273,63 @@ mod tests {
             runtime_pause_reason(paused.pause_reason),
             RuntimePauseReason::RemoteLogin
         );
+    }
+
+    #[test]
+    fn runtime_startup_and_reconnection_are_preserved_until_ready() {
+        let _runtime = SnapshotRuntime::builder()
+            .clock_mode(ClockMode::Manual)
+            .build()
+            .unwrap();
+        let window = MainWindow::new().unwrap();
+
+        for (phase, expected) in [
+            (DesktopRuntimePhase::Starting, DesktopRuntimeState::Starting),
+            (DesktopRuntimePhase::Starting, DesktopRuntimeState::Starting),
+            (DesktopRuntimePhase::Running, DesktopRuntimeState::Running),
+            (
+                DesktopRuntimePhase::Reconnecting,
+                DesktopRuntimeState::Reconnecting,
+            ),
+            (DesktopRuntimePhase::Running, DesktopRuntimeState::Running),
+            (DesktopRuntimePhase::Degraded, DesktopRuntimeState::Degraded),
+            (DesktopRuntimePhase::Stopped, DesktopRuntimeState::Stopped),
+        ] {
+            set_desktop_runtime_status(
+                &window,
+                &DesktopRuntimeStatus {
+                    enabled: true,
+                    active: phase != DesktopRuntimePhase::Stopped,
+                    phase,
+                    ..DesktopRuntimeStatus::default()
+                },
+            );
+            assert_eq!(window.get_runtime_state(), expected);
+        }
+    }
+
+    #[test]
+    fn runtime_refresh_is_fast_only_during_transitions() {
+        for state in [
+            DesktopRuntimeState::Starting,
+            DesktopRuntimeState::Reconnecting,
+        ] {
+            assert_eq!(
+                desktop_runtime_refresh_interval(state),
+                Duration::from_secs(1)
+            );
+        }
+        for state in [
+            DesktopRuntimeState::Running,
+            DesktopRuntimeState::Paused,
+            DesktopRuntimeState::Stopped,
+            DesktopRuntimeState::Degraded,
+        ] {
+            assert_eq!(
+                desktop_runtime_refresh_interval(state),
+                Duration::from_secs(10)
+            );
+        }
     }
 
     #[test]
@@ -6153,7 +6281,7 @@ mod tests {
                 action: ButtonAction::Action(Action::Back),
             },
             feature: HidppFeature::ReprogrammableControls,
-            requires_device_write: true,
+            requires_device_write: false,
         };
         let local_step = SettingsApplyStep {
             operation: SettingsApplyOperation::AppProfile {
@@ -6164,36 +6292,29 @@ mod tests {
         };
 
         assert_eq!(plan_step_scope(&device_step, &settings), PlanScope::Device);
-        assert_eq!(plan_step_scope(&button_step, &settings), PlanScope::Device);
+        assert_eq!(plan_step_scope(&button_step, &settings), PlanScope::Local);
         assert_eq!(plan_step_scope(&local_step, &settings), PlanScope::Local);
     }
 
     #[test]
-    fn plan_scope_marks_supported_thumb_wheel_modes_as_device_steps() {
-        let thumb_step = SettingsApplyStep {
-            operation: SettingsApplyOperation::ThumbWheel {
-                mode: ThumbWheelMode::HorizontalScroll,
-                speed_percent: crate::domain::DEFAULT_THUMB_WHEEL_SPEED_PERCENT,
-            },
-            feature: HidppFeature::ThumbWheel,
-            requires_device_write: true,
-        };
-        let horizontal = Master3sSettings {
-            thumb_wheel: ThumbWheelMode::HorizontalScroll,
-            ..Master3sSettings::default()
-        };
-        let disabled = Master3sSettings {
-            thumb_wheel: ThumbWheelMode::Disabled,
-            ..Master3sSettings::default()
-        };
-        let zoom = Master3sSettings {
-            thumb_wheel: ThumbWheelMode::Zoom,
-            ..Master3sSettings::default()
-        };
-
-        assert_eq!(plan_step_scope(&thumb_step, &horizontal), PlanScope::Device);
-        assert_eq!(plan_step_scope(&thumb_step, &disabled), PlanScope::Device);
-        assert_eq!(plan_step_scope(&thumb_step, &zoom), PlanScope::Device);
+    fn saving_thumb_wheel_modes_is_local_and_does_not_require_hid_writes() {
+        let saved = Master3sSettings::default();
+        for mode in [
+            ThumbWheelMode::HorizontalScroll,
+            ThumbWheelMode::Disabled,
+            ThumbWheelMode::Zoom,
+        ] {
+            let settings = Master3sSettings {
+                thumb_wheel: mode,
+                thumb_wheel_speed_percent: 400,
+                ..saved.clone()
+            };
+            let plan = device_apply_plan("device", &saved, &settings);
+            assert_eq!(plan.steps.len(), 1);
+            assert_eq!(plan.steps[0].feature, HidppFeature::ThumbWheel);
+            assert_eq!(plan_step_scope(&plan.steps[0], &settings), PlanScope::Local);
+            assert!(device_plan_rows_from_plan(&plan, &settings).is_empty());
+        }
     }
 
     #[test]
@@ -6687,6 +6808,97 @@ mod tests {
             });
     }
 
+    fn scroll_settings_to_bottom(runtime: &SnapshotRuntime, window: &MainWindow) {
+        runtime.render(window.window()).unwrap();
+        window
+            .window()
+            .dispatch_event(slint::platform::WindowEvent::PointerScrolled {
+                position: slint::LogicalPosition { x: 900.0, y: 500.0 },
+                delta_x: 0.0,
+                delta_y: -10_000.0,
+            });
+        runtime.advance_time(Duration::from_secs(1)).unwrap();
+        runtime.render(window.window()).unwrap();
+    }
+
+    #[test]
+    fn settings_diagnostics_remain_clickable_after_scrolling_to_the_bottom() {
+        let runtime = SnapshotRuntime::builder()
+            .clock_mode(ClockMode::Manual)
+            .build()
+            .unwrap();
+
+        for locale in ["en", "zh_CN"] {
+            for (width, height) in [(1180, 720), (1260, 780)] {
+                for (availability, state, update) in [
+                    (
+                        DesktopRuntimeAvailability::Available,
+                        DesktopRuntimeState::Running,
+                        UpdateState::Current,
+                    ),
+                    (
+                        DesktopRuntimeAvailability::Development,
+                        DesktopRuntimeState::Stopped,
+                        UpdateState::Unavailable,
+                    ),
+                    (
+                        DesktopRuntimeAvailability::Available,
+                        DesktopRuntimeState::Degraded,
+                        UpdateState::Failed,
+                    ),
+                    (
+                        DesktopRuntimeAvailability::Available,
+                        DesktopRuntimeState::Reconnecting,
+                        UpdateState::Ready,
+                    ),
+                ] {
+                    let window = MainWindow::new().unwrap();
+                    slint::select_bundled_translation(locale).unwrap();
+                    window.set_page_index(3);
+                    window.set_runtime_availability(availability);
+                    window.set_runtime_management_supported(
+                        availability == DesktopRuntimeAvailability::Available,
+                    );
+                    window.set_runtime_state(state);
+                    window.set_runtime_detail("Mouse configuration channel is busy".into());
+                    window.set_update_state(update);
+                    window.set_update_detail("Update checks are unavailable".into());
+                    let opened = Rc::new(Cell::new(None));
+                    let opened_result = opened.clone();
+                    window.on_open_diagnostics(move |source| opened_result.set(Some(source)));
+                    window.show().unwrap();
+                    runtime
+                        .set_size(window.window(), (width, height), 1.0)
+                        .unwrap();
+                    scroll_settings_to_bottom(&runtime, &window);
+                    let position = slint::LogicalPosition {
+                        x: 920.0,
+                        y: height as f32 - 50.0,
+                    };
+                    let button = slint::platform::PointerEventButton::Left;
+                    window
+                        .window()
+                        .dispatch_event(slint::platform::WindowEvent::PointerPressed {
+                            position,
+                            button,
+                        });
+                    window
+                        .window()
+                        .dispatch_event(slint::platform::WindowEvent::PointerReleased {
+                            position,
+                            button,
+                        });
+                    assert_eq!(
+                        opened.get(),
+                        Some(0),
+                        "diagnostic logs must be reachable at {width}x{height}, locale {locale}, state {state:?}, update {update:?}"
+                    );
+                    window.hide().unwrap();
+                }
+            }
+        }
+    }
+
     #[test]
     fn renders_preview() {
         let runtime = SnapshotRuntime::builder()
@@ -7069,6 +7281,55 @@ mod tests {
                 window.set_network_proxy_password_saved(true);
             }
         }
+        if let Ok(preview) = std::env::var("DOGI_UI_SNAPSHOT_LOGS") {
+            window.set_page_index(3);
+            window.set_diagnostics_visible(true);
+            window.set_diagnostics_source_index(1);
+            if preview == "error" {
+                window.set_diagnostics_error(DiagnosticError::JournalUnavailable);
+            } else if preview == "busy" {
+                window.set_diagnostics_busy(true);
+            } else if preview != "empty" {
+                let rows = [
+                    ("2026-09-30 10:00:03", "INFO", 2, "Background state: Ready"),
+                    (
+                        "2026-09-30 10:00:02",
+                        "INFO",
+                        2,
+                        "Mouse settings transaction completed",
+                    ),
+                    (
+                        "2026-09-30 10:00:01",
+                        "WARN",
+                        1,
+                        "Mouse configuration channel is busy; retrying after the device reconnects",
+                    ),
+                    (
+                        "2026-09-30 10:00:00",
+                        "INFO",
+                        2,
+                        "Background connected to mouse",
+                    ),
+                ]
+                .into_iter()
+                .map(|(time, level, severity, message)| DiagnosticRow {
+                    timestamp: time.into(),
+                    level: level.into(),
+                    severity,
+                    message: message.into(),
+                    detail: format!("{time}  {level}  {message}").into(),
+                })
+                .collect::<Vec<_>>();
+                window.set_diagnostics_copy_text(
+                    rows.iter()
+                        .map(|row| row.detail.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                        .into(),
+                );
+                window.set_diagnostic_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+            }
+        }
         if let Ok(focus_steps) = std::env::var("DOGI_UI_SNAPSHOT_FOCUS_STEPS")
             && let Ok(focus_steps) = focus_steps.parse::<usize>()
         {
@@ -7100,6 +7361,27 @@ mod tests {
             ] {
                 window.window().dispatch_event(event);
             }
+        }
+
+        if std::env::var_os("DOGI_UI_SNAPSHOT_SETTINGS_BOTTOM").is_some() {
+            window.set_page_index(3);
+            scroll_settings_to_bottom(&runtime, &window);
+        }
+
+        if std::env::var("DOGI_UI_SNAPSHOT_LOGS").as_deref() == Ok("details") {
+            runtime.render(window.window()).unwrap();
+            let position = slint::LogicalPosition {
+                x: snapshot_width as f32 / 2.0,
+                y: (snapshot_height as f32 - 640.0) / 2.0 + 188.0,
+            };
+            let button = slint::platform::PointerEventButton::Left;
+            window
+                .window()
+                .dispatch_event(slint::platform::WindowEvent::PointerPressed { position, button });
+            window
+                .window()
+                .dispatch_event(slint::platform::WindowEvent::PointerReleased { position, button });
+            assert!(window.get_diagnostics_paused());
         }
 
         let frame = runtime.render(window.window()).unwrap();

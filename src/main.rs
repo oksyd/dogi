@@ -8,6 +8,7 @@ mod cli;
 mod config;
 mod desktop;
 mod device;
+mod diagnostics;
 mod domain;
 mod environment;
 mod hid;

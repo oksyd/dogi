@@ -22,6 +22,9 @@ use crate::persistence::{
 };
 use crate::runtime::{self, RuntimeActionExecution};
 
+mod runtime_lease;
+pub(crate) use runtime_lease::RuntimeSettingsLease;
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DeviceService {
     config_path: Option<PathBuf>,
@@ -50,12 +53,6 @@ enum DeviceTransactionPhase {
     DeviceCommitted,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RecoveryMode {
-    Gui,
-    Runtime,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StoredDeviceTransaction {
@@ -64,6 +61,8 @@ struct StoredDeviceTransaction {
     transaction: PreparedSettingsTransaction,
     settings_id: Option<String>,
     settings: Option<Master3sSettings>,
+    #[serde(default)]
+    explicit_plan: Option<SettingsApplyPlan>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -204,12 +203,13 @@ impl DeviceService {
                 "device identity changed while preparing the settings transaction".to_owned(),
             ));
         }
-        let journal = StoredDeviceTransaction {
+        let mut journal = StoredDeviceTransaction {
             version: DEVICE_TRANSACTION_FILE_VERSION,
             phase: DeviceTransactionPhase::Prepared,
             transaction: transaction.clone(),
             settings_id: None,
             settings: None,
+            explicit_plan: Some(plan.clone()),
         };
         self.write_device_transaction(&transaction_path, &journal)?;
         let report = match crate::hid::execute_prepared_master3s_settings_transaction(&transaction)
@@ -220,6 +220,11 @@ impl DeviceService {
                 return Err(error);
             }
         };
+        if report.committed() {
+            journal.phase = DeviceTransactionPhase::DeviceCommitted;
+            self.write_device_transaction(&transaction_path, &journal)?;
+            self.relinquish_runtime_settings_locked(&transaction_path, plan)?;
+        }
         if report.transaction != SettingsTransactionState::RecoveryRequired {
             self.clear_device_transaction(&transaction_path)?;
         }
@@ -293,6 +298,7 @@ impl DeviceService {
             transaction: pending.transaction,
             settings_id: Some(settings_id.to_owned()),
             settings: Some(settings.clone()),
+            explicit_plan: Some(plan.clone()),
         };
         self.write_device_transaction(&transaction_path, &journal)?;
         let report = match crate::hid::execute_prepared_master3s_settings_transaction(
@@ -315,6 +321,7 @@ impl DeviceService {
         self.write_device_transaction(&transaction_path, &journal)?;
         match self.save_master3s_settings_for_device(settings_id, &settings) {
             Ok(path) => {
+                self.relinquish_runtime_settings_locked(&transaction_path, plan)?;
                 self.clear_device_transaction(&transaction_path)?;
                 Ok((report, path))
             }
@@ -340,11 +347,13 @@ impl DeviceService {
     }
 
     pub fn recover_interrupted_settings_transaction(&self) -> Result<Option<SettingsApplyReport>> {
-        self.recover_all_interrupted_transactions(RecoveryMode::Gui)
+        self.recover_all_interrupted_transactions()
     }
 
     pub fn recover_interrupted_runtime_transaction(&self) -> Result<Option<SettingsApplyReport>> {
-        self.recover_all_interrupted_transactions(RecoveryMode::Runtime)
+        let report = self.recover_all_interrupted_transactions()?;
+        self.recover_runtime_leases()?;
+        Ok(report)
     }
 
     pub fn listen_master3s_runtime_events(
@@ -538,7 +547,7 @@ impl DeviceService {
 
     fn ensure_interrupted_transaction_recovered_locked(&self, path: &Path) -> Result<()> {
         if self
-            .recover_interrupted_transaction_locked(path, RecoveryMode::Gui)?
+            .recover_interrupted_transaction_locked(path)?
             .is_some_and(|report| report.transaction == SettingsTransactionState::RecoveryRequired)
         {
             return Err(DogiError::Config(format!(
@@ -549,10 +558,7 @@ impl DeviceService {
         Ok(())
     }
 
-    fn recover_all_interrupted_transactions(
-        &self,
-        mode: RecoveryMode,
-    ) -> Result<Option<SettingsApplyReport>> {
+    fn recover_all_interrupted_transactions(&self) -> Result<Option<SettingsApplyReport>> {
         self.quarantine_legacy_transaction()?;
         let Some(directory) = self.transaction_dir.as_deref() else {
             return Ok(None);
@@ -581,7 +587,7 @@ impl DeviceService {
         for path in paths {
             let result = (|| {
                 let _lock = self.acquire_transaction_lock(&path)?;
-                self.recover_interrupted_transaction_locked(&path, mode)
+                self.recover_interrupted_transaction_locked(&path)
             })();
             match result {
                 Ok(Some(report)) => {
@@ -607,14 +613,12 @@ impl DeviceService {
     fn recover_interrupted_transaction_locked(
         &self,
         path: &Path,
-        mode: RecoveryMode,
     ) -> Result<Option<SettingsApplyReport>> {
         let Some(journal) = self.load_device_transaction(path)? else {
             return Ok(None);
         };
-        match (journal.phase, mode) {
-            (DeviceTransactionPhase::Prepared, _)
-            | (DeviceTransactionPhase::DeviceCommitted, RecoveryMode::Runtime) => {
+        match journal.phase {
+            DeviceTransactionPhase::Prepared => {
                 let report = crate::hid::recover_prepared_master3s_settings_transaction(
                     &journal.transaction,
                 )?;
@@ -623,18 +627,22 @@ impl DeviceService {
                 }
                 Ok(Some(report))
             }
-            (DeviceTransactionPhase::DeviceCommitted, RecoveryMode::Gui) => {
-                let settings_id = journal.settings_id.as_deref().ok_or_else(|| {
-                    DogiError::Config(
-                        "committed device transaction has no settings identifier".to_owned(),
-                    )
-                })?;
-                let settings = journal.settings.as_ref().ok_or_else(|| {
-                    DogiError::Config(
-                        "committed device transaction has no settings payload".to_owned(),
-                    )
-                })?;
-                self.save_master3s_settings_for_device(settings_id, settings)?;
+            DeviceTransactionPhase::DeviceCommitted => {
+                match (journal.settings_id.as_deref(), journal.settings.as_ref()) {
+                    (Some(settings_id), Some(settings)) => {
+                        self.save_master3s_settings_for_device(settings_id, settings)?;
+                    }
+                    (None, None) if journal.explicit_plan.is_some() => {}
+                    _ => {
+                        return Err(DogiError::Config(
+                            "committed device transaction has incomplete settings intent"
+                                .to_owned(),
+                        ));
+                    }
+                }
+                if let Some(plan) = &journal.explicit_plan {
+                    self.relinquish_runtime_settings_locked(path, plan)?;
+                }
                 self.clear_device_transaction(path)?;
                 Ok(None)
             }
@@ -1017,6 +1025,7 @@ mod tests {
                     transaction,
                     settings_id: Some("device-a".to_owned()),
                     settings: Some(settings),
+                    explicit_plan: None,
                 },
             )
             .unwrap();
@@ -1062,6 +1071,7 @@ mod tests {
                     phase: DeviceTransactionPhase::DeviceCommitted,
                     transaction,
                     settings_id: Some("device-b".to_owned()),
+                    explicit_plan: None,
                     settings: Some(Master3sSettings {
                         pointer_speed_percent: 145,
                         ..Master3sSettings::default()
@@ -1110,6 +1120,126 @@ mod tests {
 
         assert!(plan.requires_listener());
         assert!(plan.summary().contains("thumb wheel zoom"));
+    }
+
+    #[test]
+    fn gui_recovery_leaves_runtime_lease_for_its_owner() {
+        let fixture = unique_test_config("lease-owner");
+        let daemon = DeviceService::with_config_path(&fixture.path);
+        let transaction = test_transaction(1, "AABBCCDD");
+        let lease_path = daemon
+            .transaction_path_for(&transaction)
+            .unwrap()
+            .with_extension("lease");
+        write_json_file(&lease_path, &transaction, None).unwrap();
+        let settings = Master3sSettings {
+            thumb_wheel_speed_percent: 400,
+            ..Master3sSettings::default()
+        };
+        daemon.save_master3s_settings(&settings).unwrap();
+
+        daemon.recover_interrupted_settings_transaction().unwrap();
+        assert!(
+            lease_path.exists(),
+            "opening the GUI must not release live routing"
+        );
+        daemon.recover_interrupted_runtime_transaction().unwrap();
+        assert!(
+            !lease_path.exists(),
+            "an empty orphan needs no device I/O to release"
+        );
+        assert_eq!(daemon.load_master3s_settings().unwrap(), settings);
+        daemon.recover_interrupted_runtime_transaction().unwrap();
+    }
+
+    #[test]
+    fn invalid_runtime_snapshots_are_preserved_without_device_io() {
+        for invalid in ["corrupt", "future", "identity", "weak-identity"] {
+            let fixture = unique_test_config(invalid);
+            let daemon = DeviceService::with_config_path(&fixture.path);
+            let mut transaction = test_transaction(1, "AABBCCDD");
+            let lease_path = daemon
+                .transaction_path_for(&transaction)
+                .unwrap()
+                .with_extension("lease");
+            match invalid {
+                "future" => transaction.version = u8::MAX,
+                "identity" => transaction.identity.unit_id = Some("DDCCBBAA".to_owned()),
+                "weak-identity" => transaction.identity.unit_id = None,
+                _ => {}
+            }
+            write_json_file(&lease_path, &transaction, None).unwrap();
+            if invalid == "corrupt" {
+                fs::write(&lease_path, b"not-json").unwrap();
+            }
+            let before = fs::read(&lease_path).unwrap();
+
+            assert!(
+                daemon.recover_interrupted_runtime_transaction().is_err(),
+                "{invalid}"
+            );
+            assert_eq!(fs::read(&lease_path).unwrap(), before, "{invalid}");
+        }
+    }
+
+    #[test]
+    fn committed_user_settings_take_ownership_before_orphan_runtime_recovery() {
+        let fixture = unique_test_config("lease-commit-recovery");
+        let daemon = DeviceService::with_config_path(&fixture.path);
+        let mut transaction = test_transaction(1, "AABBCCDD");
+        transaction.changes = serde_json::from_value(serde_json::json!([{
+            "title": "Pointer speed",
+            "operation": { "kind": "pointer_speed", "percent": 150 },
+            "feature": "pointer_speed",
+            "feature_id": 8709,
+            "read_function": 0,
+            "read_payload": [],
+            "write_function": 16,
+            "before_write": [73],
+            "after_write": [150],
+            "verification": [{ "response_index": 0, "mask": 255, "before": 73, "after": 150 }],
+            "before_value": { "kind": "pointer_speed", "percent": 73 },
+            "after_value": { "kind": "pointer_speed", "percent": 150 }
+        }]))
+        .unwrap();
+        let transaction_path = daemon.transaction_path_for(&transaction).unwrap();
+        let lease_path = transaction_path.with_extension("lease");
+        write_json_file(&lease_path, &transaction, None).unwrap();
+        let settings = Master3sSettings {
+            pointer_speed_percent: 150,
+            ..Master3sSettings::default()
+        };
+        let plan = crate::domain::build_master3s_device_diff_plan(
+            &transaction.device_id,
+            &Master3sSettings::default(),
+            &settings,
+        );
+        // Saving the same value as an active profile still expresses ownership,
+        // even when preparation found nothing left to write to the mouse.
+        transaction.changes.clear();
+        daemon
+            .write_device_transaction(
+                &transaction_path,
+                &StoredDeviceTransaction {
+                    version: DEVICE_TRANSACTION_FILE_VERSION,
+                    phase: DeviceTransactionPhase::DeviceCommitted,
+                    transaction,
+                    settings_id: Some("device-a".to_owned()),
+                    settings: Some(settings.clone()),
+                    explicit_plan: Some(plan),
+                },
+            )
+            .unwrap();
+
+        daemon.recover_interrupted_runtime_transaction().unwrap();
+        assert!(!transaction_path.exists());
+        assert!(!lease_path.exists());
+        assert_eq!(
+            daemon
+                .load_master3s_settings_for_device("device-a")
+                .unwrap(),
+            settings
+        );
     }
 
     struct TestConfig {

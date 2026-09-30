@@ -1,0 +1,191 @@
+import { ListView, TextEdit } from "std-widgets.slint";
+import { ActionButton, FocusableArea, FormComboBox } from "controls.slint";
+import { Theme } from "theme.slint";
+import { DiagnosticError, DiagnosticRow } from "view-models.slint";
+
+export component DiagnosticsOverlay inherits Rectangle {
+    in property <[DiagnosticRow]> entries;
+    in property <string> copy-text;
+    in property <bool> development;
+    in property <bool> busy;
+    in property <DiagnosticError> error;
+    in-out property <int> source-index;
+    in-out property <int> level-index;
+    in-out property <bool> paused;
+    callback source-changed();
+    callback filter-changed();
+    callback refresh();
+    callback close();
+    private property <int> selected-index: -1;
+    private property <bool> copied: false;
+    private property <string> error-text:
+        root.error == DiagnosticError.background-unavailable ? @tr("Development runtime unavailable. Start the development runtime to view its logs.")
+        : root.error == DiagnosticError.journal-unavailable ? @tr("Cannot read the current user's background journal. Check journal access and try again.")
+        : root.error == DiagnosticError.timed-out ? @tr("Reading logs timed out. Try refreshing.")
+        : root.error == DiagnosticError.too-large ? @tr("The journal response is too large. Try again later.")
+        : root.error == DiagnosticError.invalid-data ? @tr("The log response could not be read. Try refreshing.") : "";
+
+    background: Theme.overlay;
+    forward-focus: modal-focus;
+    init => { modal-focus.focus(); }
+    changed entries => { root.selected-index = -1; root.copied = false; }
+
+    TouchArea { width: parent.width; height: parent.height; }
+    modal-focus := FocusScope {
+        width: parent.width;
+        height: parent.height;
+        key-pressed(event) => {
+            if (event.text == Key.Escape) { root.close(); return accept; }
+            return reject;
+        }
+
+        // Use Slint's native clipboard path, without an external command or extra backend.
+        clipboard := TextInput {
+            width: 0px;
+            height: 0px;
+            opacity: 0;
+            read-only: true;
+            enabled: false;
+            text: root.copy-text;
+            accessible-role: none;
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: min(parent.width - 48px, 960px);
+            height: min(parent.height - 48px, 640px);
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.control-border;
+            border-radius: 10px;
+            accessible-role: groupbox;
+            accessible-label: @tr("Diagnostic logs");
+
+            VerticalLayout {
+                padding: 24px;
+                spacing: 16px;
+                HorizontalLayout {
+                    height: 48px;
+                    vertical-stretch: 0;
+                    VerticalLayout {
+                        spacing: 4px;
+                        Text { text: @tr("Diagnostic logs"); color: Theme.text; font-size: 18px; font-weight: 650; }
+                        Text { text: @tr("Recent 200 entries · Local only · Common sensitive fields hidden"); color: Theme.text-muted; font-size: 11px; }
+                    }
+                    ActionButton { width: 76px; title: @tr("Close"); clicked => { root.close(); } }
+                }
+                HorizontalLayout {
+                    height: 34px;
+                    spacing: 10px;
+                    vertical-stretch: 0;
+                    FormComboBox {
+                        width: 204px;
+                        model: root.development ? [@tr("Application · Development"), @tr("Background · Development")] : [@tr("Application · This session"), @tr("Background · Installed")];
+                        current-index <=> root.source-index;
+                        selected(_) => { root.source-changed(); }
+                    }
+                    FormComboBox {
+                        width: 168px;
+                        model: [@tr("All levels"), @tr("Warnings and errors"), @tr("Errors only")];
+                        current-index <=> root.level-index;
+                        selected(_) => { root.filter-changed(); }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    ActionButton { width: 92px; height: 34px; title: root.paused ? @tr("Resume") : @tr("Pause"); clicked => { root.paused = !root.paused; } }
+                    ActionButton { width: 80px; height: 34px; title: @tr("Refresh"); enabled: !root.busy; clicked => { root.refresh(); } }
+                }
+                Rectangle {
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    border-radius: 6px;
+                    clip: true;
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        padding: 1px;
+                        spacing: 0px;
+                        Rectangle {
+                            height: 32px;
+                            background: Theme.surface;
+                            vertical-stretch: 0;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                spacing: 12px;
+                                Text { width: 146px; text: @tr("Time"); color: Theme.text-muted; font-size: 10px; vertical-alignment: center; }
+                                Text { width: 54px; text: @tr("Level"); color: Theme.text-muted; font-size: 10px; vertical-alignment: center; }
+                                Text { text: @tr("Message"); color: Theme.text-muted; font-size: 10px; vertical-alignment: center; }
+                            }
+                        }
+                        Rectangle {
+                            vertical-stretch: 1;
+                            if root.entries.length > 0 : ListView {
+                                width: parent.width;
+                                height: parent.height;
+                                for entry[index] in root.entries : Rectangle {
+                                    height: 36px;
+                                    background: root.selected-index == index ? Theme.selected : row-area.has-hover ? Theme.hover : Theme.panel;
+                                    accessible-role: button;
+                                    accessible-label: entry.detail;
+                                    accessible-action-default => { root.selected-index = index; root.paused = true; }
+                                    HorizontalLayout {
+                                        padding-left: 12px;
+                                        padding-right: 12px;
+                                        spacing: 12px;
+                                        Text { width: 146px; text: entry.timestamp; color: Theme.text-muted; font-size: 10px; vertical-alignment: center; }
+                                        Text { width: 54px; text: entry.level; color: entry.severity == 0 ? Theme.danger : entry.severity == 1 ? Theme.warning : Theme.text-muted; font-size: 10px; font-weight: 600; vertical-alignment: center; }
+                                        Text { text: entry.message; color: Theme.text; font-size: 11px; overflow: elide; vertical-alignment: center; }
+                                    }
+                                    row-area := FocusableArea {
+                                        width: parent.width;
+                                        height: parent.height;
+                                        clicked => { root.selected-index = index; root.paused = true; }
+                                    }
+                                    if row-area.has-focus : Rectangle { width: parent.width; height: parent.height; background: transparent; border-width: 1px; border-color: Theme.accent; }
+                                }
+                            }
+                            if root.entries.length == 0 : Text {
+                                x: 24px;
+                                width: parent.width - 48px;
+                                height: parent.height;
+                                text: root.error-text != "" ? root.error-text : root.busy ? @tr("Reading logs…") : root.level-index != 0 ? @tr("No entries match this filter") : @tr("No logs available yet");
+                                color: root.error-text != "" ? Theme.warning : Theme.text-muted;
+                                font-size: 12px;
+                                wrap: word-wrap;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+                if root.selected-index >= 0 && root.selected-index < root.entries.length : TextEdit {
+                    height: 88px;
+                    vertical-stretch: 0;
+                    read-only: true;
+                    wrap: word-wrap;
+                    font-size: 11px;
+                    text: root.entries[root.selected-index].detail;
+                }
+                HorizontalLayout {
+                    height: 34px;
+                    spacing: 12px;
+                    vertical-stretch: 0;
+                    Text {
+                        text: root.error-text != "" && root.entries.length > 0 ? root.error-text : @tr("{} entries", root.entries.length) + " · " + (root.busy ? @tr("Reading logs…") : root.paused ? @tr("Paused") : @tr("Auto-refresh"));
+                        color: root.error-text != "" ? Theme.warning : Theme.text-muted;
+                        font-size: 10px;
+                        wrap: word-wrap;
+                        vertical-alignment: center;
+                    }
+                    ActionButton {
+                        width: 100px;
+                        height: 34px;
+                        title: root.copied ? @tr("Copied") : @tr("Copy logs");
+                        enabled: root.entries.length > 0;
+                        clicked => { clipboard.select-all(); clipboard.copy(); clipboard.clear-selection(); root.copied = true; }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -47,6 +47,7 @@ pub(crate) fn launch_gui(environment: &AppEnvironment) -> Result<()> {
     crate::ui::launch_with_integrations(
         crate::ui::UiState::with_settings(Vec::new(), settings),
         crate::ui::UiIntegrations {
+            diagnostics: crate::diagnostics::Reader::new(environment.clone()),
             identity: if environment.is_development() {
                 crate::ui::ApplicationIdentity::Development
             } else {

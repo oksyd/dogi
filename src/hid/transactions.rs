@@ -32,6 +32,42 @@ pub struct PreparedSettingsTransaction {
 }
 
 impl PreparedSettingsTransaction {
+    pub(crate) fn validate_recovery(&self) -> Result<()> {
+        if self.version != FORMAT_VERSION {
+            return Err(DogiError::InvalidArgument(format!(
+                "unsupported settings transaction format {}",
+                self.version
+            )));
+        }
+        validate_recoverable_identity(self)
+    }
+
+    /// A later explicit save owns these fields, even if its value already matched
+    /// the temporary override. Never restore an older value over that user choice.
+    pub(crate) fn relinquish(&mut self, plan: &SettingsApplyPlan) {
+        self.changes.retain_mut(|change| {
+            for step in plan.steps.iter().filter(|step| step.requires_device_write) {
+                if step.feature != change.feature {
+                    continue;
+                }
+                if let SettingsApplyOperation::ScrollBehavior {
+                    high_resolution,
+                    natural,
+                } = &step.operation
+                {
+                    let mask = (if high_resolution.is_some() { 0x02 } else { 0 })
+                        | if natural.is_some() { 0x04 } else { 0 };
+                    for byte in &mut change.verification {
+                        byte.mask &= !mask;
+                    }
+                } else {
+                    return false;
+                }
+            }
+            change.verification.iter().any(|byte| byte.mask != 0)
+        });
+    }
+
     pub fn stable_device_key(&self) -> String {
         if let Some(unit) = strong_identifier(self.identity.unit_id.as_deref()) {
             return format!("unit-{unit}");
@@ -123,6 +159,21 @@ pub(crate) fn validate_apply_plan(
     settings: &Master3sSettings,
     plan: &SettingsApplyPlan,
 ) -> Result<()> {
+    validate_plan(settings, plan, false)
+}
+
+pub(crate) fn validate_runtime_apply_plan(
+    settings: &Master3sSettings,
+    plan: &SettingsApplyPlan,
+) -> Result<()> {
+    validate_plan(settings, plan, true)
+}
+
+fn validate_plan(
+    settings: &Master3sSettings,
+    plan: &SettingsApplyPlan,
+    runtime: bool,
+) -> Result<()> {
     if plan.profile_name != settings.profile_name {
         return Err(DogiError::InvalidArgument(format!(
             "apply plan profile {:?} does not match settings profile {:?}",
@@ -130,7 +181,17 @@ pub(crate) fn validate_apply_plan(
         )));
     }
 
-    let canonical = build_master3s_apply_plan(&plan.device_id, settings);
+    let mut canonical = build_master3s_apply_plan(&plan.device_id, settings);
+    if runtime {
+        for step in &mut canonical.steps {
+            if matches!(
+                step.feature,
+                HidppFeature::ThumbWheel | HidppFeature::ReprogrammableControls
+            ) {
+                step.requires_device_write = true;
+            }
+        }
+    }
     let mut consumed = vec![false; canonical.steps.len()];
     for step in &plan.steps {
         let matching_index = canonical
@@ -206,5 +267,22 @@ mod tests {
         let plan = crate::domain::build_master3s_device_diff_plan("device-a", &baseline, &target);
 
         validate_apply_plan(&target, &plan).unwrap();
+    }
+
+    #[test]
+    fn only_runtime_plans_can_take_over_software_input_routing() {
+        let settings = Master3sSettings {
+            thumb_wheel_speed_percent: 400,
+            ..Master3sSettings::default()
+        };
+        let mut plan = crate::domain::build_master3s_runtime_device_plan("device", &settings, None);
+        assert_eq!(plan.steps.len(), 1);
+        validate_runtime_apply_plan(&settings, &plan).unwrap();
+        assert!(validate_apply_plan(&settings, &plan).is_err());
+        plan.steps[0].operation = SettingsApplyOperation::ThumbWheel {
+            mode: settings.thumb_wheel,
+            speed_percent: 200,
+        };
+        assert!(validate_runtime_apply_plan(&settings, &plan).is_err());
     }
 }

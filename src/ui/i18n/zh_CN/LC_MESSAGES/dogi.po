@@ -144,6 +144,9 @@ msgstr "右"
 msgid "Running"
 msgstr "运行中"
 
+msgid "Reconnecting…"
+msgstr "正在重新连接…"
+
 #: src/ui/views/app.slint:1756
 msgid "Paused"
 msgstr "已暂停"
@@ -1345,3 +1348,96 @@ msgstr "无法停止横向滚动测试，因此 Dogi 将保持运行"
 
 msgid "Dogi could not confirm that the horizontal scroll test stopped, so it will stay open"
 msgstr "Dogi 无法确认横向滚动测试已停止，因此将保持运行"
+
+msgid "Development runtime unavailable. Start the development runtime to view its logs."
+msgstr "开发后台未连接。启动开发后台后即可查看日志。"
+
+msgid "Cannot read the current user's background journal. Check journal access and try again."
+msgstr "无法读取当前用户的后台日志。请检查日志访问权限后重试。"
+
+msgid "Reading logs timed out. Try refreshing."
+msgstr "读取日志超时，请刷新重试。"
+
+msgid "The journal response is too large. Try again later."
+msgstr "日志数据量过大，请稍后重试。"
+
+msgid "The log response could not be read. Try refreshing."
+msgstr "无法解析日志，请刷新重试。"
+
+msgid "Diagnostic logs"
+msgstr "诊断日志"
+
+msgid "Recent 200 entries · Local only · Common sensitive fields hidden"
+msgstr "最近 200 条 · 仅保留在本机 · 常见敏感字段已隐藏"
+
+msgid "Close"
+msgstr "关闭"
+
+msgid "Application · Development"
+msgstr "应用 · 开发版"
+
+msgid "Background · Development"
+msgstr "后台 · 开发版"
+
+msgid "Application · This session"
+msgstr "应用 · 本次运行"
+
+msgid "Background · Installed"
+msgstr "后台 · 已安装版"
+
+msgid "All levels"
+msgstr "全部级别"
+
+msgid "Warnings and errors"
+msgstr "警告与错误"
+
+msgid "Errors only"
+msgstr "仅错误"
+
+msgid "Resume"
+msgstr "继续"
+
+msgid "Pause"
+msgstr "暂停"
+
+msgid "Refresh"
+msgstr "刷新"
+
+msgid "Time"
+msgstr "时间"
+
+msgid "Level"
+msgstr "级别"
+
+msgid "Message"
+msgstr "消息"
+
+msgid "Reading logs…"
+msgstr "正在读取日志…"
+
+msgid "No entries match this filter"
+msgstr "没有符合筛选条件的日志"
+
+msgid "No logs available yet"
+msgstr "暂无日志"
+
+msgid "{} entries"
+msgstr "{} 条"
+
+msgid "Auto-refresh"
+msgstr "自动刷新"
+
+msgid "Copied"
+msgstr "已复制"
+
+msgid "Copy logs"
+msgstr "复制日志"
+
+msgid "View logs"
+msgstr "查看日志"
+
+msgid "Diagnostics"
+msgstr "诊断"
+
+msgid "Review application and background activity"
+msgstr "查看应用与后台的运行记录"

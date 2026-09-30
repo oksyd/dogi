@@ -139,6 +139,9 @@ struct RuntimeListenArgs {
 
 #[derive(Debug, Args)]
 struct RuntimeRunArgs {
+    /// Include input events in diagnostic logs for this run only.
+    #[arg(long)]
+    debug_events: bool,
     /// Device id from `dogi list`. If omitted, dogi auto-selects the only paired HID++ mouse.
     #[arg(long)]
     device_id: Option<String>,
@@ -430,6 +433,8 @@ fn execute(cli: Cli) -> Result<()> {
         ));
     }
     let environment = AppEnvironment::detect()?;
+    let debug_events = matches!(&command, Command::Runtime(RuntimeArgs { command: RuntimeCommand::Run(args) }) if args.debug_events);
+    crate::diagnostics::initialize(&environment, debug_events);
     match command {
         Command::List(args) => list_devices(args),
         Command::Inspect(args) => inspect_device(args),
@@ -438,7 +443,23 @@ fn execute(cli: Cli) -> Result<()> {
         Command::Runtime(args) => runtime(args, &environment),
         Command::Service(args) => service(args, &environment),
         Command::Udev(args) => udev(args),
-        Command::Gui => application::launch_gui(&environment),
+        Command::Gui => {
+            log::info!(
+                "Application started · {} · {}",
+                env!("CARGO_PKG_VERSION"),
+                if environment.is_development() {
+                    "development"
+                } else {
+                    "installed"
+                }
+            );
+            let result = application::launch_gui(&environment);
+            match &result {
+                Ok(()) => log::info!("Application closed"),
+                Err(error) => log::error!("Application failed: {error}"),
+            }
+            result
+        }
     }
 }
 
@@ -797,7 +818,7 @@ fn runtime_run(
     daemon: &DeviceService,
     environment: &AppEnvironment,
 ) -> Result<()> {
-    crate::runtime::supervisor::run(
+    let result = crate::runtime::supervisor::run(
         crate::runtime::supervisor::RuntimeSupervisorOptions {
             device_id: args.device_id,
             max_events: args.max_events,
@@ -807,7 +828,12 @@ fn runtime_run(
         },
         daemon,
         environment,
-    )
+    );
+    match &result {
+        Ok(()) => log::info!("Background stopped"),
+        Err(error) => log::error!("Background stopped with an error: {error}"),
+    }
+    result
 }
 
 fn action_is_executable(action: &ResolvedRuntimeAction) -> bool {
@@ -2090,6 +2116,22 @@ mod tests {
             Command::Runtime(_)
         ));
         assert!(matches!(command_or_default(auto_run), Command::Runtime(_)));
+    }
+
+    #[test]
+    fn runtime_event_logging_requires_explicit_opt_in() {
+        for (arguments, expected) in [
+            (vec!["dogi", "runtime", "run"], false),
+            (vec!["dogi", "runtime", "run", "--debug-events"], true),
+        ] {
+            let Command::Runtime(RuntimeArgs {
+                command: RuntimeCommand::Run(args),
+            }) = command_or_default(Cli::try_parse_from(arguments).unwrap())
+            else {
+                panic!("expected runtime run");
+            };
+            assert_eq!(args.debug_events, expected);
+        }
     }
 
     #[test]

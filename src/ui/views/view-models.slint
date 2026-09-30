@@ -27,6 +27,7 @@ export enum DesktopRuntimeState {
     starting,
     running,
     paused,
+    reconnecting,
     stopped,
     degraded,
 }
@@ -185,4 +186,20 @@ export struct PlanRow {
     primary-index: int,
     before-primary-index: int,
     secondary-index: int,
+}
+export struct DiagnosticRow {
+    timestamp: string,
+    level: string,
+    severity: int,
+    message: string,
+    detail: string,
+}
+
+export enum DiagnosticError {
+    none,
+    background-unavailable,
+    journal-unavailable,
+    timed-out,
+    too-large,
+    invalid-data,
 }

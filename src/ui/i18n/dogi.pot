@@ -143,6 +143,9 @@ msgstr ""
 msgid "Running"
 msgstr ""
 
+msgid "Reconnecting…"
+msgstr ""
+
 #: src/ui/views/app.slint:1757
 msgid "Paused"
 msgstr ""
@@ -1321,4 +1324,97 @@ msgstr ""
 msgid ""
 "Dogi could not confirm that the horizontal scroll test stopped, so it will "
 "stay open"
+msgstr ""
+
+msgid "Development runtime unavailable. Start the development runtime to view its logs."
+msgstr ""
+
+msgid "Cannot read the current user's background journal. Check journal access and try again."
+msgstr ""
+
+msgid "Reading logs timed out. Try refreshing."
+msgstr ""
+
+msgid "The journal response is too large. Try again later."
+msgstr ""
+
+msgid "The log response could not be read. Try refreshing."
+msgstr ""
+
+msgid "Diagnostic logs"
+msgstr ""
+
+msgid "Recent 200 entries · Local only · Common sensitive fields hidden"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+msgid "Application · Development"
+msgstr ""
+
+msgid "Background · Development"
+msgstr ""
+
+msgid "Application · This session"
+msgstr ""
+
+msgid "Background · Installed"
+msgstr ""
+
+msgid "All levels"
+msgstr ""
+
+msgid "Warnings and errors"
+msgstr ""
+
+msgid "Errors only"
+msgstr ""
+
+msgid "Resume"
+msgstr ""
+
+msgid "Pause"
+msgstr ""
+
+msgid "Refresh"
+msgstr ""
+
+msgid "Time"
+msgstr ""
+
+msgid "Level"
+msgstr ""
+
+msgid "Message"
+msgstr ""
+
+msgid "Reading logs…"
+msgstr ""
+
+msgid "No entries match this filter"
+msgstr ""
+
+msgid "No logs available yet"
+msgstr ""
+
+msgid "{} entries"
+msgstr ""
+
+msgid "Auto-refresh"
+msgstr ""
+
+msgid "Copied"
+msgstr ""
+
+msgid "Copy logs"
+msgstr ""
+
+msgid "View logs"
+msgstr ""
+
+msgid "Diagnostics"
+msgstr ""
+
+msgid "Review application and background activity"
 msgstr ""

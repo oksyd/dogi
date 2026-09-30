@@ -13,6 +13,8 @@ const CONTROL_IO_TIMEOUT: Duration = Duration::from_millis(750);
 #[cfg(unix)]
 const CONTROL_MAX_FRAME_BYTES: usize = 8 * 1024;
 #[cfg(unix)]
+const CONTROL_MAX_RESPONSE_BYTES: usize = 512 * 1024;
+#[cfg(unix)]
 const CONTROL_MAX_CONNECTIONS: usize = 8;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -119,6 +121,16 @@ impl RuntimeControlClient {
     pub(crate) fn status(&self) -> Result<RuntimeHealthSnapshot> {
         send_request(&self.socket_path, &RuntimeControlRequest::Status)?.into_status()
     }
+
+    pub(crate) fn recent_logs(&self) -> Result<Vec<crate::diagnostics::Entry>> {
+        let response = send_request(&self.socket_path, &RuntimeControlRequest::RecentLogs)?;
+        if !response.ok {
+            return Err(DogiError::BackendUnavailable(response.detail));
+        }
+        response
+            .logs
+            .ok_or_else(|| DogiError::Protocol("runtime response did not include logs".to_owned()))
+    }
 }
 
 #[derive(Clone)]
@@ -181,6 +193,7 @@ impl RuntimePreviewState {
 #[serde(tag = "command", rename_all = "snake_case")]
 enum RuntimeControlRequest {
     Status,
+    RecentLogs,
     SetHorizontalScrollPreview {
         lease_id: String,
         device_id: String,
@@ -197,6 +210,8 @@ struct RuntimeControlResponse {
     detail: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     status: Option<RuntimeHealthSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    logs: Option<Vec<crate::diagnostics::Entry>>,
 }
 
 impl RuntimeControlResponse {
@@ -205,6 +220,7 @@ impl RuntimeControlResponse {
             ok: true,
             detail: String::new(),
             status: None,
+            logs: None,
         }
     }
 
@@ -213,6 +229,7 @@ impl RuntimeControlResponse {
             ok: false,
             detail: detail.into(),
             status: None,
+            logs: None,
         }
     }
 
@@ -221,6 +238,7 @@ impl RuntimeControlResponse {
             ok: true,
             detail: String::new(),
             status: Some(status),
+            logs: None,
         }
     }
 
@@ -410,10 +428,13 @@ impl SharedPreviewState {
     }
 
     fn publish_health(&self, health: RuntimeHealthSnapshot) {
-        self.state
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .health = health;
+        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        let changed = state.health.readiness != health.readiness;
+        state.health = health.clone();
+        drop(state);
+        if changed {
+            log::info!("Background state: {:?}", health.readiness);
+        }
     }
 
     fn health(&self) -> RuntimeHealthSnapshot {
@@ -459,23 +480,30 @@ fn send_request(
         DogiError::Transport(format!("failed to flush preview request: {error}"))
     })?;
 
-    let response = read_control_frame(&mut BufReader::new(stream)).map_err(|error| {
-        DogiError::Transport(format!("failed to read preview response: {error}"))
-    })?;
+    let response = read_bounded_frame(&mut BufReader::new(stream), CONTROL_MAX_RESPONSE_BYTES)
+        .map_err(|error| {
+            DogiError::Transport(format!("failed to read preview response: {error}"))
+        })?;
     serde_json::from_slice(&response)
         .map_err(|error| DogiError::Protocol(format!("failed to decode preview response: {error}")))
 }
 
 #[cfg(unix)]
 fn read_control_frame(reader: &mut impl std::io::BufRead) -> std::result::Result<Vec<u8>, String> {
+    read_bounded_frame(reader, CONTROL_MAX_FRAME_BYTES)
+}
+
+#[cfg(unix)]
+fn read_bounded_frame(
+    reader: &mut impl std::io::BufRead,
+    limit: usize,
+) -> std::result::Result<Vec<u8>, String> {
     let mut frame = Vec::with_capacity(256);
-    let mut limited = std::io::Read::take(&mut *reader, (CONTROL_MAX_FRAME_BYTES + 1) as u64);
+    let mut limited = std::io::Read::take(&mut *reader, (limit + 1) as u64);
     std::io::BufRead::read_until(&mut limited, b'\n', &mut frame)
         .map_err(|error| format!("control frame read failed: {error}"))?;
-    if frame.len() > CONTROL_MAX_FRAME_BYTES {
-        return Err(format!(
-            "control frame exceeds the {CONTROL_MAX_FRAME_BYTES}-byte limit"
-        ));
+    if frame.len() > limit {
+        return Err(format!("control frame exceeds the {limit}-byte limit"));
     }
     if frame.is_empty() {
         return Err("control connection closed before a frame was received".to_owned());
@@ -571,7 +599,7 @@ mod unix {
                 for connection in listener.incoming() {
                     match connection {
                         Ok(stream) => connections.dispatch(stream, server_state.clone()),
-                        Err(error) => eprintln!("Dogi runtime control connection failed: {error}"),
+                        Err(error) => log::warn!("Runtime control connection failed: {error}"),
                     }
                 }
             })
@@ -607,7 +635,7 @@ mod unix {
                     handle_connection(stream, &shared);
                 })
             {
-                eprintln!("Dogi runtime control client could not be started: {error}");
+                log::warn!("Runtime control client could not be started: {error}");
             }
         }
     }
@@ -635,7 +663,7 @@ mod unix {
 
     fn handle_connection(mut stream: UnixStream, shared: &SharedPreviewState) {
         if let Err(error) = configure_connection(&stream) {
-            eprintln!("Dogi runtime control connection could not be configured: {error}");
+            log::warn!("Runtime control connection could not be configured: {error}");
             return;
         }
         let response = read_request(&stream)
@@ -644,7 +672,7 @@ mod unix {
         if let Err(error) = serde_json::to_writer(&mut stream, &response)
             .and_then(|_| stream.write_all(b"\n").map_err(serde_json::Error::io))
         {
-            eprintln!("Dogi runtime control response failed: {error}");
+            log::warn!("Runtime control response failed: {error}");
         }
     }
 
@@ -674,6 +702,10 @@ mod unix {
     ) -> RuntimeControlResponse {
         match request {
             RuntimeControlRequest::Status => RuntimeControlResponse::status(shared.health()),
+            RuntimeControlRequest::RecentLogs => RuntimeControlResponse {
+                logs: Some(crate::diagnostics::recent()),
+                ..RuntimeControlResponse::success()
+            },
             RuntimeControlRequest::SetHorizontalScrollPreview {
                 lease_id,
                 device_id,
@@ -763,6 +795,43 @@ mod tests {
             .into_result()
             .unwrap_err();
         assert!(error.to_string().contains("preview unavailable"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recent_logs_are_read_only_and_do_not_renew_preview_leases() {
+        let shared = SharedPreviewState::default();
+        shared
+            .set_preview("owner".into(), "device".into(), 150)
+            .unwrap();
+        let before = shared.snapshot();
+        let health = shared.health();
+        let response = unix::apply_request(&shared, RuntimeControlRequest::RecentLogs);
+        assert!(response.ok);
+        assert!(response.logs.is_some());
+        assert_eq!(shared.snapshot(), before);
+        assert_eq!(shared.health(), health);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn log_responses_do_not_relax_request_frame_limits() {
+        let mut bytes = vec![b'x'; CONTROL_MAX_FRAME_BYTES + 1];
+        bytes.push(b'\n');
+        assert!(read_control_frame(&mut bytes.as_slice()).is_err());
+        assert!(read_bounded_frame(&mut bytes.as_slice(), CONTROL_MAX_RESPONSE_BYTES).is_ok());
+        let entries = (0..crate::diagnostics::ENTRY_LIMIT)
+            .map(|_| crate::diagnostics::Entry {
+                timestamp_ms: u64::MAX,
+                level: crate::diagnostics::Level::Error,
+                message: "\"".repeat(1024),
+            })
+            .collect();
+        let response = RuntimeControlResponse {
+            logs: Some(entries),
+            ..RuntimeControlResponse::success()
+        };
+        assert!(serde_json::to_vec(&response).unwrap().len() + 1 < CONTROL_MAX_RESPONSE_BYTES);
     }
 
     #[cfg(unix)]

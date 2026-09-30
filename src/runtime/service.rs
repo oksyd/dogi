@@ -7,12 +7,18 @@ use std::path::{Path, PathBuf};
 use std::os::unix::fs::FileTypeExt;
 
 use crate::domain::{DogiError, Result};
-use crate::ui::{DesktopRuntimeOperation, DesktopRuntimePauseReason, DesktopRuntimeStatus};
+use crate::ui::{
+    DesktopRuntimeOperation, DesktopRuntimePauseReason, DesktopRuntimePhase, DesktopRuntimeStatus,
+};
 
 use crate::desktop::UserContext;
 use crate::environment::{AppEnvironment, RuntimeIntegration};
 
-use super::{UINPUT_PATH, control::RuntimeControlClient, session};
+use super::{
+    UINPUT_PATH,
+    control::{RuntimeControlClient, RuntimeHealthSnapshot, RuntimeReadiness},
+    session,
+};
 
 const SERVICE_NAME: &str = "dogi-runtime.service";
 const VENDOR_UNIT_PATH: &str = "/usr/lib/systemd/user/dogi-runtime.service";
@@ -112,6 +118,23 @@ fn stop(environment: &AppEnvironment) -> Result<DesktopRuntimeStatus> {
 
 /// Reads the installed runtime and control-endpoint state without reconciling the service.
 pub(crate) fn service_status(environment: &AppEnvironment) -> DesktopRuntimeStatus {
+    observe_service_status(environment).status
+}
+
+struct ServiceStatusObservation {
+    status: DesktopRuntimeStatus,
+    control_pending: bool,
+}
+
+impl ServiceStatusObservation {
+    fn should_wait(&self) -> bool {
+        self.status.active
+            && self.status.phase != DesktopRuntimePhase::Paused
+            && (self.control_pending || self.status.phase == DesktopRuntimePhase::Starting)
+    }
+}
+
+fn observe_service_status(environment: &AppEnvironment) -> ServiceStatusObservation {
     let context = &environment.user;
     let enabled = systemctl_succeeds(context, &["is-enabled", "--quiet", SERVICE_NAME]);
     let active = systemctl_succeeds(context, &["is-active", "--quiet", SERVICE_NAME]);
@@ -127,56 +150,85 @@ pub(crate) fn service_status(environment: &AppEnvironment) -> DesktopRuntimeStat
             RuntimeControlClient::for_environment(environment).and_then(|client| client.status())
         })
         .transpose();
-    let (runtime_ready, runtime_detail) = match health {
-        Ok(Some(health)) if health.version != env!("CARGO_PKG_VERSION") => (
-            false,
+    let control_pending = health.is_err();
+    let (mut phase, mut detail) = match health {
+        Ok(Some(health)) => runtime_health_presentation(health),
+        Ok(None) => (
+            if enabled {
+                DesktopRuntimePhase::Degraded
+            } else {
+                DesktopRuntimePhase::Stopped
+            },
+            String::new(),
+        ),
+        Err(error) => (
+            DesktopRuntimePhase::Degraded,
+            format!("Dogi runtime is active but its control endpoint is unavailable: {error}"),
+        ),
+    };
+    if paused {
+        phase = DesktopRuntimePhase::Paused;
+        detail = session.detail;
+    } else if phase == DesktopRuntimePhase::Running
+        && let Err(error) = uinput_access(context)
+    {
+        phase = DesktopRuntimePhase::Degraded;
+        detail = error.to_string();
+    }
+
+    ServiceStatusObservation {
+        status: DesktopRuntimeStatus {
+            enabled,
+            active,
+            phase,
+            pause_reason,
+            app_profiles_supported: app_profiles_supported_for_context(context),
+            detail,
+        },
+        control_pending,
+    }
+}
+
+fn runtime_health_presentation(health: RuntimeHealthSnapshot) -> (DesktopRuntimePhase, String) {
+    if health.version != env!("CARGO_PKG_VERSION") {
+        return (
+            DesktopRuntimePhase::Degraded,
             format!(
                 "Dogi runtime {} does not match application {}; restart the background service",
                 health.version,
                 env!("CARGO_PKG_VERSION")
             ),
-        ),
-        Ok(Some(health)) => (health.ready(), health.last_error.unwrap_or_default()),
-        Ok(None) => (false, String::new()),
-        Err(error) => (
-            false,
-            format!("Dogi runtime is active but its control endpoint is unavailable: {error}"),
-        ),
-    };
-    let uinput_error = (active && !paused && runtime_ready)
-        .then(|| uinput_access(context).err().map(|error| error.to_string()))
-        .flatten();
-    let detail = if paused {
-        session.detail
-    } else if !runtime_detail.is_empty() {
-        runtime_detail
-    } else {
-        uinput_error.unwrap_or_default()
-    };
-
-    DesktopRuntimeStatus {
-        enabled,
-        active,
-        ready: active && !paused && runtime_ready && detail.is_empty(),
-        paused,
-        pause_reason,
-        app_profiles_supported: app_profiles_supported_for_context(context),
-        detail,
+        );
     }
+
+    let phase = match health.readiness {
+        RuntimeReadiness::Starting => DesktopRuntimePhase::Starting,
+        RuntimeReadiness::Ready if health.ready() => DesktopRuntimePhase::Running,
+        RuntimeReadiness::Paused => DesktopRuntimePhase::Paused,
+        RuntimeReadiness::Reconnecting => DesktopRuntimePhase::Reconnecting,
+        RuntimeReadiness::Ready | RuntimeReadiness::Degraded | RuntimeReadiness::Terminal => {
+            DesktopRuntimePhase::Degraded
+        }
+    };
+    let detail = health.last_error.unwrap_or_default();
+    (
+        if phase == DesktopRuntimePhase::Running && !detail.is_empty() {
+            DesktopRuntimePhase::Degraded
+        } else {
+            phase
+        },
+        detail,
+    )
 }
 
 fn settled_service_status(environment: &AppEnvironment) -> DesktopRuntimeStatus {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
     loop {
-        let status = service_status(environment);
-        let control_is_starting = status.detail.contains("control endpoint is unavailable");
-        if !status.active
-            || status.ready
-            || status.paused
-            || !control_is_starting
-            || std::time::Instant::now() >= deadline
-        {
-            return status;
+        let observation = observe_service_status(environment);
+        if !observation.should_wait() || std::time::Instant::now() >= deadline {
+            // A slow initialization remains Starting even when this bounded
+            // management call returns; the GUI continues observing it.
+            return observation.status;
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
@@ -210,9 +262,15 @@ pub(crate) fn print_unit(environment: &AppEnvironment) -> Result<()> {
 
 pub(crate) fn install(environment: &AppEnvironment) -> Result<()> {
     let status = ensure_running(environment)?;
-    println!("Dogi desktop runtime is enabled and running.");
-    if !status.ready {
-        eprintln!("Custom actions need attention: {}", status.detail);
+    println!("Dogi desktop runtime is enabled.");
+    match status.phase {
+        DesktopRuntimePhase::Running => println!("Custom actions are ready."),
+        DesktopRuntimePhase::Starting => println!("Custom actions are starting."),
+        DesktopRuntimePhase::Reconnecting => println!("Custom actions are reconnecting."),
+        DesktopRuntimePhase::Paused => println!("Custom actions are paused: {}", status.detail),
+        DesktopRuntimePhase::Stopped | DesktopRuntimePhase::Degraded => {
+            eprintln!("Custom actions need attention: {}", status.detail);
+        }
     }
     Ok(())
 }
@@ -532,6 +590,101 @@ fn systemd_quote(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn health(readiness: RuntimeReadiness) -> RuntimeHealthSnapshot {
+        RuntimeHealthSnapshot {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            readiness,
+            degraded: matches!(
+                readiness,
+                RuntimeReadiness::Reconnecting
+                    | RuntimeReadiness::Degraded
+                    | RuntimeReadiness::Terminal
+            ),
+            last_error: None,
+        }
+    }
+
+    #[test]
+    fn control_health_keeps_starting_and_reconnecting_distinct_from_failures() {
+        for (readiness, expected) in [
+            (RuntimeReadiness::Starting, DesktopRuntimePhase::Starting),
+            (RuntimeReadiness::Ready, DesktopRuntimePhase::Running),
+            (RuntimeReadiness::Paused, DesktopRuntimePhase::Paused),
+            (
+                RuntimeReadiness::Reconnecting,
+                DesktopRuntimePhase::Reconnecting,
+            ),
+            (RuntimeReadiness::Degraded, DesktopRuntimePhase::Degraded),
+            (RuntimeReadiness::Terminal, DesktopRuntimePhase::Degraded),
+        ] {
+            let (phase, detail) = runtime_health_presentation(health(readiness));
+            assert_eq!(phase, expected);
+            assert!(detail.is_empty());
+        }
+    }
+
+    #[test]
+    fn reconnecting_keeps_its_diagnostic_without_becoming_a_terminal_failure() {
+        let mut snapshot = health(RuntimeReadiness::Reconnecting);
+        snapshot.last_error = Some("mouse temporarily unavailable".to_owned());
+        let (phase, detail) = runtime_health_presentation(snapshot);
+        assert_eq!(phase, DesktopRuntimePhase::Reconnecting);
+        assert_eq!(detail, "mouse temporarily unavailable");
+    }
+
+    #[test]
+    fn version_mismatch_and_inconsistent_ready_health_still_need_attention() {
+        let mut wrong_version = health(RuntimeReadiness::Starting);
+        wrong_version.version = "0.0.0".to_owned();
+        let (phase, detail) = runtime_health_presentation(wrong_version);
+        assert_eq!(phase, DesktopRuntimePhase::Degraded);
+        assert!(detail.contains("does not match application"));
+
+        let mut degraded = health(RuntimeReadiness::Ready);
+        degraded.degraded = true;
+        assert_eq!(
+            runtime_health_presentation(degraded).0,
+            DesktopRuntimePhase::Degraded
+        );
+
+        let mut failed = health(RuntimeReadiness::Ready);
+        failed.last_error = Some("action backend unavailable".to_owned());
+        assert_eq!(
+            runtime_health_presentation(failed),
+            (
+                DesktopRuntimePhase::Degraded,
+                "action backend unavailable".to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn startup_wait_uses_typed_state_instead_of_diagnostic_text() {
+        for (phase, control_pending, expected) in [
+            (DesktopRuntimePhase::Starting, false, true),
+            (DesktopRuntimePhase::Degraded, true, true),
+            (DesktopRuntimePhase::Running, false, false),
+            (DesktopRuntimePhase::Paused, false, false),
+            (DesktopRuntimePhase::Paused, true, false),
+            (DesktopRuntimePhase::Reconnecting, false, false),
+            (DesktopRuntimePhase::Degraded, false, false),
+        ] {
+            let mut observation = ServiceStatusObservation {
+                status: DesktopRuntimeStatus {
+                    active: true,
+                    phase,
+                    ..DesktopRuntimeStatus::default()
+                },
+                control_pending,
+            };
+            assert_eq!(observation.should_wait(), expected);
+            observation.status.detail = "control endpoint is unavailable".to_owned();
+            assert_eq!(observation.should_wait(), expected);
+            observation.status.active = false;
+            assert!(!observation.should_wait());
+        }
+    }
 
     #[test]
     fn package_unit_is_fixed_and_hardened() {

@@ -87,6 +87,28 @@ pub fn execute_prepared_master3s_settings_transaction(
     platform::execute_prepared_master3s_settings_transaction(transaction)
 }
 
+pub(crate) fn prepare_master3s_runtime_plan(
+    device_id: &str,
+    settings: &Master3sSettings,
+    plan: &SettingsApplyPlan,
+) -> Result<PreparedSettingsTransaction> {
+    if plan.device_id != device_id {
+        return Err(DogiError::InvalidArgument(
+            "runtime plan targets another device".to_owned(),
+        ));
+    }
+    let settings = settings.normalized();
+    transactions::validate_runtime_apply_plan(&settings, plan)?;
+    platform::prepare_master3s_settings_plan(device_id, &settings, plan)
+}
+
+pub(crate) fn restore_runtime_settings(
+    transaction: &PreparedSettingsTransaction,
+) -> Result<SettingsApplyReport> {
+    transaction.validate_recovery()?;
+    platform::restore_runtime_settings(transaction)
+}
+
 pub fn recover_prepared_master3s_settings_transaction(
     transaction: &PreparedSettingsTransaction,
 ) -> Result<SettingsApplyReport> {
@@ -398,6 +420,18 @@ mod platform {
             features: &paired.features,
         };
         recover_prepared_transaction(&mut io, transaction)
+    }
+
+    pub(crate) fn restore_runtime_settings(
+        transaction: &PreparedSettingsTransaction,
+    ) -> Result<SettingsApplyReport> {
+        let (mut client, paired) = open_prepared_transaction(transaction)?;
+        let mut io = HidppSettingsIo {
+            client: &mut client,
+            slot: paired.slot,
+            features: &paired.features,
+        };
+        restore_runtime_transaction(&mut io, transaction)
     }
 
     fn open_prepared_transaction(
@@ -1063,6 +1097,36 @@ mod platform {
         })
     }
 
+    fn restore_runtime_transaction(
+        io: &mut impl SettingsTransactionIo,
+        transaction: &PreparedSettingsTransaction,
+    ) -> Result<SettingsApplyReport> {
+        let mut owned = transaction.clone();
+        // A runtime lease is not an interrupted commit: another explicit writer
+        // may legitimately have taken ownership since this snapshot was captured.
+        let mut changes = Vec::new();
+        for change in &transaction.changes {
+            let current = io.read(change)?;
+            let mut change = change.clone();
+            for byte in &mut change.verification {
+                let actual = current.get(byte.response_index).ok_or_else(|| {
+                    DogiError::Protocol("incomplete device state during lease release".to_owned())
+                })?;
+                if change.feature == HidppFeature::HiresWheel {
+                    byte.mask &= !(actual ^ byte.after);
+                }
+            }
+            if change.verification.iter().all(|byte| byte.mask == 0) {
+                continue;
+            }
+            if change_matches(&current, &change, true) {
+                changes.push(change);
+            }
+        }
+        owned.changes = changes;
+        recover_prepared_transaction(io, &owned)
+    }
+
     struct VerifiedSettingsTarget {
         paired: PairedDeviceInfo,
         pairing_serial: Option<String>,
@@ -1660,12 +1724,19 @@ mod platform {
         change: &PreparedHidChange,
         after: bool,
     ) -> Result<()> {
-        let payload = if after {
+        let stored = if after {
             &change.after_write
         } else {
             &change.before_write
         };
-        io.write(change, payload)?;
+        let current = io.read(change)?;
+        if !change_matches(&current, change, false) && !change_matches(&current, change, true) {
+            return Err(DogiError::Protocol(
+                "device state changed before writing".to_owned(),
+            ));
+        }
+        let payload = preserved_write_payload(change, stored, &current)?;
+        io.write(change, &payload)?;
         let current = io.read(change)?;
         if !change_matches(&current, change, after) {
             return Err(DogiError::Protocol(format!(
@@ -1674,6 +1745,43 @@ mod platform {
             )));
         }
         Ok(())
+    }
+
+    fn preserved_write_payload(
+        change: &PreparedHidChange,
+        stored: &[u8],
+        current: &[u8],
+    ) -> Result<Vec<u8>> {
+        if !matches!(
+            change.feature,
+            HidppFeature::HiresWheel
+                | HidppFeature::ThumbWheel
+                | HidppFeature::ReprogrammableControls
+        ) {
+            return Ok(stored.to_vec());
+        }
+        let mut payload = current
+            .get(..stored.len())
+            .ok_or_else(|| {
+                DogiError::Protocol("incomplete device state before masked write".to_owned())
+            })?
+            .to_vec();
+        for byte in &change.verification {
+            let desired = *stored
+                .get(byte.response_index)
+                .ok_or_else(|| DogiError::Protocol("invalid masked write payload".to_owned()))?;
+            let value = payload
+                .get_mut(byte.response_index)
+                .ok_or_else(|| DogiError::Protocol("invalid masked write offset".to_owned()))?;
+            *value = (*value & !byte.mask) | (desired & byte.mask);
+        }
+        if change.feature == HidppFeature::ReprogrammableControls {
+            let flags = payload.get_mut(2).ok_or_else(|| {
+                DogiError::Protocol("incomplete button routing payload".to_owned())
+            })?;
+            *flags |= REPROG_MAPPING_FLAG_DIVERTED_VALID | REPROG_MAPPING_FLAG_RAW_XY_VALID;
+        }
+        Ok(payload)
     }
 
     fn rollback_attempted(
@@ -3832,6 +3940,135 @@ mod platform {
             fail_after_write: Option<usize>,
         }
 
+        #[test]
+        fn runtime_release_restores_captured_values_not_application_defaults() {
+            let mut transaction = test_transaction();
+            transaction.changes = vec![transaction_change(0x2205, 73, 150)];
+            let mut io = FakeSettingsIo {
+                states: [(0x2205, vec![150])].into(),
+                ..FakeSettingsIo::default()
+            };
+            let report = restore_runtime_transaction(&mut io, &transaction).unwrap();
+            assert_eq!(report.transaction, SettingsTransactionState::RolledBack);
+            assert_eq!(io.states[&0x2205], [73]);
+            assert_eq!(io.writes.len(), 1);
+            restore_runtime_transaction(&mut io, &transaction).unwrap();
+            assert_eq!(io.writes.len(), 1, "recovery is idempotent");
+        }
+
+        #[test]
+        fn runtime_release_does_not_overwrite_a_later_external_change() {
+            let mut transaction = test_transaction();
+            transaction.changes = vec![transaction_change(0x2205, 73, 150)];
+            let mut io = FakeSettingsIo {
+                states: [(0x2205, vec![115])].into(),
+                ..FakeSettingsIo::default()
+            };
+            let report = restore_runtime_transaction(&mut io, &transaction).unwrap();
+            assert_eq!(report.transaction, SettingsTransactionState::RolledBack);
+            assert!(io.writes.is_empty());
+            assert_eq!(io.states[&0x2205], [115]);
+        }
+
+        #[test]
+        fn incomplete_runtime_state_is_not_mistaken_for_an_external_change() {
+            let mut transaction = test_transaction();
+            transaction.changes = vec![transaction_change(0x2205, 73, 150)];
+            let mut io = FakeSettingsIo {
+                states: [(0x2205, vec![])].into(),
+                ..FakeSettingsIo::default()
+            };
+            assert!(matches!(
+                restore_runtime_transaction(&mut io, &transaction),
+                Err(DogiError::Protocol(_))
+            ));
+            assert!(io.writes.is_empty());
+        }
+
+        fn scroll_change(before: u8, after: u8, mask: u8) -> PreparedHidChange {
+            let mut change = transaction_change(HIDPP_FEATURE_HIRES_WHEEL, before, after);
+            change.feature = HidppFeature::HiresWheel;
+            change.operation = SettingsApplyOperation::ScrollBehavior {
+                high_resolution: Some(after & 2 != 0),
+                natural: Some(after & 4 != 0),
+            };
+            change.verification[0].mask = mask;
+            change
+        }
+
+        #[test]
+        fn restoring_scroll_direction_preserves_the_current_resolution_and_diversion() {
+            let mut transaction = test_transaction();
+            transaction.changes = vec![scroll_change(0, 4, 4)];
+            let mut io = FakeSettingsIo {
+                states: [(HIDPP_FEATURE_HIRES_WHEEL, vec![7])].into(),
+                ..FakeSettingsIo::default()
+            };
+            restore_runtime_transaction(&mut io, &transaction).unwrap();
+            assert_eq!(io.states[&HIDPP_FEATURE_HIRES_WHEEL], [3]);
+        }
+
+        #[test]
+        fn explicit_direction_changes_preserve_resolution_changed_after_preview() {
+            let mut transaction = test_transaction();
+            transaction.changes = vec![scroll_change(0, 4, 4)];
+            let mut io = FakeSettingsIo {
+                states: [(HIDPP_FEATURE_HIRES_WHEEL, vec![3])].into(),
+                ..FakeSettingsIo::default()
+            };
+            assert!(
+                execute_prepared_transaction(&mut io, &transaction)
+                    .unwrap()
+                    .committed()
+            );
+            assert_eq!(io.states[&HIDPP_FEATURE_HIRES_WHEEL], [7]);
+        }
+
+        #[test]
+        fn explicitly_saved_scroll_field_is_not_restored_over_even_at_same_value() {
+            let mut transaction = test_transaction();
+            transaction.changes = vec![scroll_change(0, 6, 6)];
+            let settings = Master3sSettings::default();
+            let mut plan = crate::domain::build_master3s_apply_plan("device", &settings);
+            plan.steps
+                .retain(|step| step.feature == HidppFeature::HiresWheel);
+            plan.steps[0].operation = SettingsApplyOperation::ScrollBehavior {
+                high_resolution: Some(true),
+                natural: None,
+            };
+            transaction.relinquish(&plan);
+            assert_eq!(transaction.changes[0].verification[0].mask, 4);
+            let mut io = FakeSettingsIo {
+                states: [(HIDPP_FEATURE_HIRES_WHEEL, vec![6])].into(),
+                ..FakeSettingsIo::default()
+            };
+            restore_runtime_transaction(&mut io, &transaction).unwrap();
+            assert_eq!(io.states[&HIDPP_FEATURE_HIRES_WHEEL], [2]);
+        }
+
+        #[test]
+        fn failed_runtime_restoration_keeps_a_recoverable_state() {
+            let mut transaction = test_transaction();
+            transaction.changes = vec![transaction_change(0x2205, 73, 150)];
+            let mut io = FakeSettingsIo {
+                states: [(0x2205, vec![150])].into(),
+                fail_after_write: Some(1),
+                ..FakeSettingsIo::default()
+            };
+            assert_eq!(
+                restore_runtime_transaction(&mut io, &transaction)
+                    .unwrap()
+                    .transaction,
+                SettingsTransactionState::RecoveryRequired
+            );
+            assert_eq!(
+                restore_runtime_transaction(&mut io, &transaction)
+                    .unwrap()
+                    .transaction,
+                SettingsTransactionState::RolledBack
+            );
+        }
+
         impl SettingsTransactionIo for FakeSettingsIo {
             fn read(&mut self, change: &PreparedHidChange) -> Result<Vec<u8>> {
                 self.states.get(&change.feature_id).cloned().ok_or_else(|| {
@@ -5288,6 +5525,12 @@ mod platform {
         Err(DogiError::BackendUnavailable(
             "only Linux hidraw HID++ settings are implemented".to_owned(),
         ))
+    }
+
+    pub fn restore_runtime_settings(
+        transaction: &PreparedSettingsTransaction,
+    ) -> Result<SettingsApplyReport> {
+        recover_prepared_master3s_settings_transaction(transaction)
     }
 
     pub fn listen_master3s_runtime_events(

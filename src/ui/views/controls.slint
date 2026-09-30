@@ -1,6 +1,78 @@
 import { ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 
+export component FocusableArea {
+    in property <bool> enabled: true;
+    out property <bool> pressed <=> pointer-area.pressed;
+    out property <bool> has-hover <=> pointer-area.has-hover;
+    out property <bool> has-focus <=> focus-scope.has-focus;
+    callback clicked();
+
+    forward-focus: focus-scope;
+
+    pointer-area := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            focus-scope.focus();
+            root.clicked();
+        }
+    }
+
+    focus-scope := FocusScope {
+        width: 0px;
+        height: 0px;
+        enabled: root.enabled;
+
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+export component ActionButton inherits Rectangle {
+    in property <string> title;
+    in property <bool> primary: false;
+    in property <bool> destructive: false;
+    in property <bool> warning: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 36px;
+    border-radius: 5px;
+    border-width: button-area.has-focus ? 2px : root.primary ? 0px : 1px;
+    border-color: button-area.has-focus ? (root.warning ? Theme.warning : Theme.accent) : root.destructive ? Theme.danger : root.warning ? Theme.warning-border : Theme.control-border;
+    background: !root.enabled ? Theme.surface : root.primary ? (button-area.pressed ? Theme.accent-bg-active : button-area.has-hover ? Theme.accent-bg-hover : Theme.accent-bg) : root.warning ? (button-area.pressed ? Theme.warning-border : button-area.has-hover ? Theme.warning-bg : Theme.panel) : button-area.pressed ? Theme.selected : button-area.has-hover ? Theme.hover : Theme.panel;
+    opacity: root.enabled ? 1 : 0.55;
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-action-default => { if (root.enabled) { root.clicked(); } }
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.title;
+        color: !root.enabled ? Theme.text-faint : root.primary ? Theme.accent-text : root.destructive ? Theme.danger : root.warning ? Theme.warning : Theme.text;
+        font-size: 11px;
+        font-weight: root.primary ? 600 : 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    button-area := FocusableArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
 export component FormComboBox inherits Rectangle {
     in property <[string]> model;
     in property <bool> enabled: true;
