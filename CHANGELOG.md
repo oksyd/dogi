@@ -3,6 +3,10 @@
 ### 🚀 Features
 
 - Add redacted local diagnostic logs
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.1.20
 ## [0.1.19] - 2026-09-30
 
 ### 🐛 Bug Fixes
