@@ -1,8 +1,17 @@
+## [0.1.20] - 2026-09-30
+
+### 🚀 Features
+
+- Add redacted local diagnostic logs
 ## [0.1.19] - 2026-09-30
 
 ### 🐛 Bug Fixes
 
 - Stabilize HID++ device lookup and configuration access
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.1.19
 ## [0.1.18] - 2026-09-25
 
 ### 🚜 Refactor
