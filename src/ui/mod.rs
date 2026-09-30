@@ -461,9 +461,22 @@ fn start_horizontal_scroll_preview_worker(
             .name("dogi-horizontal-scroll-preview".to_owned())
             .spawn(move || {
                 let mut active = false;
+                let mut cleanup_required = false;
                 while let Ok(work) = work_receiver.recv() {
+                    let setting_preview =
+                        matches!(&work.command, HorizontalScrollPreviewCommand::Set { .. });
+                    // A failed or timed-out Set may still have reached the runtime.
+                    // Keep cleanup required until a Clear is acknowledged. Tracking
+                    // this in the serial worker also covers queued Set requests.
+                    cleanup_required |= setting_preview;
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        handler(work.command.clone())
+                        if cleanup_required {
+                            handler(work.command.clone())
+                        } else {
+                            // No preview owned by this window: exiting must not
+                            // depend on runtime availability or contact the mouse.
+                            Ok(())
+                        }
                     }))
                     .unwrap_or_else(|_| {
                         Err(DogiError::Ui(
@@ -471,8 +484,8 @@ fn start_horizontal_scroll_preview_worker(
                         ))
                     });
                     if result.is_ok() {
-                        active =
-                            matches!(&work.command, HorizontalScrollPreviewCommand::Set { .. });
+                        active = setting_preview;
+                        cleanup_required = setting_preview;
                     }
                     if let Some(acknowledgement) = work.acknowledgement {
                         let _ = acknowledgement.send(HorizontalScrollPreviewAcknowledgement {
@@ -567,6 +580,25 @@ impl UiStatus {
 
 fn set_window_status(window: &MainWindow, status: UiStatus) {
     window.set_status(status);
+}
+
+fn prepare_window_exit(
+    window: &MainWindow,
+    session: &HorizontalScrollPreviewSession,
+    poll_timer: &slint::Timer,
+    heartbeat_timer: &slint::Timer,
+    update_in_flight: bool,
+    network_in_flight: bool,
+) -> bool {
+    window.set_quit_confirm_visible(false);
+    allow_window_exit(window, update_in_flight, network_in_flight)
+        && clear_horizontal_scroll_preview_before_exit(
+            window,
+            session,
+            poll_timer,
+            heartbeat_timer,
+            PREVIEW_EXIT_CLEAR_TIMEOUT,
+        )
 }
 
 fn clear_horizontal_scroll_preview_before_exit(
@@ -908,8 +940,18 @@ fn dispatch_desktop_runtime_operation(
     sender.send(operation).is_ok()
 }
 
-fn has_blocking_exit_task(settings: bool, runtime: bool, update: bool, network: bool) -> bool {
-    settings || runtime || update || network
+fn allow_window_exit(window: &MainWindow, update_in_flight: bool, network_in_flight: bool) -> bool {
+    let blocked = window.get_apply_busy()
+        || window.get_runtime_busy()
+        || (update_in_flight && window.get_update_state() == UpdateState::Installing)
+        || (network_in_flight && window.get_network_test_state() == NetworkTestState::Saving);
+    if blocked {
+        set_window_status(
+            window,
+            UiStatus::presentation(UiStatusKind::Info, UiMessage::ExitTaskInProgress),
+        );
+    }
+    !blocked
 }
 
 fn dispatch_application_update(
@@ -1508,6 +1550,15 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
                                 )))
                             }
                         });
+                    if let SettingsTransactionCompletionResult::Prepared(Err(error))
+                    | SettingsTransactionCompletionResult::Committed(Err(error)) = &result
+                    {
+                        let stage = match work.kind {
+                            SettingsTransactionWorkKind::Prepare => "preparation",
+                            SettingsTransactionWorkKind::Commit => "commit",
+                        };
+                        eprintln!("Dogi settings {stage} failed: {error}");
+                    }
                     let _ = settings_completion_sender
                         .send(SettingsTransactionCompletion { work, result });
                 }
@@ -1555,24 +1606,15 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         let Some(window) = confirm_quit_window.upgrade() else {
             return;
         };
-        if has_blocking_exit_task(
-            window.get_apply_busy(),
-            window.get_runtime_busy(),
-            confirm_quit_update.get(),
-            confirm_quit_network.get(),
-        ) {
-            window.set_quit_confirm_visible(false);
-            let _ = window.show();
-            return;
-        }
-        window.set_quit_confirm_visible(false);
-        if !clear_horizontal_scroll_preview_before_exit(
+        if !prepare_window_exit(
             &window,
             &confirm_quit_preview,
             &confirm_quit_preview_poll,
             &confirm_quit_preview_heartbeat,
-            PREVIEW_EXIT_CLEAR_TIMEOUT,
+            confirm_quit_update.get(),
+            confirm_quit_network.get(),
         ) {
+            let _ = window.show();
             return;
         }
         if let Some(tray) = confirm_quit_tray.as_ref().and_then(|tray| tray.upgrade()) {
@@ -1602,27 +1644,20 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
             let Some(window) = tray_quit_window.upgrade() else {
                 return;
             };
-            if has_blocking_exit_task(
-                window.get_apply_busy(),
-                window.get_runtime_busy(),
-                tray_quit_update.get(),
-                tray_quit_network.get(),
-            ) {
-                let _ = window.show();
-                return;
-            }
             if tray_quit_session.borrow().any_dirty() {
                 let _ = window.show();
                 window.set_quit_confirm_visible(true);
                 return;
             }
-            if !clear_horizontal_scroll_preview_before_exit(
+            if !prepare_window_exit(
                 &window,
                 &tray_quit_preview,
                 &tray_quit_preview_poll,
                 &tray_quit_preview_heartbeat,
-                PREVIEW_EXIT_CLEAR_TIMEOUT,
+                tray_quit_update.get(),
+                tray_quit_network.get(),
             ) {
+                let _ = window.show();
                 return;
             }
             if let Some(tray) = tray_quit_icon.upgrade() {
@@ -1655,23 +1690,16 @@ fn launch_internal(state: UiState, integrations: LaunchIntegrations) -> Result<(
         let Some(window) = close_request_window.upgrade() else {
             return slint::CloseRequestResponse::HideWindow;
         };
-        if has_blocking_exit_task(
-            window.get_apply_busy(),
-            window.get_runtime_busy(),
-            close_request_update.get(),
-            close_request_network.get(),
-        ) {
-            return slint::CloseRequestResponse::KeepWindowShown;
-        }
         if close_request_session.borrow().any_dirty() {
             window.set_quit_confirm_visible(true);
             slint::CloseRequestResponse::KeepWindowShown
-        } else if !clear_horizontal_scroll_preview_before_exit(
+        } else if !prepare_window_exit(
             &window,
             &close_request_preview,
             &close_request_preview_poll,
             &close_request_preview_heartbeat,
-            PREVIEW_EXIT_CLEAR_TIMEOUT,
+            close_request_update.get(),
+            close_request_network.get(),
         ) {
             slint::CloseRequestResponse::KeepWindowShown
         } else {
@@ -4755,18 +4783,6 @@ fn button_index(button: Master3sButton) -> i32 {
 mod tests {
     use super::*;
 
-    #[test]
-    fn non_preview_mutating_tasks_block_window_exit() {
-        assert!(!has_blocking_exit_task(false, false, false, false));
-        for state in [
-            (true, false, false, false),
-            (false, true, false, false),
-            (false, false, true, false),
-            (false, false, false, true),
-        ] {
-            assert!(has_blocking_exit_task(state.0, state.1, state.2, state.3));
-        }
-    }
     use crate::domain::{
         BusKind, ConnectionKind, DeviceAccess, DeviceCapabilities, HidppFeature,
         HidppProtocolVersion, PairedDeviceInfo, ReceiverKind, ReportDescriptorInfo,
@@ -4783,6 +4799,166 @@ mod tests {
         },
         thread,
     };
+
+    #[test]
+    fn read_only_background_tasks_do_not_block_window_exit() {
+        let _runtime = SnapshotRuntime::builder()
+            .clock_mode(ClockMode::Manual)
+            .build()
+            .unwrap();
+        let window = MainWindow::new().unwrap();
+        for update_state in [UpdateState::Idle, UpdateState::Checking, UpdateState::Ready] {
+            window.set_update_state(update_state);
+            window.set_network_test_state(NetworkTestState::Testing);
+            assert!(allow_window_exit(&window, true, true));
+            assert_eq!(window.get_status().message, UiMessage::None);
+        }
+    }
+
+    #[test]
+    fn mutating_tasks_block_exit_with_visible_feedback() {
+        let _runtime = SnapshotRuntime::builder()
+            .clock_mode(ClockMode::Manual)
+            .build()
+            .unwrap();
+        let window = MainWindow::new().unwrap();
+        for (settings, runtime, update, network) in [
+            (true, false, false, false),
+            (false, true, false, false),
+            (false, false, true, false),
+            (false, false, false, true),
+        ] {
+            window.set_apply_busy(settings);
+            window.set_runtime_busy(runtime);
+            window.set_update_state(if update {
+                UpdateState::Installing
+            } else {
+                UpdateState::Idle
+            });
+            window.set_network_test_state(if network {
+                NetworkTestState::Saving
+            } else {
+                NetworkTestState::Idle
+            });
+            window.set_status(UiStatus::default());
+            assert!(!allow_window_exit(&window, update, network));
+            assert_eq!(window.get_status().message, UiMessage::ExitTaskInProgress);
+        }
+    }
+
+    #[test]
+    fn unused_preview_does_not_contact_an_unavailable_runtime_on_exit() {
+        let calls = Arc::new(Mutex::new(0));
+        let handler_calls = calls.clone();
+        let handler: HorizontalScrollPreviewHandler = Arc::new(move |_| {
+            *handler_calls.lock().unwrap() += 1;
+            Err(DogiError::BackendUnavailable(
+                "runtime is stopped".to_owned(),
+            ))
+        });
+        let (session, _, available) = start_horizontal_scroll_preview_worker(Some(handler));
+        assert!(available);
+
+        // Both the close callback and the final event-loop cleanup are harmless.
+        session.clear_and_wait(Duration::from_secs(1)).unwrap();
+        session.clear_and_wait(Duration::from_secs(1)).unwrap();
+        assert_eq!(*calls.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn quit_without_saving_button_exits_with_background_checks_and_no_runtime() {
+        let runtime = SnapshotRuntime::builder()
+            .clock_mode(ClockMode::Manual)
+            .build()
+            .unwrap();
+        let window = MainWindow::new().unwrap();
+        window.show().unwrap();
+        runtime.set_size(window.window(), (1260, 780), 1.0).unwrap();
+        window.set_draft_dirty(true);
+        window.set_quit_confirm_visible(true);
+        window.set_update_state(UpdateState::Checking);
+        window.set_network_test_state(NetworkTestState::Testing);
+
+        let handler: HorizontalScrollPreviewHandler = Arc::new(|_| {
+            Err(DogiError::BackendUnavailable(
+                "runtime is stopped".to_owned(),
+            ))
+        });
+        let (session, _, _) = start_horizontal_scroll_preview_worker(Some(handler));
+        let quit_window = window.as_weak();
+        let accepted = Rc::new(Cell::new(false));
+        let quit_accepted = accepted.clone();
+        window.on_confirm_quit(move || {
+            let window = quit_window.upgrade().unwrap();
+            if prepare_window_exit(
+                &window,
+                &session,
+                &slint::Timer::default(),
+                &slint::Timer::default(),
+                true,
+                true,
+            ) {
+                quit_accepted.set(true);
+                window.hide().unwrap();
+            }
+        });
+        runtime.render(window.window()).unwrap();
+
+        let position = slint::LogicalPosition { x: 755.0, y: 462.0 };
+        window
+            .window()
+            .dispatch_event(slint::platform::WindowEvent::PointerPressed {
+                position,
+                button: slint::platform::PointerEventButton::Left,
+            });
+        window
+            .window()
+            .dispatch_event(slint::platform::WindowEvent::PointerReleased {
+                position,
+                button: slint::platform::PointerEventButton::Left,
+            });
+
+        assert!(accepted.get());
+        assert!(!window.window().is_visible());
+        assert!(!window.get_quit_confirm_visible());
+        // Exit does not mark the draft as saved or try to apply it to the mouse.
+        assert!(window.get_draft_dirty());
+    }
+
+    #[test]
+    fn failed_preview_start_still_requires_acknowledged_cleanup() {
+        let commands = Arc::new(Mutex::new(Vec::new()));
+        let handled_commands = commands.clone();
+        let handler: HorizontalScrollPreviewHandler = Arc::new(move |command| {
+            handled_commands.lock().unwrap().push(command.clone());
+            match command {
+                HorizontalScrollPreviewCommand::Set { .. } => {
+                    Err(DogiError::Transport("reply was lost".to_owned()))
+                }
+                HorizontalScrollPreviewCommand::Clear => Ok(()),
+            }
+        });
+        let (session, completions, _) = start_horizontal_scroll_preview_worker(Some(handler));
+        let command = HorizontalScrollPreviewCommand::Set {
+            device_id: "mouse-1".to_owned(),
+            speed_percent: 160,
+        };
+        assert!(session.dispatch(command.clone()));
+        assert!(
+            completions
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap()
+                .result
+                .is_err()
+        );
+
+        session.clear_and_wait(Duration::from_secs(1)).unwrap();
+        session.clear_and_wait(Duration::from_secs(1)).unwrap();
+        assert_eq!(
+            commands.lock().unwrap().as_slice(),
+            &[command, HorizontalScrollPreviewCommand::Clear]
+        );
+    }
 
     #[test]
     fn active_preview_quit_cleanup_is_serial_and_confirmed() {

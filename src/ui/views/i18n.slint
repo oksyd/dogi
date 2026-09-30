@@ -261,6 +261,8 @@ export global StatusTranslations {
             ? @tr("System tray is unavailable: {}", status.detail)
             : status.message == UiMessage.tray-unavailable
             ? @tr("System tray is unavailable")
+            : status.message == UiMessage.exit-task-in-progress
+            ? @tr("An operation is in progress. Please wait before quitting.")
             : status.message == UiMessage.preview-cleanup-failed && status.detail != ""
             ? @tr("Could not stop the horizontal scroll test, so Dogi will stay open: {}", status.detail)
             : status.message == UiMessage.preview-cleanup-failed

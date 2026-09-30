@@ -28,6 +28,7 @@ use super::session::{SessionObserver, SessionSnapshot};
 const PREVIEW_DIVERSION_SPEED_PERCENT: u16 = 101;
 const TRANSIENT_RETRY_DELAY: Duration = Duration::from_secs(3);
 const DEGRADED_RETRY_DELAY: Duration = Duration::from_secs(15);
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(30);
 const ACTIVE_DEVICE_STATE_VERSION: u8 = 1;
 
 #[derive(Clone, Debug)]
@@ -37,6 +38,12 @@ pub(crate) struct RuntimeSupervisorOptions {
     pub(crate) idle_timeout: Duration,
     pub(crate) execute_actions: bool,
     pub(crate) allow_device_write: bool,
+}
+
+struct RuntimeSessionState {
+    battery_monitor: BatteryNotificationMonitor,
+    active_device: ActiveDeviceSelector,
+    failures: FailureTracker,
 }
 
 pub(crate) fn run(
@@ -51,13 +58,17 @@ pub(crate) fn run(
     let session_observer = SessionObserver::start();
     let application_store = ApplicationConfigStore::for_environment(environment);
     let battery_state_path = environment.paths.battery_notification_state();
-    let mut battery_monitor = BatteryNotificationMonitor::load(battery_state_path.clone())
+    let battery_monitor = BatteryNotificationMonitor::load(battery_state_path.clone())
         .unwrap_or_else(|error| {
             eprintln!("battery notification state was reset: {error}");
             BatteryNotificationMonitor::empty(battery_state_path)
         });
     let mut recovery_complete = false;
-    let mut active_device = ActiveDeviceSelector::for_environment(environment);
+    let mut state = RuntimeSessionState {
+        battery_monitor,
+        active_device: ActiveDeviceSelector::for_environment(environment),
+        failures: FailureTracker::default(),
+    };
 
     if options.max_events.is_some() {
         recover_runtime_transaction(daemon, &control, &mut recovery_complete)?;
@@ -67,8 +78,7 @@ pub(crate) fn run(
                 &control,
                 &session_observer,
                 &application_store,
-                &mut battery_monitor,
-                &mut active_device,
+                &mut state,
                 daemon,
             )? {
                 RuntimeSessionOutcome::Completed => return Ok(()),
@@ -77,7 +87,6 @@ pub(crate) fn run(
         }
     }
 
-    let mut failures = FailureTracker::default();
     loop {
         if shutdown_requested() {
             return Ok(());
@@ -89,19 +98,18 @@ pub(crate) fn run(
                     &control,
                     &session_observer,
                     &application_store,
-                    &mut battery_monitor,
-                    &mut active_device,
+                    &mut state,
                     daemon,
                 )
             });
         match result {
             Ok(RuntimeSessionOutcome::Completed) => return Ok(()),
-            Ok(RuntimeSessionOutcome::SwitchDevice) => failures.reset(),
+            Ok(RuntimeSessionOutcome::SwitchDevice) => state.failures.reset(),
             Err(error) => {
                 control.fail_pending(error.to_string());
                 let failure = RuntimeFailure::classify(error);
-                failures.publish(&control, &failure);
-                wait_after_failure(&failure, environment);
+                state.failures.publish(&control, &failure);
+                wait_after_failure(state.failures.next_retry_delay(&failure), environment);
             }
         }
     }
@@ -137,10 +145,14 @@ fn run_session(
     control: &RuntimePreviewState,
     session_observer: &SessionObserver,
     application_store: &ApplicationConfigStore,
-    battery_monitor: &mut BatteryNotificationMonitor,
-    active_device: &mut ActiveDeviceSelector,
+    state: &mut RuntimeSessionState,
     daemon: &DeviceService,
 ) -> Result<RuntimeSessionOutcome> {
+    let RuntimeSessionState {
+        battery_monitor,
+        active_device,
+        failures,
+    } = state;
     let preview_device_id = control.snapshot().preview.map(|preview| preview.device_id);
     let requested_device_id = options
         .device_id
@@ -351,10 +363,6 @@ fn run_session(
                 &device_name,
                 &mut battery_runtime,
             );
-            if events.is_empty() {
-                continue;
-            }
-
             for event in events {
                 let execution_snapshot = session_observer.snapshot();
                 synchronize_session(
@@ -386,6 +394,9 @@ fn run_session(
                     return Ok(RuntimeSessionOutcome::Completed);
                 }
             }
+            // Reset only after a successful session iteration (including an
+            // idle read), not merely after opening the endpoint.
+            failures.reset();
         }
     })();
     let restoration = device_lease.release_base();
@@ -411,8 +422,8 @@ fn wait_for_retry(delay: Duration) {
     }
 }
 
-fn wait_after_failure(failure: &RuntimeFailure, environment: &AppEnvironment) {
-    match failure.retry_delay() {
+fn wait_after_failure(retry_delay: Option<Duration>, environment: &AppEnvironment) {
+    match retry_delay {
         Some(delay) => wait_for_retry(delay),
         None => wait_for_relevant_state_change(environment),
     }
@@ -1246,12 +1257,23 @@ impl RuntimeFailure {
 struct FailureTracker {
     previous: String,
     repetitions: u32,
+    retry_delay: Option<Duration>,
 }
 
 impl FailureTracker {
     fn reset(&mut self) {
-        self.previous.clear();
-        self.repetitions = 0;
+        *self = Self::default();
+    }
+
+    fn next_retry_delay(&mut self, failure: &RuntimeFailure) -> Option<Duration> {
+        // Error text or category can vary between attempts without indicating
+        // recovery. Only session progress resets the consecutive-failure delay.
+        self.retry_delay = failure.retry_delay().map(|minimum| {
+            self.retry_delay
+                .map_or(minimum, |previous| previous.saturating_mul(2).max(minimum))
+                .min(MAX_RETRY_DELAY)
+        });
+        self.retry_delay
     }
 
     fn publish(&mut self, control: &RuntimePreviewState, failure: &RuntimeFailure) {
@@ -1370,6 +1392,71 @@ mod tests {
         assert_eq!(terminal.retry_delay(), None);
         assert_eq!(transient.kind, RuntimeFailureKind::Transient);
         assert_eq!(transient.retry_delay(), Some(TRANSIENT_RETRY_DELAY));
+    }
+
+    #[test]
+    fn repeated_connection_failures_back_off_with_a_bounded_delay() {
+        let mut tracker = FailureTracker::default();
+        let failure = RuntimeFailure::classify(DogiError::DeviceNotFound);
+
+        for seconds in [3, 6, 12, 24, 30, 30] {
+            assert_eq!(
+                tracker.next_retry_delay(&failure),
+                Some(Duration::from_secs(seconds))
+            );
+        }
+        for _ in 0..1_000 {
+            assert_eq!(tracker.next_retry_delay(&failure), Some(MAX_RETRY_DELAY));
+        }
+    }
+
+    #[test]
+    fn changing_errors_do_not_reset_connection_backoff() {
+        let mut tracker = FailureTracker::default();
+        for (error, seconds) in [
+            (DogiError::DeviceNotFound, 3),
+            (DogiError::Transport("endpoint busy".to_owned()), 6),
+            (DogiError::Protocol("invalid reply".to_owned()), 15),
+            (DogiError::Transport("device not responding".to_owned()), 30),
+        ] {
+            assert_eq!(
+                tracker.next_retry_delay(&RuntimeFailure::classify(error)),
+                Some(Duration::from_secs(seconds))
+            );
+        }
+    }
+
+    #[test]
+    fn recovered_session_resets_retry_delay_and_error_history() {
+        let failure = RuntimeFailure::classify(DogiError::DeviceNotFound);
+        let mut tracker = FailureTracker {
+            previous: failure.detail.clone(),
+            repetitions: 20,
+            retry_delay: Some(MAX_RETRY_DELAY),
+        };
+
+        tracker.reset();
+
+        assert!(tracker.previous.is_empty());
+        assert_eq!(tracker.repetitions, 0);
+        assert_eq!(
+            tracker.next_retry_delay(&failure),
+            Some(TRANSIENT_RETRY_DELAY)
+        );
+    }
+
+    #[test]
+    fn terminal_failure_waits_for_changes_instead_of_retrying() {
+        let mut tracker = FailureTracker::default();
+        let transient = RuntimeFailure::classify(DogiError::DeviceNotFound);
+        let terminal = RuntimeFailure::classify(DogiError::Config("invalid schema".to_owned()));
+
+        tracker.next_retry_delay(&transient);
+        assert_eq!(tracker.next_retry_delay(&terminal), None);
+        assert_eq!(
+            tracker.next_retry_delay(&transient),
+            Some(TRANSIENT_RETRY_DELAY)
+        );
     }
 
     #[test]

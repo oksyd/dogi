@@ -1306,6 +1306,9 @@ msgstr ""
 msgid "System tray is unavailable"
 msgstr ""
 
+msgid "An operation is in progress. Please wait before quitting."
+msgstr ""
+
 #: src/ui/views/i18n.slint:265
 msgid "Could not stop the horizontal scroll test, so Dogi will stay open: {}"
 msgstr ""

@@ -149,6 +149,25 @@ mod tests {
         assert_eq!(parse_notification(&unknown_feature, &features), None);
     }
 
+    #[test]
+    fn no_client_reply_can_be_interpreted_as_a_runtime_action() {
+        let features = vec![
+            feature(16, HIDPP_FEATURE_THUMB_WHEEL),
+            feature(9, HIDPP_FEATURE_REPROG_CONTROLS_V4),
+        ];
+        for report_id in [HIDPP_SHORT_REPORT_ID, HIDPP_LONG_REPORT_ID] {
+            for (feature_index, function) in [(16, 0x00), (9, 0x00), (9, 0x10)] {
+                let mut report = [0_u8; 20];
+                report[..4].copy_from_slice(&[report_id, 1, feature_index, function]);
+                assert!(parse_notification(&report, &features).is_some());
+                for software_id in 1..=15 {
+                    report[3] = function | software_id;
+                    assert_eq!(parse_notification(&report, &features), None);
+                }
+            }
+        }
+    }
+
     fn feature(index: u8, feature_id: u16) -> HidppFeatureInfo {
         HidppFeatureInfo {
             index,

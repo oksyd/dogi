@@ -37,13 +37,6 @@ mod api_tests {
 
 pub trait HidBackend {
     fn scan(&self) -> Result<Vec<DeviceInfo>>;
-
-    fn find(&self, id: &str) -> Result<DeviceInfo> {
-        self.scan()?
-            .into_iter()
-            .find(|device| device.id == id)
-            .ok_or(DogiError::DeviceNotFound)
-    }
 }
 
 pub fn scan_devices() -> Result<Vec<DeviceInfo>> {
@@ -212,7 +205,6 @@ mod platform {
     const HIDPP_REQUEST_TIMEOUT: Duration = Duration::from_millis(1_200);
     const HIDPP_PROBE_LOCK_TIMEOUT: Duration = Duration::from_millis(400);
     const HIDPP_TRANSACTION_LOCK_TIMEOUT: Duration = Duration::from_secs(3);
-    const HIDPP_LISTENER_LOCK_TIMEOUT: Duration = Duration::from_millis(40);
     const HIDPP_LISTENER_READ_SLICE: Duration = Duration::from_millis(50);
     const HIDPP_PROBE_RETRY_DELAYS: [Duration; 2] =
         [Duration::from_millis(120), Duration::from_millis(360)];
@@ -270,7 +262,12 @@ mod platform {
                     continue;
                 }
 
-                devices.extend(read_hidraw_devices(&entry.path(), &hidraw_name, depth)?);
+                devices.extend(read_hidraw_devices(
+                    &entry.path(),
+                    &hidraw_name,
+                    depth,
+                    HIDPP_PROBE_LOCK_TIMEOUT,
+                )?);
             }
 
             devices.sort_by(|left, right| {
@@ -310,7 +307,64 @@ mod platform {
     }
 
     pub fn find_device(id: &str) -> Result<DeviceInfo> {
-        SysfsHidBackend.find(id)
+        let endpoint_id = crate::domain::hidpp_endpoint_id(id);
+        let endpoint = scan_device_inventory()?
+            .into_iter()
+            .find(|device| device.id == endpoint_id)
+            .ok_or(DogiError::DeviceNotFound)?;
+        let devices = probe_inventory_endpoint(&endpoint)?;
+        select_logical_device(id, devices)
+    }
+
+    // Inventory cannot lose a physical endpoint merely because its HID++ lock is busy.
+    // Explicit operations wait with the transaction budget, not the short UI scan budget.
+    fn probe_inventory_endpoint(endpoint: &DeviceInfo) -> Result<Vec<DeviceInfo>> {
+        let hidraw_name = Path::new(&endpoint.path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| DogiError::InvalidArgument("invalid HID endpoint path".to_owned()))?;
+        read_hidraw_devices(
+            Path::new(&endpoint.sysfs_path),
+            hidraw_name,
+            HidppScanDepth::Full,
+            HIDPP_TRANSACTION_LOCK_TIMEOUT,
+        )
+    }
+
+    fn endpoint_probe_error(device: &DeviceInfo) -> Option<DogiError> {
+        if !device.access.hidraw_readwrite && device.report_descriptor.is_hidpp_interface() {
+            return Some(DogiError::Transport(format!(
+                "{} cannot be opened for HID++ configuration; check device access",
+                device.path,
+            )));
+        }
+        device.access.hidpp_issue.map(|issue| {
+            let reason = match issue {
+                HidppProbeIssue::Busy => "HID++ configuration channel is busy; retry shortly",
+                HidppProbeIssue::Failed => "HID++ device query failed",
+            };
+            DogiError::Transport(format!(
+                "{reason}: {}",
+                device.battery.detail.as_deref().unwrap_or(&device.path),
+            ))
+        })
+    }
+
+    fn select_logical_device(id: &str, devices: Vec<DeviceInfo>) -> Result<DeviceInfo> {
+        if let Some(device) = devices.iter().find(|device| device.id == id) {
+            if let Some(error) = endpoint_probe_error(device) {
+                return Err(error);
+            }
+            return Ok(device.clone());
+        }
+        if let Some(error) = devices.iter().find_map(endpoint_probe_error) {
+            return Err(error);
+        }
+        // The endpoint exists, but the logical mouse was not identified this time.
+        Err(DogiError::Transport(
+            "HID++ target could not be identified on the connected endpoint; wake the mouse and refresh"
+                .to_owned(),
+        ))
     }
 
     pub fn prepare_master3s_settings_plan(
@@ -325,66 +379,132 @@ mod platform {
     pub fn execute_prepared_master3s_settings_transaction(
         transaction: &PreparedSettingsTransaction,
     ) -> Result<SettingsApplyReport> {
-        let device = find_transaction_device(transaction)?;
-        execute_prepared_transaction_for_device(&device, transaction)
+        let (mut client, paired) = open_prepared_transaction(transaction)?;
+        let mut io = HidppSettingsIo {
+            client: &mut client,
+            slot: paired.slot,
+            features: &paired.features,
+        };
+        execute_prepared_transaction(&mut io, transaction)
     }
 
     pub fn recover_prepared_master3s_settings_transaction(
         transaction: &PreparedSettingsTransaction,
     ) -> Result<SettingsApplyReport> {
-        let device = find_transaction_device(transaction)?;
-        recover_prepared_transaction_for_device(&device, transaction)
+        let (mut client, paired) = open_prepared_transaction(transaction)?;
+        let mut io = HidppSettingsIo {
+            client: &mut client,
+            slot: paired.slot,
+            features: &paired.features,
+        };
+        recover_prepared_transaction(&mut io, transaction)
     }
 
-    fn find_transaction_device(transaction: &PreparedSettingsTransaction) -> Result<DeviceInfo> {
+    fn open_prepared_transaction(
+        transaction: &PreparedSettingsTransaction,
+    ) -> Result<(HidppClient, PairedDeviceInfo)> {
         validate_recoverable_identity(transaction)?;
-        let mut devices = SysfsHidBackend.scan()?;
-        devices.sort_by_key(|device| {
-            let endpoint_hint =
-                crate::domain::hidpp_endpoint_id(&device.id) != transaction.identity.receiver_id;
-            let slot_hint = device
-                .paired_device
-                .as_ref()
-                .is_none_or(|paired| paired.slot != transaction.identity.slot);
-            (endpoint_hint, slot_hint)
+        locate_transaction_endpoint(
+            &transaction.identity,
+            scan_device_inventory()?,
+            |endpoint, identity| {
+                let mut client = HidppClient::open(&endpoint.path).map_err(|error| {
+                    DogiError::Transport(format!("HID++ transaction lookup failed: {error}"))
+                })?;
+                let probes =
+                    probe_hidpp_devices(&mut client, endpoint.receiver_kind, std::thread::sleep);
+                let Some(paired) = select_transaction_target(identity, endpoint, probes)? else {
+                    return Ok(None);
+                };
+                // Keep the verified endpoint locked through writes and read-back verification.
+                // Do not close it and rescan between identity validation and execution.
+                Ok(Some((client, paired)))
+            },
+        )
+    }
+
+    fn locate_transaction_endpoint<T>(
+        identity: &PreparedDeviceIdentity,
+        mut inventory: Vec<DeviceInfo>,
+        mut probe: impl FnMut(&DeviceInfo, &PreparedDeviceIdentity) -> Result<Option<T>>,
+    ) -> Result<T> {
+        let has_unit = normalized_identifier(identity.unit_id.as_deref())
+            .is_some_and(|value| value.chars().any(|character| character != '0'));
+        inventory.retain(|device| {
+            device.vendor_id == identity.receiver_vendor_id
+                && device.report_descriptor.is_hidpp_interface()
+                && (has_unit
+                    || strong_unit_matches(
+                        identity.receiver_serial.as_deref(),
+                        device.serial_number.as_deref(),
+                    ))
         });
-        for device in devices {
-            let Some(paired) = device.paired_device.as_ref() else {
-                continue;
-            };
-            if strong_unit_matches(
-                transaction.identity.unit_id.as_deref(),
-                paired.unit_id.as_deref(),
-            ) {
-                return Ok(device);
-            }
-            if normalized_identifier(transaction.identity.unit_id.as_deref())
-                .is_some_and(|value| value.chars().any(|character| character != '0'))
-            {
-                continue;
-            }
-            if !optional_identifier_matches(
-                transaction.identity.receiver_serial.as_deref(),
-                device.serial_number.as_deref(),
-            ) {
-                continue;
-            }
-            let Ok(mut client) = HidppClient::open(&device.path) else {
-                continue;
-            };
-            let Ok(current) = probe_settings_target(&mut client, device.receiver_kind, paired.slot)
-            else {
-                continue;
-            };
-            if strong_identity_matches(
-                &transaction.identity,
-                &current,
-                device.serial_number.as_deref(),
-            ) {
-                return Ok(device);
+        inventory.sort_by_key(|device| device.id != identity.receiver_id);
+        let mut first_error = None;
+        for endpoint in inventory {
+            match probe(&endpoint, identity) {
+                Ok(Some(target)) => return Ok(target),
+                Ok(None) => {}
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                }
             }
         }
-        Err(DogiError::DeviceNotFound)
+        Err(first_error.unwrap_or(DogiError::DeviceNotFound))
+    }
+
+    fn select_transaction_target(
+        identity: &PreparedDeviceIdentity,
+        endpoint: &DeviceInfo,
+        probes: Vec<HidppDeviceProbe>,
+    ) -> Result<Option<PairedDeviceInfo>> {
+        let mut failure = None;
+        for probe in probes {
+            if probe.issue.is_some() {
+                failure.get_or_insert_with(|| {
+                    DogiError::Transport(
+                        probe
+                            .detail
+                            .unwrap_or_else(|| "HID++ transaction target query failed".to_owned()),
+                    )
+                });
+                continue;
+            }
+            let Some(paired) = probe.paired_device else {
+                continue;
+            };
+            let current = VerifiedSettingsTarget {
+                paired,
+                pairing_serial: probe.pairing_serial,
+            };
+            if strong_identity_matches(identity, &current, endpoint.serial_number.as_deref()) {
+                validate_prepared_identity(identity, &current, endpoint.serial_number.as_deref())?;
+                if !current.paired.features_complete {
+                    return Err(DogiError::Transport(
+                        "transaction target feature discovery is incomplete; retry shortly"
+                            .to_owned(),
+                    ));
+                }
+                return Ok(Some(current.paired));
+            }
+            if !has_strong_instance_identifier(current.paired.unit_id.as_deref(), None)
+                && optional_identifier_matches(
+                    identity.wpid.as_deref(),
+                    current.paired.wpid.as_deref(),
+                )
+            {
+                failure.get_or_insert_with(|| DogiError::Transport(
+                    "mouse is paired, but its identity could not be verified; wake it and retry".to_owned(),
+                ));
+            }
+        }
+        if failure.is_none() && endpoint.id == identity.receiver_id && identity.unit_id.is_some() {
+            // A receiver with no identified mouse is different from an absent USB endpoint.
+            failure = Some(DogiError::Transport(
+                "receiver is connected, but the transaction target could not be verified; wake the mouse and retry".to_owned(),
+            ));
+        }
+        failure.map_or(Ok(None), Err)
     }
 
     pub fn listen_master3s_runtime_events(
@@ -455,20 +575,12 @@ mod platform {
             let deadline = Instant::now() + idle_timeout;
             let mut events = Vec::new();
 
+            // Linux hidraw broadcasts input reports to a separate queue for each
+            // open file. Passive reads cannot consume another client's replies,
+            // so only request/reply exchanges need the endpoint lock. Holding it
+            // while waiting for notifications can starve configuration clients.
+            // EndpointConsumerLease still prevents duplicate action consumers.
             while events.len() < event_limit {
-                let Some(_) = deadline.checked_duration_since(Instant::now()) else {
-                    break;
-                };
-                let lock_file = self
-                    .client
-                    .file
-                    .try_clone()
-                    .map_err(|error| DogiError::Transport(error.to_string()))?;
-                let Some(_lock) = acquire_listener_lease(&lock_file, deadline)
-                    .map_err(|error| DogiError::Transport(error.to_string()))?
-                else {
-                    break;
-                };
                 let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
                     break;
                 };
@@ -549,6 +661,7 @@ mod platform {
         sysfs_path: &Path,
         hidraw_name: &str,
         depth: HidppScanDepth,
+        lock_timeout: Duration,
     ) -> Result<Vec<DeviceInfo>> {
         let device_path = sysfs_path.join("device");
         let hid_uevent = read_uevent(&device_path.join("uevent"))?;
@@ -653,6 +766,7 @@ mod platform {
                     probe_cache_key.as_deref(),
                     receiver_kind,
                     depth,
+                    lock_timeout,
                 )?
             } else {
                 vec![HidppDeviceProbe::default()]
@@ -813,22 +927,6 @@ mod platform {
         })
     }
 
-    fn execute_prepared_transaction_for_device(
-        device: &DeviceInfo,
-        transaction: &PreparedSettingsTransaction,
-    ) -> Result<SettingsApplyReport> {
-        validate_recoverable_identity(transaction)?;
-        let (mut client, paired) = open_transaction_device(device, &transaction.identity)?;
-        let slot = paired.slot;
-        let features = paired.features;
-        let mut io = HidppSettingsIo {
-            client: &mut client,
-            slot,
-            features: &features,
-        };
-        execute_prepared_transaction(&mut io, transaction)
-    }
-
     fn execute_prepared_transaction(
         io: &mut impl SettingsTransactionIo,
         transaction: &PreparedSettingsTransaction,
@@ -900,22 +998,6 @@ mod platform {
             transaction: SettingsTransactionState::Committed,
             outcomes,
         })
-    }
-
-    fn recover_prepared_transaction_for_device(
-        device: &DeviceInfo,
-        transaction: &PreparedSettingsTransaction,
-    ) -> Result<SettingsApplyReport> {
-        validate_recoverable_identity(transaction)?;
-        let (mut client, paired) = open_transaction_device(device, &transaction.identity)?;
-        let slot = paired.slot;
-        let features = paired.features;
-        let mut io = HidppSettingsIo {
-            client: &mut client,
-            slot,
-            features: &features,
-        };
-        recover_prepared_transaction(&mut io, transaction)
     }
 
     fn recover_prepared_transaction(
@@ -1010,22 +1092,6 @@ mod platform {
         Ok((client, current))
     }
 
-    fn open_transaction_device(
-        device: &DeviceInfo,
-        identity: &PreparedDeviceIdentity,
-    ) -> Result<(HidppClient, PairedDeviceInfo)> {
-        validate_recoverable_identity_fields(identity)?;
-        let mut client = HidppClient::open(&device.path)
-            .map_err(|error| DogiError::Transport(error.to_string()))?;
-        let slot = device
-            .paired_device
-            .as_ref()
-            .map_or(identity.slot, |paired| paired.slot);
-        let current = probe_settings_target(&mut client, device.receiver_kind, slot)?;
-        validate_prepared_identity(identity, &current, device.serial_number.as_deref())?;
-        Ok((client, current.paired))
-    }
-
     fn probe_settings_target(
         client: &mut impl HidppProbeClient,
         receiver_kind: Option<ReceiverKind>,
@@ -1114,17 +1180,6 @@ mod platform {
                 expected.pairing_serial.as_deref(),
                 current.pairing_serial.as_deref(),
             )
-    }
-
-    fn validate_recoverable_identity_fields(identity: &PreparedDeviceIdentity) -> Result<()> {
-        let transaction = PreparedSettingsTransaction {
-            version: SETTINGS_TRANSACTION_FORMAT_VERSION,
-            device_id: String::new(),
-            identity: identity.clone(),
-            profile_name: String::new(),
-            changes: Vec::new(),
-        };
-        validate_recoverable_identity(&transaction)
     }
 
     fn has_strong_instance_identifier(unit_id: Option<&str>, pairing_serial: Option<&str>) -> bool {
@@ -1909,8 +1964,9 @@ mod platform {
         cache_key: Option<&str>,
         receiver_kind: Option<ReceiverKind>,
         depth: HidppScanDepth,
+        lock_timeout: Duration,
     ) -> Result<Vec<HidppDeviceProbe>> {
-        let mut client = match HidppClient::open_with_depth(path, depth) {
+        let mut client = match HidppClient::open_with_lock_timeout(path, depth, lock_timeout) {
             Ok(client) => client,
             Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
                 return Ok(vec![HidppDeviceProbe {
@@ -2698,10 +2754,6 @@ mod platform {
     impl HidppClient {
         fn open(path: &str) -> io::Result<Self> {
             Self::open_with_lock_timeout(path, HidppScanDepth::Full, HIDPP_TRANSACTION_LOCK_TIMEOUT)
-        }
-
-        fn open_with_depth(path: &str, scan_depth: HidppScanDepth) -> io::Result<Self> {
-            Self::open_with_lock_timeout(path, scan_depth, HIDPP_PROBE_LOCK_TIMEOUT)
         }
 
         fn open_with_lock_timeout(
@@ -3562,22 +3614,6 @@ mod platform {
         }
     }
 
-    fn acquire_listener_lease(
-        file: &File,
-        deadline: Instant,
-    ) -> io::Result<Option<EndpointLockGuard<'_>>> {
-        loop {
-            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
-                return Ok(None);
-            };
-            match EndpointLockGuard::acquire(file, HIDPP_LISTENER_LOCK_TIMEOUT.min(remaining)) {
-                Ok(guard) => return Ok(Some(guard)),
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => continue,
-                Err(error) => return Err(error),
-            }
-        }
-    }
-
     fn lock_endpoint(file: &File, timeout: Duration) -> io::Result<()> {
         let operation = libc::LOCK_EX | libc::LOCK_NB;
         let deadline = Instant::now() + timeout;
@@ -3957,6 +3993,216 @@ mod platform {
             }
         }
 
+        fn test_endpoint(id: &str) -> DeviceInfo {
+            DeviceInfo {
+                id: id.to_owned(),
+                name: "Logi Bolt receiver".to_owned(),
+                paired_device: None,
+                manufacturer: Some("Logitech".to_owned()),
+                serial_number: Some("receiver-1".to_owned()),
+                bus: crate::domain::BusKind::Usb,
+                bus_id: Some(3),
+                vendor_id: 0x046d,
+                product_id: 0xc548,
+                release_number: None,
+                connection: ConnectionKind::Bolt,
+                receiver_kind: Some(ReceiverKind::Bolt),
+                path: "/dev/hidraw-test".to_owned(),
+                sysfs_path: "/sys/class/hidraw/hidraw-test".to_owned(),
+                physical_path: None,
+                driver: None,
+                interface_number: Some(2),
+                usage_page: Some(HIDPP_USAGE_PAGE),
+                usage: Some(1),
+                access: DeviceAccess {
+                    hidraw_readable: true,
+                    hidraw_readwrite: true,
+                    ..Default::default()
+                },
+                battery: BatteryInfo::not_queried("test"),
+                report_descriptor: ReportDescriptorInfo {
+                    hidpp_usage: Some(HidUsage {
+                        usage_page: HIDPP_USAGE_PAGE,
+                        usage: 1,
+                    }),
+                    ..Default::default()
+                },
+                capabilities: DeviceCapabilities::default(),
+            }
+        }
+
+        #[test]
+        fn connected_endpoint_probe_failures_are_not_device_disappearance() {
+            let id = "receiver:slot:01:wpid:B034";
+            for issue in [
+                Some(HidppProbeIssue::Busy),
+                Some(HidppProbeIssue::Failed),
+                None,
+            ] {
+                let mut endpoint = test_endpoint("receiver");
+                endpoint.access.hidpp_issue = issue;
+                assert!(matches!(
+                    select_logical_device(id, vec![endpoint]),
+                    Err(DogiError::Transport(_))
+                ));
+            }
+            let mut endpoint = test_endpoint(id);
+            endpoint.access.hidraw_readwrite = false;
+            assert!(matches!(
+                select_logical_device(id, vec![endpoint]),
+                Err(DogiError::Transport(_))
+            ));
+        }
+
+        #[test]
+        fn transaction_lookup_uses_inventory_and_prioritizes_the_original_endpoint() {
+            let identity = test_transaction().identity;
+            let endpoints = vec![test_endpoint("other-receiver"), test_endpoint("device-1")];
+            let mut calls = Vec::new();
+            let target = locate_transaction_endpoint(&identity, endpoints, |endpoint, _| {
+                // No HID++ identity from the UI scan is required to try the real endpoint.
+                assert!(endpoint.paired_device.is_none());
+                calls.push(endpoint.id.clone());
+                Ok(Some(endpoint.id.clone()))
+            })
+            .unwrap();
+            assert_eq!(target, "device-1");
+            assert_eq!(calls, ["device-1"]);
+        }
+
+        #[test]
+        fn transaction_lookup_preserves_errors_and_can_find_a_moved_device() {
+            let identity = test_transaction().identity;
+            let endpoints = vec![test_endpoint("device-1"), test_endpoint("new-receiver")];
+            let moved = locate_transaction_endpoint(&identity, endpoints.clone(), |endpoint, _| {
+                if endpoint.id == "device-1" {
+                    Err(DogiError::Transport("endpoint busy".to_owned()))
+                } else {
+                    Ok(Some(endpoint.id.clone()))
+                }
+            })
+            .unwrap();
+            assert_eq!(moved, "new-receiver");
+            let failed: Result<()> = locate_transaction_endpoint(&identity, endpoints, |_, _| {
+                Err(DogiError::Transport("endpoint busy".to_owned()))
+            });
+            assert!(
+                matches!(failed, Err(DogiError::Transport(detail)) if detail == "endpoint busy")
+            );
+            let absent: Result<()> = locate_transaction_endpoint(&identity, vec![], |_, _| {
+                panic!("no endpoint to probe")
+            });
+            assert!(matches!(absent, Err(DogiError::DeviceNotFound)));
+        }
+
+        #[test]
+        fn transaction_target_requires_fresh_strong_identity() {
+            let identity = test_transaction().identity;
+            let endpoint = test_endpoint("new-receiver");
+            let mut paired = test_paired_device(24);
+            paired.wpid = identity.wpid.clone();
+            paired.slot = 3;
+            let probe = HidppDeviceProbe {
+                paired_device: Some(paired.clone()),
+                ..Default::default()
+            };
+            assert_eq!(
+                select_transaction_target(&identity, &endpoint, vec![probe])
+                    .unwrap()
+                    .unwrap()
+                    .slot,
+                3,
+            );
+
+            paired.unit_id = Some("DIFFERENT-UNIT".to_owned());
+            let probe = HidppDeviceProbe {
+                paired_device: Some(paired.clone()),
+                ..Default::default()
+            };
+            assert!(
+                select_transaction_target(&identity, &endpoint, vec![probe])
+                    .unwrap()
+                    .is_none()
+            );
+
+            paired.unit_id = None;
+            let probe = HidppDeviceProbe {
+                paired_device: Some(paired),
+                ..Default::default()
+            };
+            assert!(matches!(
+                select_transaction_target(&identity, &endpoint, vec![probe]),
+                Err(DogiError::Transport(_))
+            ));
+        }
+
+        #[test]
+        fn transaction_target_retains_busy_errors_and_requires_complete_features() {
+            let identity = test_transaction().identity;
+            let endpoint = test_endpoint("device-1");
+            let probe = HidppDeviceProbe {
+                issue: Some(HidppProbeIssue::Busy),
+                detail: Some("configuration channel busy".to_owned()),
+                ..Default::default()
+            };
+            assert!(
+                matches!(select_transaction_target(&identity, &endpoint, vec![probe]), Err(DogiError::Transport(detail)) if detail.contains("busy"))
+            );
+            let mut paired = test_paired_device(24);
+            paired.wpid = identity.wpid.clone();
+            paired.features_complete = false;
+            let probe = HidppDeviceProbe {
+                paired_device: Some(paired),
+                ..Default::default()
+            };
+            assert!(
+                matches!(select_transaction_target(&identity, &endpoint, vec![probe]), Err(DogiError::Transport(detail)) if detail.contains("incomplete"))
+            );
+        }
+
+        #[test]
+        fn transaction_target_checks_model_even_when_the_unit_id_matches() {
+            let identity = test_transaction().identity;
+            let endpoint = test_endpoint("device-1");
+            let mut paired = test_paired_device(24);
+            paired.wpid = Some("B037".to_owned());
+            let probe = HidppDeviceProbe {
+                paired_device: Some(paired),
+                ..Default::default()
+            };
+            assert!(matches!(
+                select_transaction_target(&identity, &endpoint, vec![probe]),
+                Err(DogiError::Protocol(_))
+            ));
+        }
+
+        #[test]
+        fn pairing_identity_requires_both_the_receiver_and_pairing_serial() {
+            let mut identity = test_transaction().identity;
+            identity.unit_id = None;
+            let endpoint = test_endpoint("device-1");
+            let mut paired = test_paired_device(24);
+            paired.unit_id = None;
+            paired.wpid = identity.wpid.clone();
+            let probe = HidppDeviceProbe {
+                paired_device: Some(paired),
+                pairing_serial: identity.pairing_serial.clone(),
+                ..Default::default()
+            };
+            assert!(
+                select_transaction_target(&identity, &endpoint, vec![probe])
+                    .unwrap()
+                    .is_some()
+            );
+
+            let mut other = endpoint;
+            other.serial_number = Some("OTHER-RECEIVER".to_owned());
+            let absent: Result<()> = locate_transaction_endpoint(&identity, vec![other], |_, _| {
+                panic!("another receiver must not be accepted by the endpoint hint")
+            });
+            assert!(matches!(absent, Err(DogiError::DeviceNotFound)));
+        }
+
         #[test]
         fn probe_errors_are_distinct_from_no_response() {
             for (kind, expected) in [
@@ -4262,12 +4508,14 @@ mod platform {
         }
 
         #[test]
-        fn listener_waits_within_its_deadline_for_a_long_transaction() {
-            let path = std::env::temp_dir().join(format!(
-                "dogi-hid-long-transaction-{}-{:?}",
+        fn passive_listener_reads_notifications_during_a_settings_transaction() {
+            let directory = std::env::temp_dir().join(format!(
+                "dogi-hid-passive-listener-{}-{:?}",
                 std::process::id(),
                 std::thread::current().id()
             ));
+            let consumer_lease = EndpointConsumerLease::acquire_in(&directory, "receiver").unwrap();
+            let path = directory.join("hidraw");
             fs::write(&path, []).unwrap();
             let transaction_file = OpenOptions::new()
                 .read(true)
@@ -4279,23 +4527,55 @@ mod platform {
                 .write(true)
                 .open(&path)
                 .unwrap();
-            let (ready_tx, ready_rx) = std::sync::mpsc::channel();
-            let holder = std::thread::spawn(move || {
-                lock_endpoint(&transaction_file, Duration::from_millis(20)).unwrap();
-                ready_tx.send(()).unwrap();
-                std::thread::sleep(Duration::from_millis(120));
-                unlock_endpoint(&transaction_file).unwrap();
-            });
-            ready_rx.recv().unwrap();
-            let started = Instant::now();
-            let lease =
-                acquire_listener_lease(&listener_file, Instant::now() + Duration::from_millis(500))
-                    .unwrap();
-            assert!(lease.is_some());
-            assert!(started.elapsed() >= Duration::from_millis(80));
-            drop(lease);
-            holder.join().unwrap();
-            fs::remove_file(path).unwrap();
+            let transaction =
+                EndpointLockGuard::acquire(&transaction_file, Duration::ZERO).unwrap();
+            let mut listener = Master3sRuntimeEventListener {
+                _consumer_lease: consumer_lease,
+                client: HidppClient {
+                    file: listener_file,
+                    scan_depth: HidppScanDepth::Full,
+                    pending_reports: VecDeque::from([
+                        // Replies from configuration clients must not become actions.
+                        vec![0x11, 1, 16, 0x08, 0, 99, 0, 0, 1],
+                        // Notifications for a different paired device are ignored.
+                        vec![0x11, 2, 16, 0x00, 0, 42, 0, 0, 1],
+                        vec![0x11, 1, 16, 0x00, 0, 20, 0, 0, 1],
+                    ]),
+                },
+                slot: 1,
+                features: vec![HidppFeatureInfo {
+                    index: 16,
+                    feature_id: HIDPP_FEATURE_THUMB_WHEEL,
+                    name: "THUMB_WHEEL".to_owned(),
+                    flags: 0,
+                    version: 1,
+                }],
+                thumb_wheel_info: Some(ThumbWheelRuntimeInfo {
+                    resolution: 120,
+                    direction: -1,
+                }),
+            };
+
+            assert_eq!(
+                listener.read_events(1, Duration::from_millis(100)).unwrap(),
+                vec![Master3sRuntimeEvent::ThumbWheel {
+                    delta: 20,
+                    phase: Some(1),
+                    resolution: 120,
+                    direction: -1,
+                }]
+            );
+            // Reading must not release the independent transaction's lock either.
+            assert_eq!(
+                lock_endpoint(&listener.client.file, Duration::ZERO)
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::WouldBlock
+            );
+
+            drop(transaction);
+            drop((listener, transaction_file));
+            fs::remove_dir_all(directory).unwrap();
         }
 
         #[test]
