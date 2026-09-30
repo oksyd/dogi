@@ -1,8 +1,17 @@
+## [0.1.19] - 2026-09-30
+
+### 🐛 Bug Fixes
+
+- Stabilize HID++ device lookup and configuration access
 ## [0.1.18] - 2026-09-25
 
 ### 🚜 Refactor
 
 - Consolidate workspace into a single dogi package
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.1.18
 ## [0.1.17] - 2026-09-25
 
 ### ⚙️ Miscellaneous Tasks
